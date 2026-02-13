@@ -21,6 +21,23 @@ app.use(bodyParser.json());
 app.use(cors());
 app.use(express.static(__dirname));
 
+// SPA Routes - serve HTML files without extension
+app.get('/auth', (req, res) => {
+  res.sendFile(join(__dirname, 'auth.html'));
+});
+
+app.get('/dashboard', (req, res) => {
+  res.sendFile(join(__dirname, 'dashboard.html'));
+});
+
+app.get('/promotion-detail', (req, res) => {
+  res.sendFile(join(__dirname, 'promotion-detail.html'));
+});
+
+app.get('/public-promotion', (req, res) => {
+  res.sendFile(join(__dirname, 'public-promotion.html'));
+});
+
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });

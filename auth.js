@@ -79,7 +79,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
             localStorage.setItem('token', data.token);
             localStorage.setItem('teacher', JSON.stringify(data.teacher));
             showAlert('Login successful! Redirecting...', 'success');
-            setTimeout(() => window.location.href = '/dashboard.html', 1500);
+            setTimeout(() => window.location.href = '/dashboard', 1500);
         } else {
             showAlert(data.error || 'Login failed', 'danger');
         }
@@ -125,7 +125,7 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
             localStorage.setItem('token', data.token);
             localStorage.setItem('teacher', JSON.stringify(data.teacher));
             showAlert('Account created successfully! Redirecting...', 'success');
-            setTimeout(() => window.location.href = '/dashboard.html', 1500);
+            setTimeout(() => window.location.href = '/dashboard', 1500);
         } else {
             showAlert(data.error || 'Registration failed', 'danger');
         }

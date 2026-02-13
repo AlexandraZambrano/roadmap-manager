@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkAuth() {
     const token = localStorage.getItem('token');
     if (!token) {
-        window.location.href = '/auth.html';
+        window.location.href = '/auth';
         return;
     }
 }
@@ -64,7 +64,7 @@ function displayPromotions(promotions) {
         const card = document.createElement('div');
         card.className = 'col-md-6 col-lg-4';
         card.innerHTML = `
-            <div class="card promotion-card" onclick="window.location.href = '/promotion-detail.html?id=${promotion.id}'">
+            <div class="card promotion-card" onclick="window.location.href = '/promotion-detail?id=${promotion.id}'">
                 <div class="card-body">
                     <h5 class="promotion-card-title">${escapeHtml(promotion.name)}</h5>
                     <p class="promotion-card-meta">${promotion.description || 'No description'}</p>
@@ -192,7 +192,7 @@ async function deletePromotion(promotionId, event) {
 function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('teacher');
-    window.location.href = '/auth.html';
+    window.location.href = '/auth';
 }
 
 function escapeHtml(text) {
