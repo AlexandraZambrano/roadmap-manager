@@ -3,9 +3,9 @@
     "online": {
       "entry": "08:16",
       "start": "",
-      "break": "",
+      "break": "11:00",
       "lunch": "",
-      "finish": ""
+      "finish": "15:15"
     },
     "presential": {
       "entry": "",
@@ -16,7 +16,14 @@
     },
     "notes": ""
   },
-  "team": [],
+  "team": [
+    {
+      "name": "Grace Salazar",
+      "role": "Coordinadora",
+      "email": "grace.salazar@factoriaf5.org",
+      "linkedin": "https://www.linkedin.com/in/gracesalazar/"
+    }
+  ],
   "resources": [],
   "evaluation": ""
 }
