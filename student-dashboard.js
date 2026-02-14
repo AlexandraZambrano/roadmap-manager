@@ -295,26 +295,56 @@ function generateGantt(promotion) {
         }
         table.appendChild(row);
 
-        // If module has projects, add a sub-row? 
-        // User template implies granular control. For now, let's just show modules.
-        // We could add sub-rows for "Projects" if they exist in the module data.
-        if (module.projects && module.projects.length > 0) {
-            const projRow = document.createElement('tr');
-            const projLabel = document.createElement('td');
-            projLabel.className = 'label';
-            projLabel.innerHTML = `↳ Proyectos`;
-            projRow.appendChild(projLabel);
+        // Show individual courses
+        if (module.courses && module.courses.length > 0) {
+            module.courses.forEach(course => {
+                const courseName = typeof course === 'string' ? course : course.name || course;
+                const courseUrl = typeof course === 'object' ? course.url : '';
 
-            for (let i = 0; i < weeks; i++) {
-                const cell = document.createElement('td');
-                if (i >= startWeek && i < endWeek) {
-                    cell.className = 'block proyecto'; // Lighter orange
-                } else {
-                    cell.className = 'empty';
+                const courseRow = document.createElement('tr');
+                const courseLabel = document.createElement('td');
+                courseLabel.className = 'label';
+                const courseLink = courseUrl ? `<a href="${escapeHtml(courseUrl)}" target="_blank" class="text-decoration-none">📖 ${escapeHtml(courseName)}</a>` : `📖 ${escapeHtml(courseName)}`;
+                courseLabel.innerHTML = courseLink;
+                courseRow.appendChild(courseLabel);
+
+                for (let i = 0; i < weeks; i++) {
+                    const cell = document.createElement('td');
+                    if (i >= startWeek && i < endWeek) {
+                        cell.className = 'block tema'; // Green for courses
+                    } else {
+                        cell.className = 'empty';
+                    }
+                    courseRow.appendChild(cell);
                 }
-                projRow.appendChild(cell);
-            }
-            table.appendChild(projRow);
+                table.appendChild(courseRow);
+            });
+        }
+
+        // Show individual projects
+        if (module.projects && module.projects.length > 0) {
+            module.projects.forEach(project => {
+                const projectName = typeof project === 'string' ? project : project.name || project;
+                const projectUrl = typeof project === 'object' ? project.url : '';
+
+                const projRow = document.createElement('tr');
+                const projLabel = document.createElement('td');
+                projLabel.className = 'label';
+                const projectLink = projectUrl ? `<a href="${escapeHtml(projectUrl)}" target="_blank" class="text-decoration-none">🎯 ${escapeHtml(projectName)}</a>` : `🎯 ${escapeHtml(projectName)}`;
+                projLabel.innerHTML = projectLink;
+                projRow.appendChild(projLabel);
+
+                for (let i = 0; i < weeks; i++) {
+                    const cell = document.createElement('td');
+                    if (i >= startWeek && i < endWeek) {
+                        cell.className = 'block proyecto'; // Orange for projects
+                    } else {
+                        cell.className = 'empty';
+                    }
+                    projRow.appendChild(cell);
+                }
+                table.appendChild(projRow);
+            });
         }
 
         weekCounter += module.duration;
@@ -408,8 +438,27 @@ function renderModulesAccordion(modules) {
         const item = document.createElement('div');
         item.className = 'accordion-item';
 
-        const coursesList = (module.courses || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
-        const projectsList = (module.projects || []).map(p => `<li>${escapeHtml(p)}</li>`).join('');
+        // Handle courses - support both string and object formats
+        const coursesList = (module.courses || []).map(c => {
+            const courseName = typeof c === 'string' ? c : c.name || c;
+            const courseUrl = typeof c === 'object' ? c.url : '';
+            if (courseUrl) {
+                return `<li><a href="${escapeHtml(courseUrl)}" target="_blank">${escapeHtml(courseName)}</a></li>`;
+            } else {
+                return `<li>${escapeHtml(courseName)}</li>`;
+            }
+        }).join('');
+
+        // Handle projects - support both string and object formats
+        const projectsList = (module.projects || []).map(p => {
+            const projectName = typeof p === 'string' ? p : p.name || p;
+            const projectUrl = typeof p === 'object' ? p.url : '';
+            if (projectUrl) {
+                return `<li><a href="${escapeHtml(projectUrl)}" target="_blank">${escapeHtml(projectName)}</a></li>`;
+            } else {
+                return `<li>${escapeHtml(projectName)}</li>`;
+            }
+        }).join('');
 
         item.innerHTML = `
             <h2 class="accordion-header" id="heading${index}">

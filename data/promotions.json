@@ -55,10 +55,16 @@
         "name": "Módulo I",
         "duration": 8,
         "courses": [
-          "Python essentials"
+          {
+            "name": "Python essentials - CISCO",
+            "url": "https://www.netacad.com/courses/python-essentials-1?courseLang=en-US"
+          }
         ],
         "projects": [
-          "App con Python"
+          {
+            "name": "App con Python",
+            "url": ""
+          }
         ],
         "createdAt": "2026-02-13T23:47:28.220Z"
       },
@@ -83,6 +89,6 @@
     ],
     "teacherId": "34b118e5-cfa6-4df8-8831-5721d7545f08",
     "createdAt": "2026-02-13T23:46:30.243Z",
-    "updatedAt": "2026-02-13T23:46:30.243Z"
+    "updatedAt": "2026-02-14T09:49:27.404Z"
   }
 ]
