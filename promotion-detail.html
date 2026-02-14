@@ -63,6 +63,11 @@
                             </a>
                         </li>
                         <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
+                                <i class="bi bi-share me-2"></i>Collaborators
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
                             <a class="nav-link" href="#info" onclick="switchTab('info')">
                                 <i class="bi bi-info-circle me-2"></i>Program Info
                             </a>
@@ -200,6 +205,25 @@
 
                     <div id="students-list" class="row">
                         <!-- Students will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Collaborators Tab -->
+                <div id="collaborators-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Program Collaborators</h2>
+                        <button class="btn btn-primary" onclick="openAddCollaboratorModal()">
+                            <i class="bi bi-person-plus me-2"></i>Add Teacher
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="text-muted mb-3">Teachers who have access to manage this program:</p>
+                            <div id="collaborators-list" class="list-group">
+                                <!-- Collaborators will be loaded here -->
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -538,6 +562,31 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Collaborator Modal -->
+    <div class="modal fade" id="addCollaboratorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Teacher Collaborator</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="collaborator-form">
+                        <div class="mb-3">
+                            <label for="collaborator-email" class="form-label">Teacher Email</label>
+                            <input type="email" class="form-control" id="collaborator-email" required />
+                            <small class="text-muted">Enter the email of an existing teacher to add them as a collaborator</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addCollaborator()">Add Collaborator</button>
                 </div>
             </div>
         </div>
