@@ -61,6 +61,24 @@
           "App con Python"
         ],
         "createdAt": "2026-02-13T23:47:28.220Z"
+      },
+      {
+        "id": "0a029312-106b-43d8-9050-53b08627ac7b",
+        "name": "Módulo I",
+        "duration": 8,
+        "courses": [
+          {
+            "name": "Python essentials",
+            "url": "https://www.netacad.com/courses/python-essentials-1?courseLang=en-US"
+          }
+        ],
+        "projects": [
+          {
+            "name": "App con Python",
+            "url": ""
+          }
+        ],
+        "createdAt": "2026-02-14T09:10:18.914Z"
       }
     ],
     "teacherId": "34b118e5-cfa6-4df8-8831-5721d7545f08",

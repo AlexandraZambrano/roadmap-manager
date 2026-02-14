@@ -926,27 +926,80 @@ function setupForms() {
         const token = localStorage.getItem('token');
 
         try {
-            const response = await fetch(`${API_URL}/api/promotions/${promotionId}/modules`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ name, duration, courses, projects })
-            });
+            // Check if we're editing an existing module
+            if (currentEditingModuleId) {
+                // Update existing module
+                const promotionResponse = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
 
-            if (response.ok) {
-                moduleModal.hide();
-                document.getElementById('module-form').reset();
-                currentEditingModuleId = null;
-                loadModules();
-                loadPromotion();
+                if (!promotionResponse.ok) {
+                    alert('Error loading promotion data');
+                    return;
+                }
+
+                const promotion = await promotionResponse.json();
+                const moduleIndex = promotion.modules.findIndex(m => m.id === currentEditingModuleId);
+
+                if (moduleIndex === -1) {
+                    alert('Module not found');
+                    return;
+                }
+
+                // Update the module while preserving its ID and creation date
+                promotion.modules[moduleIndex] = {
+                    ...promotion.modules[moduleIndex],
+                    name,
+                    duration,
+                    courses,
+                    projects
+                };
+
+                const updateResponse = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(promotion)
+                });
+
+                if (updateResponse.ok) {
+                    moduleModal.hide();
+                    document.getElementById('module-form').reset();
+                    currentEditingModuleId = null;
+                    loadModules();
+                    loadPromotion();
+                    alert('Module updated successfully');
+                } else {
+                    const error = await updateResponse.json();
+                    alert(`Error: ${error.error || 'Failed to update module'}`);
+                }
             } else {
-                const error = await response.json();
-                alert(`Error: ${error.error || 'Failed to save module'}`);
+                // Create new module
+                const response = await fetch(`${API_URL}/api/promotions/${promotionId}/modules`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ name, duration, courses, projects })
+                });
+
+                if (response.ok) {
+                    moduleModal.hide();
+                    document.getElementById('module-form').reset();
+                    currentEditingModuleId = null;
+                    loadModules();
+                    loadPromotion();
+                    alert('Module created successfully');
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.error || 'Failed to save module'}`);
+                }
             }
         } catch (error) {
-            console.error('Error adding module:', error);
+            console.error('Error saving module:', error);
             alert('Error saving module');
         }
     });
@@ -1109,6 +1162,12 @@ function openModuleModal() {
     document.getElementById('courses-container').innerHTML = '';
     document.getElementById('projects-container').innerHTML = '';
     currentEditingModuleId = null;
+
+    // Add one empty course field to start
+    addCoursField();
+    // Add one empty project field to start
+    addProjectField();
+
     moduleModal.show();
 }
 
