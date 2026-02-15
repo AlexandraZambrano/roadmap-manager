@@ -39,6 +39,9 @@
       }
     ],
     "teacherId": "ff7a55a7-1148-4d1f-ad76-d947f09ec71e",
+    "collaboratorIds": [
+      "ff7a55a7-1148-4d1f-ad76-d947f09ec71e"
+    ],
     "createdAt": "2026-02-13T22:27:47.898Z",
     "updatedAt": "2026-02-13T22:27:47.898Z"
   },
@@ -88,7 +91,11 @@
       }
     ],
     "teacherId": "34b118e5-cfa6-4df8-8831-5721d7545f08",
+    "collaboratorIds": [
+      "34b118e5-cfa6-4df8-8831-5721d7545f08",
+      "365d5e76-83ef-4e36-ac4b-994e7d92bcfe"
+    ],
     "createdAt": "2026-02-13T23:46:30.243Z",
-    "updatedAt": "2026-02-14T09:49:27.404Z"
+    "updatedAt": "2026-02-15T12:13:19.436Z"
   }
 ]

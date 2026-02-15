@@ -1,6 +1,6 @@
 const API_URL = window.location.origin;
 let promotionId = null;
-let moduleModal, quickLinkModal, sectionModal, studentModal, studentSuccessModal, teamModal, resourceModal;
+let moduleModal, quickLinkModal, sectionModal, studentModal, studentSuccessModal, teamModal, resourceModal, addCollaboratorModal;
 const userRole = localStorage.getItem('role') || 'student';
 let extendedInfoData = {
     schedule: {},
@@ -61,9 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const resourceModalEl = document.getElementById('resourceModal');
     if (resourceModalEl) resourceModal = new bootstrap.Modal(resourceModalEl);
 
+    const addCollaboratorModalEl = document.getElementById('addCollaboratorModal');
+    if (addCollaboratorModalEl) addCollaboratorModal = new bootstrap.Modal(addCollaboratorModalEl);
+
     if (userRole === 'teacher') {
         loadStudents();
         loadExtendedInfo();
+        loadCollaborators();
     } else {
         // Remove preview button for students
         const previewBtn = document.querySelector('button[onclick="previewPromotion()"]');
@@ -1340,5 +1344,108 @@ async function deleteStudent(studentId) {
         loadStudents();
     } catch (error) {
         console.error('Error deleting student:', error);
+    }
+}
+
+// ==================== COLLABORATORS MANAGEMENT ====================
+
+async function loadCollaborators() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const collaborators = await response.json();
+            displayCollaborators(collaborators);
+        }
+    } catch (error) {
+        console.error('Error loading collaborators:', error);
+    }
+}
+
+function displayCollaborators(collaborators) {
+    const list = document.getElementById('collaborators-list');
+    list.innerHTML = '';
+
+    if (collaborators.length === 0) {
+        list.innerHTML = '<p class="text-muted">No collaborators yet</p>';
+        return;
+    }
+
+    collaborators.forEach(teacher => {
+        const div = document.createElement('div');
+        div.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const ownerBadge = teacher.isOwner ? '<span class="badge bg-primary ms-2">Owner</span>' : '';
+        const deleteBtn = !teacher.isOwner ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${teacher.id}')"><i class="bi bi-trash"></i> Remove</button>` : '<button class="btn btn-sm btn-outline-secondary" disabled>Owner</button>';
+
+        div.innerHTML = `
+            <div>
+                <h6 class="mb-1">${escapeHtml(teacher.name)} ${ownerBadge}</h6>
+                <p class="mb-0 text-muted small">${escapeHtml(teacher.email)}</p>
+            </div>
+            ${deleteBtn}
+        `;
+        list.appendChild(div);
+    });
+}
+
+function openAddCollaboratorModal() {
+    document.getElementById('collaborator-form').reset();
+    addCollaboratorModal.show();
+}
+
+async function addCollaborator() {
+    const email = document.getElementById('collaborator-email').value.trim();
+    if (!email) {
+        alert('Please enter an email');
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ email })
+        });
+
+        if (response.ok) {
+            alert('Teacher added as collaborator successfully!');
+            addCollaboratorModal.hide();
+            loadCollaborators();
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.error || 'Failed to add collaborator'}`);
+        }
+    } catch (error) {
+        console.error('Error adding collaborator:', error);
+        alert('Error adding collaborator');
+    }
+}
+
+async function removeCollaborator(teacherId) {
+    if (!confirm('Are you sure you want to remove this collaborator?')) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers/${teacherId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            loadCollaborators();
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.error || 'Failed to remove collaborator'}`);
+        }
+    } catch (error) {
+        console.error('Error removing collaborator:', error);
+        alert('Error removing collaborator');
     }
 }
