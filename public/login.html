@@ -180,39 +180,45 @@
 
 <body>
     <div class="login-container">
+        <!-- Language Switcher -->
+        <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 10px;">
+            <button onclick="setLanguage('en')" style="padding: 8px 12px; border: 1px solid white; background: transparent; color: white; border-radius: 4px; cursor: pointer;" id="lang-en">EN</button>
+            <button onclick="setLanguage('es')" style="padding: 8px 12px; border: 1px solid white; background: transparent; color: white; border-radius: 4px; cursor: pointer;" id="lang-es">ES</button>
+        </div>
+
         <div class="logo-section">
             <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" />
             <h1>Bootcamp Manager</h1>
-            <p>Sign in to your account</p>
+            <p data-i18n="sign-in">Sign in to your account</p>
         </div>
 
         <div id="danger-alert" class="alert alert-danger hidden" role="alert"></div>
         <div id="success-alert" class="alert alert-success hidden" role="alert"></div>
 
         <div class="form-group">
-            <label class="form-label">I am a:</label>
+            <label class="form-label" data-i18n="i-am-a">I am a:</label>
             <div class="role-selection">
                 <button class="role-btn active" data-role="teacher" onclick="selectRole('teacher')">
                     <i class="bi bi-person-workspace"></i>
-                    <span>Teacher</span>
+                    <span data-i18n="teacher">Teacher</span>
                 </button>
                 <button class="role-btn" data-role="admin" onclick="selectRole('admin')">
                     <i class="bi bi-shield-lock"></i>
-                    <span>Admin</span>
+                    <span data-i18n="admin">Admin</span>
                 </button>
             </div>
         </div>
 
         <form id="login-form">
             <div class="form-group">
-                <label for="email" class="form-label">Email Address</label>
+                <label for="email" class="form-label" data-i18n="email-address">Email Address</label>
                 <input type="email" id="email" class="form-control" placeholder="your.email@example.com" required />
             </div>
 
             <div class="form-group">
-                <label for="password" class="form-label">Password</label>
+                <label for="password" class="form-label" data-i18n="password">Password</label>
                 <input type="password" id="password" class="form-control" placeholder="Enter your password" required />
-                <div class="help-text" id="help-text">Use your assigned password</div>
+                <div class="help-text" id="help-text" data-i18n="your-assigned-password">Use your assigned password</div>
             </div>
 
             <button type="button" class="btn-login" id="login-button" onclick="handleLogin()">
@@ -230,7 +236,28 @@
     </div>
 
     <script src="js/config.js"></script>
+    <script src="js/translations.js"></script>
     <script src="js/login.js"></script>
+
+    <script>
+        // Highlight current language button
+        document.addEventListener('DOMContentLoaded', function() {
+            updateLangButtons();
+        });
+
+        function updateLangButtons() {
+            const currentLang = getCurrentLanguage();
+            document.getElementById('lang-en').style.background = currentLang === 'en' ? '#ff4700' : 'transparent';
+            document.getElementById('lang-es').style.background = currentLang === 'es' ? '#ff4700' : 'transparent';
+        }
+
+        // Override setLanguage to update buttons
+        const originalSetLanguage = setLanguage;
+        window.setLanguage = function(lang) {
+            originalSetLanguage(lang);
+            updateLangButtons();
+        };
+    </script>
 </body>
 
 </html>
