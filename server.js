@@ -195,6 +195,57 @@ app.get('/api/promotions/:promotionId/access-password', verifyToken, async (req,
   }
 });
 
+// ==================== BOOTCAMP TEMPLATES ====================
+
+const bootcampTemplates = [
+  {
+    id: 'ia-bootcamp',
+    name: 'IA School Bootcamp',
+    description: 'Artificial Intelligence and Machine Learning bootcamp',
+    weeks: 39,
+    modules: []
+  },
+  {
+    id: 'fullstack-bootcamp',
+    name: 'Full Stack Bootcamp',
+    description: 'Full stack web development bootcamp',
+    weeks: 24,
+    modules: []
+  },
+  {
+    id: 'cybersecurity-bootcamp',
+    name: 'Cyber Security Bootcamp',
+    description: 'Cyber Security and Ethical Hacking bootcamp',
+    weeks: 20,
+    modules: []
+  },
+  {
+    id: 'datascience-bootcamp',
+    name: 'Data Science Bootcamp',
+    description: 'Data Science and Analytics bootcamp',
+    weeks: 30,
+    modules: []
+  },
+  {
+    id: 'frontend-bootcamp',
+    name: 'Frontend Bootcamp',
+    description: 'Frontend development with React, Vue, or Angular',
+    weeks: 16,
+    modules: []
+  },
+  {
+    id: 'backend-bootcamp',
+    name: 'Backend Bootcamp',
+    description: 'Backend development with Node.js, Python, or Java',
+    weeks: 20,
+    modules: []
+  }
+];
+
+app.get('/api/bootcamp-templates', (req, res) => {
+  res.json(bootcampTemplates);
+});
+
 // ==================== AUTHENTICATION ====================
 
 app.post('/api/auth/register', async (req, res) => {

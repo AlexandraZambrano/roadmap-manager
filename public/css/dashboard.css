@@ -16,7 +16,7 @@ body {
     z-index: 100;
     padding: 20px 0;
     background-color: #ffffff;
-    border-right: 2px solid #FFA500;
+    border-right: 2px solid #ff4700;
     overflow-y: auto;
 }
 
@@ -32,15 +32,15 @@ body {
 }
 
 .sidebar .nav-link:hover {
-    background-color: #fff5e6;
-    color: #FFA500;
-    border-left: 3px solid #FFA500;
+    background-color: #ffe6d0;
+    color: #ff4700;
+    border-left: 3px solid #ff4700;
 }
 
 .sidebar .nav-link.active {
-    background-color: #FFA500;
+    background-color: #ff4700;
     color: white;
-    border-left: 3px solid #FF8C00;
+    border-left: 3px solid #d63900;
 }
 
 main {
@@ -70,7 +70,7 @@ main {
 }
 
 .card-title i {
-    color: #FFA500;
+    color: #ff4700;
     margin-right: 8px;
 }
 
@@ -83,7 +83,7 @@ main {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
+    background: linear-gradient(135deg, #ff4700 0%, #d63900 100%);
     border: none;
     color: white;
     padding: 10px 20px;
@@ -96,7 +96,7 @@ main {
 .btn-primary:hover {
     opacity: 0.9;
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(255, 165, 0, 0.4);
+    box-shadow: 0 5px 15px rgba(255, 71, 0, 0.4);
 }
 
 .navbar {
@@ -106,12 +106,12 @@ main {
     right: 0;
     z-index: 101;
     background-color: #ffffff !important;
-    border-bottom: 2px solid #FFA500 !important;
+    border-bottom: 2px solid #ff4700 !important;
 }
 
 .navbar-brand {
     font-weight: 600;
-    color: #FFA500 !important;
+    color: #ff4700 !important;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -126,8 +126,8 @@ main {
 
 .form-control:focus,
 .form-select:focus {
-    border-color: #FFA500;
-    box-shadow: 0 0 0 0.2rem rgba(255, 165, 0, 0.25);
+    border-color: #ff4700;
+    box-shadow: 0 0 0 0.2rem rgba(255, 71, 0, 0.25);
 }
 
 .promotion-card {
@@ -155,7 +155,7 @@ main {
 }
 
 .badge-weeks {
-    background-color: #FFA500;
+    background-color: #ff4700;
     color: white;
     padding: 5px 10px;
     border-radius: 20px;
@@ -163,7 +163,7 @@ main {
 }
 
 .modal-header {
-    border-bottom: 2px solid #FFA500;
+    border-bottom: 2px solid #ff4700;
 }
 
 .modal-title {
@@ -173,37 +173,37 @@ main {
 
 .navbar {
     background-color: #ffffff !important;
-    border-bottom: 2px solid #FFA500 !important;
+    border-bottom: 2px solid #ff4700 !important;
 }
 
 /* Bootstrap color overrides for orange theme */
 .btn-warning {
-    background-color: #FFA500 !important;
-    border-color: #FFA500 !important;
+    background-color: #ff4700 !important;
+    border-color: #ff4700 !important;
     color: white !important;
 }
 
 .btn-warning:hover {
-    background-color: #FF8C00 !important;
-    border-color: #FF8C00 !important;
+    background-color: #d63900 !important;
+    border-color: #d63900 !important;
 }
 
 .bg-warning {
-    background-color: #FFA500 !important;
+    background-color: #ff4700 !important;
 }
 
 .text-warning {
-    color: #FFA500 !important;
+    color: #ff4700 !important;
 }
 
 .alert-warning {
-    background-color: #fff5e6;
-    border-color: #FFA500;
+    background-color: #ffe6d0;
+    border-color: #ff4700;
     color: #333;
 }
 
 .border-warning {
-    border-color: #FFA500 !important;
+    border-color: #ff4700 !important;
 }
 
 @media (max-width: 768px) {

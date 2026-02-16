@@ -140,6 +140,27 @@ function openNewPromotionModal() {
     promotionModal.show();
 }
 
+// Templates data
+const bootcampTemplates = {
+    'ia-bootcamp': { name: 'IA School Bootcamp', weeks: 39, description: 'Artificial Intelligence and Machine Learning bootcamp' },
+    'fullstack-bootcamp': { name: 'Full Stack Bootcamp', weeks: 24, description: 'Full stack web development bootcamp' },
+    'cybersecurity-bootcamp': { name: 'Cyber Security Bootcamp', weeks: 20, description: 'Cyber Security and Ethical Hacking bootcamp' },
+    'datascience-bootcamp': { name: 'Data Science Bootcamp', weeks: 30, description: 'Data Science and Analytics bootcamp' },
+    'frontend-bootcamp': { name: 'Frontend Bootcamp', weeks: 16, description: 'Frontend development with React, Vue, or Angular' },
+    'backend-bootcamp': { name: 'Backend Bootcamp', weeks: 20, description: 'Backend development with Node.js, Python, or Java' }
+};
+
+window.applyTemplate = function() {
+    const templateId = document.getElementById('promotion-template').value;
+
+    if (!templateId) return;
+
+    const template = bootcampTemplates[templateId];
+    if (template) {
+        document.getElementById('promotion-weeks').value = template.weeks;
+    }
+}
+
 
 function setupPromotionForm() {
     document.getElementById('promotion-form').addEventListener('submit', async (e) => {

@@ -122,7 +122,33 @@ async function loadExtendedInfo() {
             displayResources();
 
             // Populate Evaluation
-            document.getElementById('evaluation-text').value = extendedInfoData.evaluation || '';
+            const defaultEvaluation = `Evaluación del Proyecto
+
+Se brindará retroalimentación oral el mismo día de la presentación del proyecto, mientras que la autoevaluación (en proyectos individuales) y evaluación grupal (en proyectos grupales) se realizará al día siguiente y posteriormente, el equipo formativo compartirá las impresiones finales. Todo ello deberá almacenarse en Google Classroom.
+
+Se tendrán en cuenta los siguientes aspectos:
+
+• Análisis de los commits realizados por los coders, valorando tanto la cantidad como la calidad
+• Participación individual en la presentación del proyecto
+• Capacidad de responder preguntas específicas de manera clara y fundamentada
+• Desarrollo y demostración de las competencias adquiridas durante el proyecto
+
+Evaluación de las Píldoras
+
+Las píldoras se asignarán la primera semana, se apuntarán en el calendario y se valorarán los siguientes aspectos:
+• Que tenga un poco de inglés (hablado, no solo en la presentación)
+• Que tenga parte teórica y parte práctica. Énfasis en la práctica
+• Tiempo mínimo 1 hora
+• Crear un repositorio en Github y/o publicar un artículo en Medium
+
+Evaluación Global al Final del Bootcamp
+
+• Valoración de los proyectos entregados
+• Valoración de los cursos realizados
+• Valoración de las píldoras realizadas
+• Valoración de competencias transversales`;
+
+            document.getElementById('evaluation-text').value = extendedInfoData.evaluation || defaultEvaluation;
         }
     } catch (error) {
         console.error('Error loading extended info:', error);

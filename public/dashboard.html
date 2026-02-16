@@ -127,6 +127,20 @@
                 <form id="promotion-form">
                     <div class="modal-body">
                         <div class="mb-3">
+                            <label for="promotion-template" class="form-label">Bootcamp Template (Optional)</label>
+                            <select class="form-select" id="promotion-template" onchange="applyTemplate()">
+                                <option value="">-- Select a template to start --</option>
+                                <option value="ia-bootcamp">IA School Bootcamp (39 weeks)</option>
+                                <option value="fullstack-bootcamp">Full Stack Bootcamp (24 weeks)</option>
+                                <option value="cybersecurity-bootcamp">Cyber Security Bootcamp (20 weeks)</option>
+                                <option value="datascience-bootcamp">Data Science Bootcamp (30 weeks)</option>
+                                <option value="frontend-bootcamp">Frontend Bootcamp (16 weeks)</option>
+                                <option value="backend-bootcamp">Backend Bootcamp (20 weeks)</option>
+                            </select>
+                            <small class="form-text text-muted">Selecting a template will auto-fill the weeks. You can still customize it.</small>
+                        </div>
+                        <hr>
+                        <div class="mb-3">
                             <label for="promotion-name" class="form-label">Promotion Name</label>
                             <input type="text" class="form-control" id="promotion-name" required />
                         </div>
