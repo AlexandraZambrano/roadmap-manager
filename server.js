@@ -10,20 +10,20 @@ import mongoose from 'mongoose';
 import 'dotenv/config';
 
 // Models
-import Teacher from './models/Teacher.js';
-import Admin from './models/Admin.js';
-import Student from './models/Student.js';
-import Promotion from './models/Promotion.js';
-import QuickLink from './models/QuickLink.js';
-import Section from './models/Section.js';
-import ExtendedInfo from './models/ExtendedInfo.js';
-import Calendar from './models/Calendar.js';
+import Teacher from './backend/models/Teacher.js';
+import Admin from './backend/models/Admin.js';
+import Student from './backend/models/Student.js';
+import Promotion from './backend/models/Promotion.js';
+import QuickLink from './backend/models/QuickLink.js';
+import Section from './backend/models/Section.js';
+import ExtendedInfo from './backend/models/ExtendedInfo.js';
+import Calendar from './backend/models/Calendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-manager';
 
@@ -39,6 +39,8 @@ app.use(bodyParser.json());
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
   'http://localhost:5500',
   'http://127.0.0.1:5500',
   'https://alexandrazambrano.github.io'
@@ -57,16 +59,17 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.static(__dirname));
+app.use(express.static(join(__dirname, 'public')));
 
 // Simple file serving (SPA-like)
-app.get('/login', (req, res) => res.sendFile(join(__dirname, 'login.html')));
-app.get('/auth', (req, res) => res.sendFile(join(__dirname, 'login.html')));
-app.get('/dashboard', (req, res) => res.sendFile(join(__dirname, 'dashboard.html')));
-app.get('/student-dashboard', (req, res) => res.sendFile(join(__dirname, 'student-dashboard.html')));
-app.get('/promotion-detail', (req, res) => res.sendFile(join(__dirname, 'promotion-detail.html')));
-app.get('/public-promotion', (req, res) => res.sendFile(join(__dirname, 'public-promotion.html')));
-app.get('/admin', (req, res) => res.sendFile(join(__dirname, 'admin.html')));
+app.get('/login', (req, res) => res.sendFile(join(__dirname, 'public', 'login.html')));
+app.get('/auth', (req, res) => res.sendFile(join(__dirname, 'public', 'login.html')));
+app.get('/dashboard', (req, res) => res.sendFile(join(__dirname, 'public', 'dashboard.html')));
+app.get('/student-dashboard', (req, res) => res.sendFile(join(__dirname, 'public', 'student-dashboard.html')));
+app.get('/promotion-detail', (req, res) => res.sendFile(join(__dirname, 'public', 'promotion-detail.html')));
+app.get('/public-promotion', (req, res) => res.sendFile(join(__dirname, 'public', 'public-promotion.html')));
+app.get('/admin', (req, res) => res.sendFile(join(__dirname, 'public', 'admin.html')));
+app.get('/', (req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

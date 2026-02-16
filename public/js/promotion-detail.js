@@ -1298,6 +1298,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ==================== COLLABORATORS ====================
 
+// ==================== COLLABORATORS ====================
+
 async function loadCollaborators() {
     const token = localStorage.getItem('token');
     try {
@@ -1317,9 +1319,9 @@ async function loadCollaborators() {
 async function displayCollaborators(collaborators) {
     const token = localStorage.getItem('token');
     const tbody = document.getElementById('collaborators-list-body');
-    if (!tbody) return;
+    const listGroup = document.getElementById('collaborators-list'); // For the list-group view
 
-    tbody.innerHTML = '';
+    if (!tbody && !listGroup) return;
 
     // Need to get promotion to see who is the owner
     const promoResponse = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
@@ -1331,29 +1333,58 @@ async function displayCollaborators(collaborators) {
         isOwner = promotion.teacherId === currentUser.id;
     }
 
-    if (collaborators.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No collaborators added yet</td></tr>';
-        return;
+    // Update table view if it exists
+    if (tbody) {
+        tbody.innerHTML = '';
+        if (collaborators.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No collaborators added yet</td></tr>';
+        } else {
+            collaborators.forEach(collab => {
+                const tr = document.createElement('tr');
+                const actions = isOwner ? `
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${collab.id}')" title="Remove as collaborator">
+                        <i class="bi bi-person-dash"></i> Remove
+                    </button>` : '<span class="text-muted small">Only owner can manage</span>';
+
+                tr.innerHTML = `
+                    <td>${escapeHtml(collab.name)}</td>
+                    <td>${escapeHtml(collab.email)}</td>
+                    <td>${actions}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
     }
 
-    collaborators.forEach(collab => {
-        const tr = document.createElement('tr');
-        const actions = isOwner ? `
-            <button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${collab.id}')" title="Remove as collaborator">
-                <i class="bi bi-person-dash"></i> Remove
-            </button>` : '<span class="text-muted small">Only owner can manage</span>';
+    // Update list-group view if it exists
+    if (listGroup) {
+        listGroup.innerHTML = '';
+        if (collaborators.length === 0) {
+            listGroup.innerHTML = '<p class="text-muted p-3">No collaborators yet</p>';
+        } else {
+            collaborators.forEach(teacher => {
+                const div = document.createElement('div');
+                div.className = 'list-group-item d-flex justify-content-between align-items-center';
+                const ownerBadge = teacher.isOwner ? '<span class="badge bg-primary ms-2">Owner</span>' : '';
+                const deleteBtn = isOwner && !teacher.isOwner ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${teacher.id}')"><i class="bi bi-trash"></i> Remove</button>` : '';
 
-        tr.innerHTML = `
-            <td>${escapeHtml(collab.name)}</td>
-            <td>${escapeHtml(collab.email)}</td>
-            <td>${actions}</td>
-        `;
-        tbody.appendChild(tr);
-    });
+                div.innerHTML = `
+                    <div>
+                        <h6 class="mb-1">${escapeHtml(teacher.name)} ${ownerBadge}</h6>
+                        <p class="mb-0 text-muted small">${escapeHtml(teacher.email)}</p>
+                    </div>
+                    ${deleteBtn}
+                `;
+                listGroup.appendChild(div);
+            });
+        }
+    }
 }
 
 async function openCollaboratorModal() {
     const select = document.getElementById('collaborator-select');
+    if (!select) return;
+
     select.innerHTML = '<option value="">Loading teachers...</option>';
     collaboratorModal.show();
 
@@ -1404,13 +1435,16 @@ async function openCollaboratorModal() {
         }
     } catch (error) {
         console.error('Error loading teachers:', error);
-        select.innerHTML = '<option value="">Error loading teachers</option>';
+        if (select) select.innerHTML = '<option value="">Error loading teachers</option>';
     }
 }
 
-async function addCollaborator() {
+async function addCollaboratorById() {
     const teacherId = document.getElementById('collaborator-select').value;
-    if (!teacherId) return;
+    if (!teacherId) {
+        alert('Please select a teacher');
+        return;
+    }
 
     const token = localStorage.getItem('token');
     try {
@@ -1426,6 +1460,7 @@ async function addCollaborator() {
         if (response.ok) {
             collaboratorModal.hide();
             loadCollaborators();
+            alert('Collaborator added successfully');
         } else {
             const data = await response.json();
             alert(data.error || 'Failed to add collaborator');
@@ -1437,7 +1472,7 @@ async function addCollaborator() {
 }
 
 async function removeCollaborator(teacherId) {
-    if (!confirm('Are you sure you want to remove this collaborator? They will no longer be able to modify the program.')) return;
+    if (!confirm('Are you sure you want to remove this collaborator?')) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -1448,6 +1483,7 @@ async function removeCollaborator(teacherId) {
 
         if (response.ok) {
             loadCollaborators();
+            alert('Collaborator removed successfully');
         } else {
             const data = await response.json();
             alert(data.error || 'Failed to remove collaborator');
@@ -1525,105 +1561,4 @@ async function deleteStudent(studentId) {
     }
 }
 
-// ==================== COLLABORATORS MANAGEMENT ====================
 
-async function loadCollaborators() {
-    const token = localStorage.getItem('token');
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            const collaborators = await response.json();
-            displayCollaborators(collaborators);
-        }
-    } catch (error) {
-        console.error('Error loading collaborators:', error);
-    }
-}
-
-function displayCollaborators(collaborators) {
-    const list = document.getElementById('collaborators-list');
-    list.innerHTML = '';
-
-    if (collaborators.length === 0) {
-        list.innerHTML = '<p class="text-muted">No collaborators yet</p>';
-        return;
-    }
-
-    collaborators.forEach(teacher => {
-        const div = document.createElement('div');
-        div.className = 'list-group-item d-flex justify-content-between align-items-center';
-        const ownerBadge = teacher.isOwner ? '<span class="badge bg-primary ms-2">Owner</span>' : '';
-        const deleteBtn = !teacher.isOwner ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${teacher.id}')"><i class="bi bi-trash"></i> Remove</button>` : '<button class="btn btn-sm btn-outline-secondary" disabled>Owner</button>';
-
-        div.innerHTML = `
-            <div>
-                <h6 class="mb-1">${escapeHtml(teacher.name)} ${ownerBadge}</h6>
-                <p class="mb-0 text-muted small">${escapeHtml(teacher.email)}</p>
-            </div>
-            ${deleteBtn}
-        `;
-        list.appendChild(div);
-    });
-}
-
-function openAddCollaboratorModal() {
-    document.getElementById('collaborator-form').reset();
-    addCollaboratorModal.show();
-}
-
-async function addCollaborator() {
-    const email = document.getElementById('collaborator-email').value.trim();
-    if (!email) {
-        alert('Please enter an email');
-        return;
-    }
-
-    const token = localStorage.getItem('token');
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ email })
-        });
-
-        if (response.ok) {
-            alert('Teacher added as collaborator successfully!');
-            addCollaboratorModal.hide();
-            loadCollaborators();
-        } else {
-            const error = await response.json();
-            alert(`Error: ${error.error || 'Failed to add collaborator'}`);
-        }
-    } catch (error) {
-        console.error('Error adding collaborator:', error);
-        alert('Error adding collaborator');
-    }
-}
-
-async function removeCollaborator(teacherId) {
-    if (!confirm('Are you sure you want to remove this collaborator?')) return;
-
-    const token = localStorage.getItem('token');
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teachers/${teacherId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            loadCollaborators();
-        } else {
-            const error = await response.json();
-            alert(`Error: ${error.error || 'Failed to remove collaborator'}`);
-        }
-    } catch (error) {
-        console.error('Error removing collaborator:', error);
-        alert('Error removing collaborator');
-    }
-}
