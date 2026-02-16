@@ -7,14 +7,32 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import 'dotenv/config';
+
+// Models
+import Teacher from './models/Teacher.js';
+import Admin from './models/Admin.js';
+import Student from './models/Student.js';
+import Promotion from './models/Promotion.js';
+import QuickLink from './models/QuickLink.js';
+import Section from './models/Section.js';
+import ExtendedInfo from './models/ExtendedInfo.js';
+import Calendar from './models/Calendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = 3000;
-const JWT_SECRET = 'your-secret-key-change-this';
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const DATA_DIR = join(__dirname, 'data');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-manager';
+
+// MongoDB Connection
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Middleware
 app.use(bodyParser.json());
@@ -46,83 +64,78 @@ app.get('/public-promotion', (req, res) => {
   res.sendFile(join(__dirname, 'public-promotion.html'));
 });
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+app.get('/admin', (req, res) => {
+  res.sendFile(join(__dirname, 'admin.html'));
+});
 
-// Helper functions for file operations
-const getDataFilePath = (filename) => join(DATA_DIR, filename);
-
-const readJsonFile = (filename, defaultValue = null) => {
-  try {
-    const filePath = getDataFilePath(filename);
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error(`Error reading ${filename}:`, error);
-  }
-  return defaultValue;
-};
-
-const writeJsonFile = (filename, data) => {
-  try {
-    const filePath = getDataFilePath(filename);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    return true;
-  } catch (error) {
-    console.error(`Error writing ${filename}:`, error);
-    return false;
-  }
-};
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // Initialize test teacher account
 async function initializeTestAccount() {
-  const teachers = readJsonFile('teachers.json', []);
   const testEmail = 'alex@gmail.com';
+  const existingTeacher = await Teacher.findOne({ email: testEmail });
 
-  // Check if test account already exists
-  if (!teachers.find(t => t.email === testEmail)) {
+  if (!existingTeacher) {
     const hashedPassword = await bcrypt.hash('aA12345678910*', 10);
-    const testTeacher = {
+    await Teacher.create({
       id: uuidv4(),
       name: 'Alex (Test Account)',
       email: testEmail,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
-    };
-    teachers.push(testTeacher);
-    writeJsonFile('teachers.json', teachers);
+      password: hashedPassword
+    });
     console.log('Test teacher account created: alex@gmail.com / aA12345678910*');
   }
 }
 
-initializeTestAccount();
-
 // Initialize test student account
 async function initializeTestStudent() {
-  const students = readJsonFile('students.json', []);
   const testEmail = 'student@test.com';
+  const existingStudent = await Student.findOne({ email: testEmail });
 
-  // Check if test account already exists
-  if (!students.find(s => s.email === testEmail)) {
+  if (!existingStudent) {
     const hashedPassword = await bcrypt.hash('student123', 10);
-    const testStudent = {
+    await Student.create({
       id: uuidv4(),
       name: 'Test Student',
       email: testEmail,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
-    };
-    students.push(testStudent);
-    writeJsonFile('students.json', students);
+      password: hashedPassword
+    });
     console.log('Test student account created: student@test.com / student123');
   }
 }
 
-initializeTestStudent();
+// Initialize test admin account
+async function initializeTestAdmin() {
+  const testEmail = 'admin@test.com';
+  const existingAdmin = await Admin.findOne({ email: testEmail });
+
+  if (!existingAdmin) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    await Admin.create({
+      id: uuidv4(),
+      name: 'System Admin',
+      email: testEmail,
+      password: hashedPassword
+    });
+    console.log('Test admin account created: admin@test.com / admin123');
+  }
+}
+
+// Ensure database is initialized before starting
+const initDb = async () => {
+  try {
+    await initializeTestAccount();
+    await initializeTestStudent();
+    await initializeTestAdmin();
+  } catch (err) {
+    console.error('Error initializing database:', err);
+  }
+};
+
+initDb();
 
 // Helper functions for file operations
 // Helpers moved to top
@@ -140,6 +153,13 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+// Helper function to check if a teacher can edit a promotion
+const canEditPromotion = (promotion, teacherId) => {
+  if (promotion.teacherId === teacherId) return true;
+  if (promotion.collaborators && promotion.collaborators.includes(teacherId)) return true;
+  return false;
+};
+
 // ==================== AUTHENTICATION ====================
 
 // Register a new teacher
@@ -150,31 +170,31 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
 
-    const teachers = readJsonFile('teachers.json', []);
-    if (teachers.some(t => t.email === email)) {
+    const existingTeacher = await Teacher.findOne({ email });
+    if (existingTeacher) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const teacher = {
+    const teacher = await Teacher.create({
       id: uuidv4(),
       name,
       email,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
-    };
+      password: hashedPassword
+    });
 
-    teachers.push(teacher);
-    writeJsonFile('teachers.json', teachers);
-
-    const token = jwt.sign({ id: teacher.id, email: teacher.email }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ message: 'Teacher registered successfully', token, teacher: { id: teacher.id, name: teacher.name, email: teacher.email } });
+    const token = jwt.sign({ id: teacher.id, email: teacher.email, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({
+      message: 'Teacher registered successfully',
+      token,
+      user: { id: teacher.id, name: teacher.name, email: teacher.email, role: 'teacher' }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Login endpoint (supports both teachers and students)
+// Login endpoint (supports teachers, students, and admins)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password, role } = req.body;
@@ -183,36 +203,43 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     let user = null;
-    let userType = role || 'teacher';
+    let userRole = role;
 
-    // Try to login as teacher
-    if (userType === 'teacher' || !role) {
-      const teachers = readJsonFile('teachers.json', []);
-      user = teachers.find(t => t.email === email);
-
+    // Try to login based on role or search across roles
+    if (userRole === 'teacher' || !role) {
+      user = await Teacher.findOne({ email });
       if (user && (await bcrypt.compare(password, user.password))) {
-        const token = jwt.sign({ id: user.id, email: user.email, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
-        return res.json({
-          message: 'Login successful',
-          token,
-          user: { id: user.id, name: user.name, email: user.email, role: 'teacher' }
-        });
+        userRole = 'teacher';
+      } else {
+        user = null;
       }
     }
 
-    // Try to login as student
-    if (userType === 'student' || !role) {
-      const students = readJsonFile('students.json', []);
-      user = students.find(s => s.email === email);
-
+    if (!user && (userRole === 'student' || !role)) {
+      user = await Student.findOne({ email });
       if (user && (await bcrypt.compare(password, user.password))) {
-        const token = jwt.sign({ id: user.id, email: user.email, role: 'student' }, JWT_SECRET, { expiresIn: '7d' });
-        return res.json({
-          message: 'Login successful',
-          token,
-          user: { id: user.id, name: user.name, email: user.email, role: 'student' }
-        });
+        userRole = 'student';
+      } else {
+        user = null;
       }
+    }
+
+    if (!user && (userRole === 'admin' || !role)) {
+      user = await Admin.findOne({ email });
+      if (user && (await bcrypt.compare(password, user.password))) {
+        userRole = 'admin';
+      } else {
+        user = null;
+      }
+    }
+
+    if (user) {
+      const token = jwt.sign({ id: user.id, email: user.email, role: userRole }, JWT_SECRET, { expiresIn: '7d' });
+      return res.json({
+        message: 'Login successful',
+        token,
+        user: { id: user.id, name: user.name, email: user.email, role: userRole }
+      });
     }
 
     return res.status(401).json({ error: 'Invalid email or password' });
@@ -224,15 +251,13 @@ app.post('/api/auth/login', async (req, res) => {
 // ==================== STUDENT MANAGEMENT ====================
 
 // Get all students for a teacher's promotions
-app.get('/api/promotions/:promotionId/students', verifyToken, (req, res) => {
+app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const students = readJsonFile(`students-${req.params.promotionId}.json`, []);
+    const students = await Student.find({ promotionId: req.params.promotionId });
     res.json(students);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -240,42 +265,27 @@ app.get('/api/promotions/:promotionId/students', verifyToken, (req, res) => {
 });
 
 // Add a student to a promotion
-app.post('/api/promotions/:promotionId/students', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) => {
   try {
-    const { email, name } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
-
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { email, name } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
 
     // Generate temporary password
     const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
-    const hashedPassword = bcrypt.hashSync(tempPassword, 10);
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
-    const student = {
+    const student = await Student.create({
       id: uuidv4(),
       email,
       name: name || email.split('@')[0],
       password: hashedPassword,
       promotionId: req.params.promotionId,
-      tempPassword: true,
-      createdAt: new Date().toISOString()
-    };
-
-    // Add to global students list
-    const allStudents = readJsonFile('students.json', []);
-    allStudents.push(student);
-    writeJsonFile('students.json', allStudents);
-
-    // Add to promotion-specific list
-    const promotionStudents = readJsonFile(`students-${req.params.promotionId}.json`, []);
-    promotionStudents.push(student);
-    writeJsonFile(`students-${req.params.promotionId}.json`, promotionStudents);
+      tempPassword: true
+    });
 
     res.status(201).json({
       message: 'Student added successfully',
@@ -288,21 +298,14 @@ app.post('/api/promotions/:promotionId/students', verifyToken, (req, res) => {
 });
 
 // Delete a student
-app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, (req, res) => {
+app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const students = readJsonFile(`students-${req.params.promotionId}.json`, []);
-    const studentIndex = students.findIndex(s => s.id === req.params.studentId);
-
-    if (studentIndex === -1) return res.status(404).json({ error: 'Student not found' });
-
-    students.splice(studentIndex, 1);
-    writeJsonFile(`students-${req.params.promotionId}.json`, students);
+    const result = await Student.deleteOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Student not found' });
 
     res.json({ message: 'Student deleted' });
   } catch (error) {
@@ -312,54 +315,44 @@ app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, (req
 
 // ==================== PROMOTIONS ====================
 
-// Get all promotions (public, no auth required)
-app.get('/api/promotions', (req, res) => {
+// Get all promotions (public)
+app.get('/api/promotions', async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
+    const promotions = await Promotion.find({});
     res.json(promotions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get student's enrolled promotions (authenticated)
-app.get('/api/my-enrollments', verifyToken, (req, res) => {
+// Get student's enrolled promotions
+app.get('/api/my-enrollments', verifyToken, async (req, res) => {
   try {
-    const userId = req.user.id;
-    const promotions = readJsonFile('promotions.json', []);
-    const enrolledPromotions = [];
-
-    // Find promotions where student is enrolled
-    for (const promotion of promotions) {
-      const students = readJsonFile(`students-${promotion.id}.json`, []);
-      // Match by ID primarily, fallback to email if ID not present (legacy support)
-      if (students.some(s => s.id === userId || s.email === req.user.email)) {
-        enrolledPromotions.push(promotion);
-      }
-    }
-
+    const enrollments = await Student.find({ $or: [{ id: req.user.id }, { email: req.user.email }] });
+    const promotionIds = enrollments.map(e => e.promotionId).filter(id => id);
+    const enrolledPromotions = await Promotion.find({ id: { $in: promotionIds } });
     res.json(enrolledPromotions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get teacher's own promotions (authenticated)
-app.get('/api/my-promotions', verifyToken, (req, res) => {
+// Get teacher's own promotions
+app.get('/api/my-promotions', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const teacherPromotions = promotions.filter(p => p.teacherId === req.user.id);
+    const teacherPromotions = await Promotion.find({
+      $or: [{ teacherId: req.user.id }, { collaborators: req.user.id }]
+    });
     res.json(teacherPromotions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get a single promotion (public, no auth required)
-app.get('/api/promotions/:id', (req, res) => {
+// Get a single promotion
+app.get('/api/promotions/:id', async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.id);
+    const promotion = await Promotion.findOne({ id: req.params.id });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     res.json(promotion);
   } catch (error) {
@@ -368,14 +361,12 @@ app.get('/api/promotions/:id', (req, res) => {
 });
 
 // Create a new promotion
-app.post('/api/promotions', verifyToken, (req, res) => {
+app.post('/api/promotions', verifyToken, async (req, res) => {
   try {
     const { name, description, startDate, endDate, weeks, modules } = req.body;
-    if (!name || !weeks) {
-      return res.status(400).json({ error: 'Name and weeks are required' });
-    }
+    if (!name || !weeks) return res.status(400).json({ error: 'Name and weeks are required' });
 
-    const promotion = {
+    const promotion = await Promotion.create({
       id: uuidv4(),
       name,
       description,
@@ -383,15 +374,8 @@ app.post('/api/promotions', verifyToken, (req, res) => {
       endDate,
       weeks,
       modules: modules || [],
-      teacherId: req.user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const promotions = readJsonFile('promotions.json', []);
-    promotions.push(promotion);
-    writeJsonFile('promotions.json', promotions);
-
+      teacherId: req.user.id
+    });
     res.status(201).json(promotion);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -399,34 +383,34 @@ app.post('/api/promotions', verifyToken, (req, res) => {
 });
 
 // Update a promotion
-app.put('/api/promotions/:id', verifyToken, (req, res) => {
+app.put('/api/promotions/:id', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotionIndex = promotions.findIndex(p => p.id === req.params.id);
-
-    if (promotionIndex === -1) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotions[promotionIndex].teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-
-    promotions[promotionIndex] = { ...promotions[promotionIndex], ...req.body, updatedAt: new Date().toISOString() };
-    writeJsonFile('promotions.json', promotions);
-
-    res.json(promotions[promotionIndex]);
+    const promotion = await Promotion.findOneAndUpdate(
+      { id: req.params.id },
+      { ...req.body },
+      { new: true }
+    );
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    res.json(promotion);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Delete a promotion
-app.delete('/api/promotions/:id', verifyToken, (req, res) => {
+app.delete('/api/promotions/:id', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotionIndex = promotions.findIndex(p => p.id === req.params.id);
+    const promotion = await Promotion.findOne({ id: req.params.id });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    if (promotionIndex === -1) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotions[promotionIndex].teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-
-    promotions.splice(promotionIndex, 1);
-    writeJsonFile('promotions.json', promotions);
+    await Promotion.deleteOne({ id: req.params.id });
+    await Student.deleteMany({ promotionId: req.params.id });
+    await QuickLink.deleteMany({ promotionId: req.params.id });
+    await Section.deleteMany({ promotionId: req.params.id });
+    await ExtendedInfo.deleteOne({ promotionId: req.params.id });
+    await Calendar.deleteOne({ promotionId: req.params.id });
 
     res.json({ message: 'Promotion deleted' });
   } catch (error) {
@@ -436,32 +420,38 @@ app.delete('/api/promotions/:id', verifyToken, (req, res) => {
 
 // ==================== MODULES ====================
 
-// Add a module to a promotion
-app.post('/api/promotions/:promotionId/modules', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/modules', verifyToken, async (req, res) => {
   try {
     const { name, duration, courses, projects } = req.body;
-    if (!name || !duration) {
-      return res.status(400).json({ error: 'Name and duration are required' });
-    }
+    if (!name || !duration) return res.status(400).json({ error: 'Name and duration are required' });
 
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = {
-      id: uuidv4(),
-      name,
-      duration,
-      courses: courses || [],
-      projects: projects || [],
-      createdAt: new Date().toISOString()
-    };
-
+    const module = { id: uuidv4(), name, duration, courses: courses || [], projects: projects || [] };
     promotion.modules.push(module);
-    writeJsonFile('promotions.json', promotions);
+    await promotion.save();
+    res.status(201).json(module);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
+// ==================== MODULES ====================
+
+app.post('/api/promotions/:promotionId/modules', verifyToken, async (req, res) => {
+  try {
+    const { name, duration, courses, projects } = req.body;
+    if (!name || !duration) return res.status(400).json({ error: 'Name and duration are required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = { id: uuidv4(), name, duration, courses: courses || [], projects: projects || [] };
+    promotion.modules.push(module);
+    await promotion.save();
     res.status(201).json(module);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -470,64 +460,39 @@ app.post('/api/promotions/:promotionId/modules', verifyToken, (req, res) => {
 
 // ==================== QUICK LINKS ====================
 
-// Get quick links for a promotion (public, no auth required)
-app.get('/api/promotions/:promotionId/quick-links', (req, res) => {
+app.get('/api/promotions/:promotionId/quick-links', async (req, res) => {
   try {
-    const quickLinks = readJsonFile(`quick-links-${req.params.promotionId}.json`, []);
+    const quickLinks = await QuickLink.find({ promotionId: req.params.promotionId });
     res.json(quickLinks);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Add quick link
-app.post('/api/promotions/:promotionId/quick-links', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/quick-links', verifyToken, async (req, res) => {
   try {
     const { name, url } = req.body;
-    if (!name || !url) {
-      return res.status(400).json({ error: 'Name and URL are required' });
-    }
+    if (!name || !url) return res.status(400).json({ error: 'Name and URL are required' });
 
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const quickLink = {
-      id: uuidv4(),
-      name,
-      url,
-      createdAt: new Date().toISOString()
-    };
-
-    const quickLinks = readJsonFile(`quick-links-${req.params.promotionId}.json`, []);
-    quickLinks.push(quickLink);
-    writeJsonFile(`quick-links-${req.params.promotionId}.json`, quickLinks);
-
+    const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url });
     res.status(201).json(quickLink);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete quick link
-app.delete('/api/promotions/:promotionId/quick-links/:linkId', verifyToken, (req, res) => {
+app.delete('/api/promotions/:promotionId/quick-links/:linkId', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const quickLinks = readJsonFile(`quick-links-${req.params.promotionId}.json`, []);
-    const linkIndex = quickLinks.findIndex(l => l.id === req.params.linkId);
-
-    if (linkIndex === -1) return res.status(404).json({ error: 'Quick link not found' });
-
-    quickLinks.splice(linkIndex, 1);
-    writeJsonFile(`quick-links-${req.params.promotionId}.json`, quickLinks);
-
+    const result = await QuickLink.deleteOne({ id: req.params.linkId, promotionId: req.params.promotionId });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Quick link not found' });
     res.json({ message: 'Quick link deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -536,88 +501,57 @@ app.delete('/api/promotions/:promotionId/quick-links/:linkId', verifyToken, (req
 
 // ==================== SECTIONS ====================
 
-// Get sections for a promotion (public, no auth required)
-app.get('/api/promotions/:promotionId/sections', (req, res) => {
+app.get('/api/promotions/:promotionId/sections', async (req, res) => {
   try {
-    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
+    const sections = await Section.find({ promotionId: req.params.promotionId });
     res.json(sections);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Add section
-app.post('/api/promotions/:promotionId/sections', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/sections', verifyToken, async (req, res) => {
   try {
     const { title, content } = req.body;
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
-    }
+    if (!title) return res.status(400).json({ error: 'Title is required' });
 
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const section = {
-      id: uuidv4(),
-      title,
-      content,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
-    sections.push(section);
-    writeJsonFile(`sections-${req.params.promotionId}.json`, sections);
-
+    const section = await Section.create({ id: uuidv4(), promotionId: req.params.promotionId, title, content });
     res.status(201).json(section);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update section
-app.put('/api/promotions/:promotionId/sections/:sectionId', verifyToken, (req, res) => {
+app.put('/api/promotions/:promotionId/sections/:sectionId', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
-    const sectionIndex = sections.findIndex(s => s.id === req.params.sectionId);
-
-    if (sectionIndex === -1) return res.status(404).json({ error: 'Section not found' });
-
-    sections[sectionIndex] = { ...sections[sectionIndex], ...req.body, updatedAt: new Date().toISOString() };
-    writeJsonFile(`sections-${req.params.promotionId}.json`, sections);
-
-    res.json(sections[sectionIndex]);
+    const section = await Section.findOneAndUpdate(
+      { id: req.params.sectionId, promotionId: req.params.promotionId },
+      { ...req.body },
+      { new: true }
+    );
+    if (!section) return res.status(404).json({ error: 'Section not found' });
+    res.json(section);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete section
-app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, (req, res) => {
+app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
-    const sectionIndex = sections.findIndex(s => s.id === req.params.sectionId);
-
-    if (sectionIndex === -1) return res.status(404).json({ error: 'Section not found' });
-
-    sections.splice(sectionIndex, 1);
-    writeJsonFile(`sections-${req.params.promotionId}.json`, sections);
-
+    const result = await Section.deleteOne({ id: req.params.sectionId, promotionId: req.params.promotionId });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Section not found' });
     res.json({ message: 'Section deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -626,10 +560,9 @@ app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, (req
 
 // ==================== CALENDAR ====================
 
-// Get calendar for a promotion (public, no auth required)
-app.get('/api/promotions/:promotionId/calendar', (req, res) => {
+app.get('/api/promotions/:promotionId/calendar', async (req, res) => {
   try {
-    const calendar = readJsonFile(`calendar-${req.params.promotionId}.json`, null);
+    const calendar = await Calendar.findOne({ promotionId: req.params.promotionId });
     if (!calendar) return res.status(404).json({ error: 'Calendar not found' });
     res.json(calendar);
   } catch (error) {
@@ -637,77 +570,169 @@ app.get('/api/promotions/:promotionId/calendar', (req, res) => {
   }
 });
 
-// Set calendar for a promotion
-app.post('/api/promotions/:promotionId/calendar', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/calendar', verifyToken, async (req, res) => {
   try {
     const { googleCalendarId } = req.body;
-    if (!googleCalendarId) {
-      return res.status(400).json({ error: 'Google Calendar ID is required' });
-    }
+    if (!googleCalendarId) return res.status(400).json({ error: 'Google Calendar ID is required' });
 
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const calendar = {
-      promotionId: req.params.promotionId,
-      googleCalendarId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    writeJsonFile(`calendar-${req.params.promotionId}.json`, calendar);
+    const calendar = await Calendar.findOneAndUpdate(
+      { promotionId: req.params.promotionId },
+      { googleCalendarId },
+      { upsert: true, new: true }
+    );
     res.json(calendar);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+// ==================== EXTENDED INFO ====================
 
-// ==================== EXTENDED INFO (Schedule, Team, etc.) ====================
-
-// Get extended info (public)
-app.get('/api/promotions/:promotionId/extended-info', (req, res) => {
+app.get('/api/promotions/:promotionId/extended-info', async (req, res) => {
   try {
-    const extendedInfo = readJsonFile(`extended-info-${req.params.promotionId}.json`, {
-      schedule: {},
-      team: [],
-      resources: [],
-      evaluation: ''
-    });
+    const extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    if (!extendedInfo) {
+      return res.json({ schedule: {}, team: [], resources: [], evaluation: '' });
+    }
     res.json(extendedInfo);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update extended info (teacher only)
-app.post('/api/promotions/:promotionId/extended-info', verifyToken, (req, res) => {
+app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, res) => {
   try {
-    const promotions = readJsonFile('promotions.json', []);
-    const promotion = promotions.find(p => p.id === req.params.promotionId);
-
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
     const { schedule, team, resources, evaluation } = req.body;
-
-    // Validate slightly. Schedule and others can be objects/arrays.
-    const newInfo = {
-      schedule: schedule || {},
-      team: team || [],
-      resources: resources || [],
-      evaluation: evaluation || ''
-    };
-
-    writeJsonFile(`extended-info-${req.params.promotionId}.json`, newInfo);
+    const newInfo = await ExtendedInfo.findOneAndUpdate(
+      { promotionId: req.params.promotionId },
+      { schedule: schedule || {}, team: team || [], resources: resources || [], evaluation: evaluation || '' },
+      { upsert: true, new: true }
+    );
     res.json(newInfo);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== TEACHERS & COLLABORATORS ====================
+
+app.get('/api/teachers', verifyToken, async (req, res) => {
+  try {
+    const teachers = await Teacher.find({}, 'id name email');
+    res.json(teachers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/promotions/:promotionId/collaborators', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    const collaboratorIds = promotion.collaborators || [];
+    const collaborators = await Teacher.find({ id: { $in: collaboratorIds } }, 'id name email');
+    res.json(collaborators);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/promotions/:promotionId/collaborators', verifyToken, async (req, res) => {
+  try {
+    const { teacherId } = req.body;
+    if (!teacherId) return res.status(400).json({ error: 'Teacher ID is required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+
+    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can add collaborators' });
+    if (teacherId === promotion.teacherId) return res.status(400).json({ error: 'Cannot add owner as collaborator' });
+
+    if (!promotion.collaborators) promotion.collaborators = [];
+    if (promotion.collaborators.includes(teacherId)) return res.status(400).json({ error: 'Teacher already a collaborator' });
+
+    promotion.collaborators.push(teacherId);
+    await promotion.save();
+
+    const teacher = await Teacher.findOne({ id: teacherId }, 'id name email');
+    res.status(201).json({ message: 'Collaborator added', collaborator: teacher });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+
+    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can remove collaborators' });
+
+    promotion.collaborators = (promotion.collaborators || []).filter(id => id !== req.params.teacherId);
+    await promotion.save();
+    res.json({ message: 'Collaborator removed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== ADMIN ====================
+
+const verifyAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') next();
+  else res.status(403).json({ error: 'Admin role required' });
+};
+
+app.get('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const teachers = await Teacher.find({}, '-password');
+    res.json(teachers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !name) return res.status(400).json({ error: 'Email and name are required' });
+
+    const existing = await Teacher.findOne({ email });
+    if (existing) return res.status(400).json({ error: 'Email already registered' });
+
+    const provisionalPassword = Math.random().toString(36).slice(-10) + 'A1!';
+    const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
+
+    const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword, provisional: true });
+    res.status(201).json({ message: 'Teacher created', teacher: { id: teacher.id, name: teacher.name, email: teacher.email }, provisionalPassword });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const teacher = await Teacher.findOneAndUpdate({ id: req.params.id }, { ...req.body }, { new: true });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    res.json(teacher);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const result = await Teacher.deleteOne({ id: req.params.id });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Teacher not found' });
+    res.json({ message: 'Teacher deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

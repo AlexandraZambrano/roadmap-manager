@@ -90,7 +90,9 @@ window.handleLogin = async function () {
             showAlert('Login successful! Redirecting...', 'success');
 
             setTimeout(() => {
-                if (selectedRole === 'teacher') {
+                if (selectedRole === 'admin') {
+                    window.location.href = '/admin';
+                } else if (selectedRole === 'teacher') {
                     window.location.href = '/dashboard';
                 } else {
                     window.location.href = '/student-dashboard';

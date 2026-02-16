@@ -1,48 +1,5 @@
 [
   {
-    "id": "13e9dd0e-2db8-48f3-8879-991ef5dbb4e2",
-    "name": "Promoción IA P6",
-    "description": "",
-    "startDate": "2025-11-24",
-    "endDate": "2026-08-07",
-    "weeks": 39,
-    "modules": [
-      {
-        "id": "4389373e-7d1a-4f70-9d68-6eae78d1a4a9",
-        "name": "Módulo I",
-        "duration": 8,
-        "courses": [
-          "Curso de Python"
-        ],
-        "projects": [
-          "App con Python",
-          "Un CRUD",
-          "Web Scraping"
-        ],
-        "createdAt": "2026-02-13T22:29:28.983Z"
-      },
-      {
-        "id": "43e6bfb8-d901-47bc-a081-17e3b788ed03",
-        "name": "Módulo 2",
-        "duration": 8,
-        "courses": [
-          "Curso de Machine Learning enfocado en Data Science"
-        ],
-        "projects": [
-          "Datathon",
-          "Problema de Regresión",
-          "Problema de clasificación",
-          "Problema de clasificación multiclase con Modelos Ensemble",
-          "Aprendizaje no supervizado"
-        ],
-        "createdAt": "2026-02-13T22:31:58.979Z"
-      }
-    ],
-    "teacherId": "ff7a55a7-1148-4d1f-ad76-d947f09ec71e",
-    "createdAt": "2026-02-13T22:27:47.898Z",
-    "updatedAt": "2026-02-13T22:27:47.898Z"
-  },
-  {
     "id": "fe164c28-d8d2-46b0-bbcc-b56450c25047",
     "name": "IA P6",
     "description": "",
@@ -64,31 +21,88 @@
           {
             "name": "App con Python",
             "url": ""
+          },
+          {
+            "name": "Un CRUD",
+            "url": ""
+          },
+          {
+            "name": "Web Scraping",
+            "url": ""
           }
         ],
         "createdAt": "2026-02-13T23:47:28.220Z"
       },
       {
         "id": "0a029312-106b-43d8-9050-53b08627ac7b",
-        "name": "Módulo I",
+        "name": "Módulo II",
         "duration": 8,
         "courses": [
           {
-            "name": "Python essentials",
-            "url": "https://www.netacad.com/courses/python-essentials-1?courseLang=en-US"
+            "name": "Curso de Machine Learning enfocado en Data Science",
+            "url": "https://ti.to/saturdaysai/data-science-fundamentals/"
           }
         ],
         "projects": [
           {
-            "name": "App con Python",
+            "name": "Datathon",
+            "url": ""
+          },
+          {
+            "name": "Problema de regresión",
+            "url": ""
+          },
+          {
+            "name": "Problema de clasificación",
+            "url": ""
+          },
+          {
+            "name": "Problema de clasificación multiclase con Modelos Ensemble",
+            "url": ""
+          },
+          {
+            "name": "Aprendizaje no supervizado",
             "url": ""
           }
         ],
         "createdAt": "2026-02-14T09:10:18.914Z"
+      },
+      {
+        "id": "12ebd85c-0939-4e95-a627-ca5801e04068",
+        "name": "Módulo III",
+        "duration": 13,
+        "courses": [
+          {
+            "name": "Certificaciones de Azure",
+            "url": "https://learn.microsoft.com/es-es/credentials/certifications/azure-ai-engineer/?practice-assessment-type=certification"
+          }
+        ],
+        "projects": [
+          {
+            "name": "Tracks: Data Engineer (Spark, Redis, Kafka, etc.), Data Analyst (Power BI, Tableau, Dash, etc.), AI Developer (Keras, MLops, etc.)",
+            "url": ""
+          },
+          {
+            "name": "NLP (Youtube comments)",
+            "url": ""
+          },
+          {
+            "name": "LLM (Rag + agentes)",
+            "url": ""
+          },
+          {
+            "name": "Computer vision",
+            "url": ""
+          }
+        ],
+        "createdAt": "2026-02-14T11:01:11.176Z"
       }
     ],
     "teacherId": "34b118e5-cfa6-4df8-8831-5721d7545f08",
     "createdAt": "2026-02-13T23:46:30.243Z",
-    "updatedAt": "2026-02-14T09:49:27.404Z"
+    "updatedAt": "2026-02-15T22:12:56.265Z",
+    "collaborators": [
+      "74211c7d-2589-42bd-96d2-68ee02b42413"
+    ]
   }
 ]

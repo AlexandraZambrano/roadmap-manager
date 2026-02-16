@@ -5,5 +5,13 @@
     "email": "alex@gmail.com",
     "password": "$2a$10$/B8tLYslBnkMNy4uzz3iGedjQXyQgCNRVgqG5xMUeXIPRjoY8cLcy",
     "createdAt": "2026-02-13T23:45:38.304Z"
+  },
+  {
+    "id": "74211c7d-2589-42bd-96d2-68ee02b42413",
+    "name": "Alexandra Zambrano",
+    "email": "alexandra.zambrano@factoriaf5.org",
+    "password": "$2a$10$2ZFUXNiBKQha2rbVvt/9I.JZo7GYsEXp06LTiEZtb/QAjFjfiH5sC",
+    "provisional": true,
+    "createdAt": "2026-02-15T22:11:59.514Z"
   }
 ]

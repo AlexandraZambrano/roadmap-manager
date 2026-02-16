@@ -63,6 +63,11 @@
                             </a>
                         </li>
                         <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
+                                <i class="bi bi-person-plus me-2"></i>Collaborators
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
                             <a class="nav-link" href="#info" onclick="switchTab('info')">
                                 <i class="bi bi-info-circle me-2"></i>Program Info
                             </a>
@@ -360,6 +365,35 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Collaborators Tab -->
+                <div id="collaborators-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Program Collaborators</h2>
+                        <button class="btn btn-primary" onclick="openCollaboratorModal()" id="add-collaborator-btn">
+                            <i class="bi bi-person-plus me-2"></i>Add Collaborator
+                        </button>
+                    </div>
+
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="collaborators-list-body">
+                                        <!-- Dynamic Content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </main>
         </div>
     </div>
@@ -406,7 +440,8 @@
                         <div class="mb-4">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <h6 class="mb-0"><i class="bi bi-laptop me-2"></i>Projects</h6>
-                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addProjectField()">
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                    onclick="addProjectField()">
                                     <i class="bi bi-plus"></i> Add Project
                                 </button>
                             </div>
@@ -616,6 +651,31 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="addResource()">Add Resource</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collaborator Modal -->
+    <div class="modal fade" id="collaboratorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Collaborator</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="collaborator-select" class="form-label">Select Teacher</label>
+                        <select class="form-select" id="collaborator-select">
+                            <option value="">Loading teachers...</option>
+                        </select>
+                        <div class="form-text">Newly registered teachers must log in at least once to appear here.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addCollaborator()">Add Collaborator</button>
                 </div>
             </div>
         </div>

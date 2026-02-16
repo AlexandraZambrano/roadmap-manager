@@ -1,7 +1,8 @@
 const API_URL = window.location.origin;
 let promotionId = null;
-let moduleModal, quickLinkModal, sectionModal, studentModal, studentSuccessModal, teamModal, resourceModal;
+let moduleModal, quickLinkModal, sectionModal, studentModal, studentSuccessModal, teamModal, resourceModal, collaboratorModal;
 const userRole = localStorage.getItem('role') || 'student';
+const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 let extendedInfoData = {
     schedule: {},
     team: [],
@@ -61,9 +62,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const resourceModalEl = document.getElementById('resourceModal');
     if (resourceModalEl) resourceModal = new bootstrap.Modal(resourceModalEl);
 
+    const collaboratorModalEl = document.getElementById('collaboratorModal');
+    if (collaboratorModalEl) collaboratorModal = new bootstrap.Modal(collaboratorModalEl);
+
     if (userRole === 'teacher') {
         loadStudents();
         loadExtendedInfo();
+        loadCollaborators();
     } else {
         // Remove preview button for students
         const previewBtn = document.querySelector('button[onclick="previewPromotion()"]');
@@ -298,6 +303,15 @@ async function loadPromotion() {
             document.getElementById('promotion-start').textContent = promotion.startDate || '-';
             document.getElementById('promotion-end').textContent = promotion.endDate || '-';
             document.getElementById('modules-count').textContent = (promotion.modules || []).length;
+
+            // Check if current user is owner (to enable/disable collaborator management)
+            if (userRole === 'teacher') {
+                const isOwner = promotion.teacherId === currentUser.id;
+                const addCollabBtn = document.getElementById('add-collaborator-btn');
+                if (addCollabBtn) {
+                    addCollabBtn.style.display = isOwner ? 'block' : 'none';
+                }
+            }
         }
     } catch (error) {
         console.error('Error loading promotion:', error);
@@ -1275,6 +1289,168 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 100);
 });
+
+// ==================== COLLABORATORS ====================
+
+async function loadCollaborators() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/collaborators`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const collaborators = await response.json();
+            displayCollaborators(collaborators);
+        }
+    } catch (error) {
+        console.error('Error loading collaborators:', error);
+    }
+}
+
+async function displayCollaborators(collaborators) {
+    const token = localStorage.getItem('token');
+    const tbody = document.getElementById('collaborators-list-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    // Need to get promotion to see who is the owner
+    const promoResponse = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    let isOwner = false;
+    if (promoResponse.ok) {
+        const promotion = await promoResponse.json();
+        isOwner = promotion.teacherId === currentUser.id;
+    }
+
+    if (collaborators.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No collaborators added yet</td></tr>';
+        return;
+    }
+
+    collaborators.forEach(collab => {
+        const tr = document.createElement('tr');
+        const actions = isOwner ? `
+            <button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${collab.id}')" title="Remove as collaborator">
+                <i class="bi bi-person-dash"></i> Remove
+            </button>` : '<span class="text-muted small">Only owner can manage</span>';
+
+        tr.innerHTML = `
+            <td>${escapeHtml(collab.name)}</td>
+            <td>${escapeHtml(collab.email)}</td>
+            <td>${actions}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function openCollaboratorModal() {
+    const select = document.getElementById('collaborator-select');
+    select.innerHTML = '<option value="">Loading teachers...</option>';
+    collaboratorModal.show();
+
+    const token = localStorage.getItem('token');
+    try {
+        // Get all teachers
+        const response = await fetch(`${API_URL}/api/teachers`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        // Get current collaborators to exclude them
+        const collabResponse = await fetch(`${API_URL}/api/promotions/${promotionId}/collaborators`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok && collabResponse.ok) {
+            const allTeachers = await response.json();
+            const currentCollaborators = await collabResponse.json();
+            const collaboratorIds = currentCollaborators.map(c => c.id);
+
+            // Get promotion owner to exclude
+            const promoResponse = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            let ownerId = null;
+            if (promoResponse.ok) {
+                const promo = await promoResponse.json();
+                ownerId = promo.teacherId;
+            }
+
+            const availableTeachers = allTeachers.filter(t =>
+                t.id !== currentUser.id &&
+                t.id !== ownerId &&
+                !collaboratorIds.includes(t.id)
+            );
+
+            if (availableTeachers.length === 0) {
+                select.innerHTML = '<option value="">No other teachers available</option>';
+            } else {
+                select.innerHTML = '<option value="">Select a teacher...</option>';
+                availableTeachers.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = `${t.name} (${t.email})`;
+                    select.appendChild(opt);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading teachers:', error);
+        select.innerHTML = '<option value="">Error loading teachers</option>';
+    }
+}
+
+async function addCollaborator() {
+    const teacherId = document.getElementById('collaborator-select').value;
+    if (!teacherId) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/collaborators`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ teacherId })
+        });
+
+        if (response.ok) {
+            collaboratorModal.hide();
+            loadCollaborators();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to add collaborator');
+        }
+    } catch (error) {
+        console.error('Error adding collaborator:', error);
+        alert('Connection error');
+    }
+}
+
+async function removeCollaborator(teacherId) {
+    if (!confirm('Are you sure you want to remove this collaborator? They will no longer be able to modify the program.')) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/collaborators/${teacherId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            loadCollaborators();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to remove collaborator');
+        }
+    } catch (error) {
+        console.error('Error removing collaborator:', error);
+        alert('Connection error');
+    }
+}
 
 function escapeHtml(text) {
     const div = document.createElement('div');
