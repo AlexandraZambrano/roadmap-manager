@@ -30,8 +30,9 @@ function loadTeacherInfo() {
 
 async function loadPromotions() {
     const token = localStorage.getItem('token');
+    const userId = JSON.parse(localStorage.getItem('user')).id;
     try {
-        const response = await fetch(`${API_URL}/api/my-promotions`, {
+        const response = await fetch(`${API_URL}/api/my-promotions-all`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -44,14 +45,14 @@ async function loadPromotions() {
         }
 
         const promotions = await response.json();
-        displayPromotions(promotions);
+        displayPromotions(promotions, userId);
         updateDashboardStats(promotions);
     } catch (error) {
         console.error('Error loading promotions:', error);
     }
 }
 
-function displayPromotions(promotions) {
+function displayPromotions(promotions, userId) {
     const list = document.getElementById('promotions-list');
     list.innerHTML = '';
 
@@ -63,17 +64,24 @@ function displayPromotions(promotions) {
     promotions.forEach(promotion => {
         const card = document.createElement('div');
         card.className = 'col-md-6 col-lg-4';
+        const isOwner = promotion.teacherId === userId;
+        const deleteBtn = isOwner
+            ? `<button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePromotion('${promotion.id}', event)" title="Delete promotion"><i class="bi bi-trash"></i></button>`
+            : '';
+        const ownerBadge = !isOwner ? '<span class="badge bg-info">Collaborator</span>' : '';
+
         card.innerHTML = `
             <div class="card promotion-card" onclick="window.location.href = '/promotion-detail?id=${promotion.id}'">
                 <div class="card-body">
-                    <h5 class="promotion-card-title">${escapeHtml(promotion.name)}</h5>
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="promotion-card-title">${escapeHtml(promotion.name)}</h5>
+                        ${ownerBadge}
+                    </div>
                     <p class="promotion-card-meta">${promotion.description || 'No description'}</p>
                     <div class="d-flex justify-content-between align-items-center mt-3">
                         <span class="badge-weeks">${promotion.weeks} weeks</span>
                         <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePromotion('${promotion.id}', event)">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            ${deleteBtn}
                         </div>
                     </div>
                 </div>

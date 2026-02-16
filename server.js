@@ -90,6 +90,34 @@ async function initializeTestAccount() {
   }
 }
 
+<<<<<<< HEAD
+=======
+initializeTestAccount();
+
+// Initialize test teacher account for Celia
+async function initializeTestTeacherCelia() {
+  const teachers = readJsonFile('teachers.json', []);
+  const celiaEmail = 'celia@gmail.com';
+
+  // Check if Celia's account already exists
+  if (!teachers.find(t => t.email === celiaEmail)) {
+    const hashedPassword = await bcrypt.hash('celia123456', 10);
+    const celiaTeacher = {
+      id: uuidv4(),
+      name: 'Celia (Test Account)',
+      email: celiaEmail,
+      password: hashedPassword,
+      createdAt: new Date().toISOString()
+    };
+    teachers.push(celiaTeacher);
+    writeJsonFile('teachers.json', teachers);
+    console.log('Test teacher account created: celia@gmail.com / celia123456');
+  }
+}
+
+initializeTestTeacherCelia();
+
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 // Initialize test student account
 async function initializeTestStudent() {
   const testEmail = 'student@test.com';
@@ -154,10 +182,17 @@ const verifyToken = (req, res, next) => {
 };
 
 // Helper function to check if a teacher can edit a promotion
+<<<<<<< HEAD
 const canEditPromotion = (promotion, teacherId) => {
   if (promotion.teacherId === teacherId) return true;
   if (promotion.collaborators && promotion.collaborators.includes(teacherId)) return true;
   return false;
+=======
+const canEditPromotion = (promotion, userId) => {
+  if (!promotion) return false;
+  // Can edit if owner or collaborator
+  return promotion.teacherId === userId || (promotion.collaboratorIds && promotion.collaboratorIds.includes(userId));
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 };
 
 // ==================== AUTHENTICATION ====================
@@ -270,9 +305,12 @@ app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
 
     const { email, name } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
+=======
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     // Generate temporary password
     const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
@@ -308,6 +346,115 @@ app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, asyn
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Student not found' });
 
     res.json({ message: 'Student deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== TEACHER MANAGEMENT (Collaborators) ====================
+
+// Get all teachers for a promotion (with their details)
+app.get('/api/promotions/:promotionId/teachers', verifyToken, (req, res) => {
+  try {
+    const promotions = readJsonFile('promotions.json', []);
+    const promotion = promotions.find(p => p.id === req.params.promotionId);
+
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const teachers = readJsonFile('teachers.json', []);
+    const promotionTeachers = teachers.filter(t => promotion.collaboratorIds.includes(t.id));
+
+    // Return only safe data (no passwords)
+    const safeTeachers = promotionTeachers.map(t => ({
+      id: t.id,
+      name: t.name,
+      email: t.email,
+      isOwner: t.id === promotion.teacherId
+    }));
+
+    res.json(safeTeachers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add a teacher to a promotion as collaborator
+app.post('/api/promotions/:promotionId/teachers', verifyToken, (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const promotions = readJsonFile('promotions.json', []);
+    const promotion = promotions.find(p => p.id === req.params.promotionId);
+
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const teachers = readJsonFile('teachers.json', []);
+    const teacher = teachers.find(t => t.email === email);
+
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+
+    // Check if teacher is already a collaborator
+    if (promotion.collaboratorIds.includes(teacher.id)) {
+      return res.status(400).json({ error: 'Teacher is already a collaborator' });
+    }
+
+    // Add teacher to collaborators
+    promotion.collaboratorIds.push(teacher.id);
+    promotion.updatedAt = new Date().toISOString();
+    writeJsonFile('promotions.json', promotions);
+
+    res.status(201).json({
+      message: 'Teacher added successfully',
+      teacher: { id: teacher.id, name: teacher.name, email: teacher.email, isOwner: false }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove a teacher from a promotion
+app.delete('/api/promotions/:promotionId/teachers/:teacherId', verifyToken, (req, res) => {
+  try {
+    const promotions = readJsonFile('promotions.json', []);
+    const promotion = promotions.find(p => p.id === req.params.promotionId);
+
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    // Check if trying to remove the owner
+    if (req.params.teacherId === promotion.teacherId) {
+      return res.status(400).json({ error: 'Cannot remove the program owner' });
+    }
+
+    const index = promotion.collaboratorIds.indexOf(req.params.teacherId);
+    if (index === -1) {
+      return res.status(404).json({ error: 'Teacher not found in promotion' });
+    }
+
+    promotion.collaboratorIds.splice(index, 1);
+    promotion.updatedAt = new Date().toISOString();
+    writeJsonFile('promotions.json', promotions);
+
+    res.json({ message: 'Teacher removed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all available teachers (for adding to a promotion)
+app.get('/api/available-teachers', verifyToken, (req, res) => {
+  try {
+    const teachers = readJsonFile('teachers.json', []);
+    // Return all teachers except current user
+    const availableTeachers = teachers
+      .filter(t => t.id !== req.user.id)
+      .map(t => ({ id: t.id, name: t.name, email: t.email }));
+    res.json(availableTeachers);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -349,8 +496,26 @@ app.get('/api/my-promotions', verifyToken, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // Get a single promotion
 app.get('/api/promotions/:id', async (req, res) => {
+=======
+// Get all promotions a teacher has access to (owned or as collaborator)
+app.get('/api/my-promotions-all', verifyToken, (req, res) => {
+  try {
+    const promotions = readJsonFile('promotions.json', []);
+    const accessiblePromotions = promotions.filter(p =>
+      p.teacherId === req.user.id || (p.collaboratorIds && p.collaboratorIds.includes(req.user.id))
+    );
+    res.json(accessiblePromotions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get a single promotion (public, no auth required)
+app.get('/api/promotions/:id', (req, res) => {
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
   try {
     const promotion = await Promotion.findOne({ id: req.params.id });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
@@ -374,8 +539,21 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
       endDate,
       weeks,
       modules: modules || [],
+<<<<<<< HEAD
       teacherId: req.user.id
     });
+=======
+      teacherId: req.user.id,
+      collaboratorIds: [req.user.id], // Owner is also a collaborator
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const promotions = readJsonFile('promotions.json', []);
+    promotions.push(promotion);
+    writeJsonFile('promotions.json', promotions);
+
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
     res.status(201).json(promotion);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -385,6 +563,7 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
 // Update a promotion
 app.put('/api/promotions/:id', verifyToken, async (req, res) => {
   try {
+<<<<<<< HEAD
     const promotion = await Promotion.findOneAndUpdate(
       { id: req.params.id },
       { ...req.body },
@@ -393,6 +572,18 @@ app.put('/api/promotions/:id', verifyToken, async (req, res) => {
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
     res.json(promotion);
+=======
+    const promotions = readJsonFile('promotions.json', []);
+    const promotionIndex = promotions.findIndex(p => p.id === req.params.id);
+
+    if (promotionIndex === -1) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotions[promotionIndex], req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    promotions[promotionIndex] = { ...promotions[promotionIndex], ...req.body, updatedAt: new Date().toISOString() };
+    writeJsonFile('promotions.json', promotions);
+
+    res.json(promotions[promotionIndex]);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -405,12 +596,20 @@ app.delete('/api/promotions/:id', verifyToken, async (req, res) => {
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
+<<<<<<< HEAD
     await Promotion.deleteOne({ id: req.params.id });
     await Student.deleteMany({ promotionId: req.params.id });
     await QuickLink.deleteMany({ promotionId: req.params.id });
     await Section.deleteMany({ promotionId: req.params.id });
     await ExtendedInfo.deleteOne({ promotionId: req.params.id });
     await Calendar.deleteOne({ promotionId: req.params.id });
+=======
+    if (promotionIndex === -1) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotions[promotionIndex], req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    promotions.splice(promotionIndex, 1);
+    writeJsonFile('promotions.json', promotions);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     res.json({ message: 'Promotion deleted' });
   } catch (error) {
@@ -428,6 +627,18 @@ app.post('/api/promotions/:promotionId/modules', verifyToken, async (req, res) =
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
+=======
+
+    const module = {
+      id: uuidv4(),
+      name,
+      duration,
+      courses: courses || [],
+      projects: projects || [],
+      createdAt: new Date().toISOString()
+    };
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     const module = { id: uuidv4(), name, duration, courses: courses || [], projects: projects || [] };
     promotion.modules.push(module);
@@ -477,6 +688,20 @@ app.post('/api/promotions/:promotionId/quick-links', verifyToken, async (req, re
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
+=======
+
+    const quickLink = {
+      id: uuidv4(),
+      name,
+      url,
+      createdAt: new Date().toISOString()
+    };
+
+    const quickLinks = readJsonFile(`quick-links-${req.params.promotionId}.json`, []);
+    quickLinks.push(quickLink);
+    writeJsonFile(`quick-links-${req.params.promotionId}.json`, quickLinks);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url });
     res.status(201).json(quickLink);
@@ -490,6 +715,17 @@ app.delete('/api/promotions/:promotionId/quick-links/:linkId', verifyToken, asyn
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
+=======
+
+    const quickLinks = readJsonFile(`quick-links-${req.params.promotionId}.json`, []);
+    const linkIndex = quickLinks.findIndex(l => l.id === req.params.linkId);
+
+    if (linkIndex === -1) return res.status(404).json({ error: 'Quick link not found' });
+
+    quickLinks.splice(linkIndex, 1);
+    writeJsonFile(`quick-links-${req.params.promotionId}.json`, quickLinks);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     const result = await QuickLink.deleteOne({ id: req.params.linkId, promotionId: req.params.promotionId });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Quick link not found' });
@@ -518,6 +754,21 @@ app.post('/api/promotions/:promotionId/sections', verifyToken, async (req, res) 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
+=======
+
+    const section = {
+      id: uuidv4(),
+      title,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
+    sections.push(section);
+    writeJsonFile(`sections-${req.params.promotionId}.json`, sections);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     const section = await Section.create({ id: uuidv4(), promotionId: req.params.promotionId, title, content });
     res.status(201).json(section);
@@ -549,6 +800,17 @@ app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, asyn
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+<<<<<<< HEAD
+=======
+
+    const sections = readJsonFile(`sections-${req.params.promotionId}.json`, []);
+    const sectionIndex = sections.findIndex(s => s.id === req.params.sectionId);
+
+    if (sectionIndex === -1) return res.status(404).json({ error: 'Section not found' });
+
+    sections.splice(sectionIndex, 1);
+    writeJsonFile(`sections-${req.params.promotionId}.json`, sections);
+>>>>>>> ad1cef6c4dccacbc9c4da3f36f308b1a26ae5eee
 
     const result = await Section.deleteOne({ id: req.params.sectionId, promotionId: req.params.promotionId });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Section not found' });
