@@ -287,6 +287,11 @@ function switchTab(tabName) {
         tabElement.classList.remove('hidden');
     }
 
+    // Load specific tab data if needed
+    if (tabName === 'access-settings' && userRole === 'teacher') {
+        loadAccessPassword();
+    }
+
     // Update active nav link
     document.querySelectorAll('.sidebar .nav-link').forEach(link => {
         link.classList.remove('active');
@@ -1529,15 +1534,26 @@ function displayStudents(students) {
     students.forEach(student => {
         const card = document.createElement('div');
         card.className = 'col-md-6 mb-3';
+        const badge = student.isManuallyAdded ? '<span class="badge bg-secondary">Manual</span>' : '<span class="badge bg-info">Auto-tracked</span>';
+        const lastAccessed = student.progress?.lastAccessed ? new Date(student.progress.lastAccessed).toLocaleDateString() : 'Not accessed';
+
         card.innerHTML = `
             <div class="card">
-                <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="card-title mb-1">${escapeHtml(student.name)}</h5>
-                        <p class="card-text text-muted mb-0">${escapeHtml(student.email)}</p>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <h5 class="card-title mb-1">${escapeHtml(student.name)}</h5>
+                            <p class="card-text text-muted mb-2">${escapeHtml(student.email)}</p>
+                            ${badge}
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}')">
-                        <i class="bi bi-trash"></i>
+                    <hr class="my-2">
+                    <small class="text-muted">Last accessed: ${lastAccessed}</small><br>
+                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="openStudentDetailModal('${student.id}')">
+                        <i class="bi bi-eye me-1"></i>View Details
                     </button>
                 </div>
             </div>
@@ -1561,4 +1577,183 @@ async function deleteStudent(studentId) {
     }
 }
 
+// Access Settings Functions
+async function loadAccessPassword() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
 
+        if (response.ok) {
+            const data = await response.json();
+            const passwordInput = document.getElementById('access-password-input');
+            if (passwordInput) {
+                passwordInput.value = data.accessPassword || '';
+                updateStudentAccessLink();
+            }
+        }
+    } catch (error) {
+        console.error('Error loading access password:', error);
+    }
+}
+
+window.updateAccessPassword = async function() {
+    const password = document.getElementById('access-password-input').value;
+    const token = localStorage.getItem('token');
+    const alertEl = document.getElementById('password-alert');
+
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ password })
+        });
+
+        if (response.ok) {
+            alertEl.className = 'alert alert-success mt-3';
+            alertEl.textContent = 'Password updated successfully!';
+            alertEl.classList.remove('hidden');
+            updateStudentAccessLink();
+            setTimeout(() => alertEl.classList.add('hidden'), 3000);
+        } else {
+            const data = await response.json();
+            alertEl.className = 'alert alert-danger mt-3';
+            alertEl.textContent = data.error || 'Failed to update password';
+            alertEl.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error updating password:', error);
+        alertEl.className = 'alert alert-danger mt-3';
+        alertEl.textContent = 'Error updating password';
+        alertEl.classList.remove('hidden');
+    }
+};
+
+function updateStudentAccessLink() {
+    const linkInput = document.getElementById('student-access-link');
+    if (linkInput) {
+        const baseUrl = window.location.origin;
+        linkInput.value = `${baseUrl}/public-promotion.html?id=${promotionId}`;
+    }
+}
+
+window.copyAccessLink = function() {
+    const linkInput = document.getElementById('student-access-link');
+    if (linkInput && linkInput.value) {
+        navigator.clipboard.writeText(linkInput.value).then(() => {
+            alert('Link copied to clipboard!');
+        });
+    }
+};
+
+// Student Detail Functions
+let currentStudentId = null;
+
+window.openStudentDetailModal = async function(studentId) {
+    currentStudentId = studentId;
+    const token = localStorage.getItem('token');
+
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const student = await response.json();
+            displayStudentDetail(student);
+        }
+    } catch (error) {
+        console.error('Error loading student details:', error);
+    }
+};
+
+function displayStudentDetail(student) {
+    const modalHtml = `
+        <div class="modal fade" id="studentDetailModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Student Details: ${escapeHtml(student.name)}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Basic Information</h6>
+                                <p><strong>Name:</strong> ${escapeHtml(student.name)}</p>
+                                <p><strong>Email:</strong> ${escapeHtml(student.email)}</p>
+                                <p><strong>Type:</strong> ${student.isManuallyAdded ? 'Manually Added' : 'Auto-tracked'}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Progress</h6>
+                                <p><strong>Modules Viewed:</strong> ${(student.progress?.modulesViewed || []).length}</p>
+                                <p><strong>Sections Completed:</strong> ${(student.progress?.sectionsCompleted || []).length}</p>
+                                <p><strong>Last Accessed:</strong> ${student.progress?.lastAccessed ? new Date(student.progress.lastAccessed).toLocaleDateString() : 'Not accessed'}</p>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h6>Notes</h6>
+                        <textarea class="form-control" id="student-notes" rows="4" placeholder="Add notes about this student...">${escapeHtml(student.notes || '')}</textarea>
+
+                        <div id="student-save-alert" class="alert alert-info mt-3 hidden"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" onclick="saveStudentNotes()">
+                            <i class="bi bi-save me-2"></i>Save Notes
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Remove existing modal if any
+    const existing = document.getElementById('studentDetailModal');
+    if (existing) existing.remove();
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = new bootstrap.Modal(document.getElementById('studentDetailModal'));
+    modal.show();
+}
+
+window.saveStudentNotes = async function() {
+    const notes = document.getElementById('student-notes').value;
+    const token = localStorage.getItem('token');
+    const alertEl = document.getElementById('student-save-alert');
+
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${currentStudentId}/notes`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ notes })
+        });
+
+        if (response.ok) {
+            alertEl.className = 'alert alert-success';
+            alertEl.textContent = 'Notes saved successfully!';
+            alertEl.classList.remove('hidden');
+            setTimeout(() => {
+                alertEl.classList.add('hidden');
+            }, 2000);
+        } else {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = 'Error saving notes';
+            alertEl.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error saving notes:', error);
+        alertEl.className = 'alert alert-danger';
+        alertEl.textContent = 'Error saving notes';
+        alertEl.classList.remove('hidden');
+    }
+};

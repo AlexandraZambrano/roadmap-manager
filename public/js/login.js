@@ -12,11 +12,7 @@ function selectRole(role) {
 
     // Update help text
     const helpText = document.getElementById('help-text');
-    if (role === 'student') {
-        helpText.textContent = 'Use the password sent to your email';
-    } else {
-        helpText.textContent = 'Use your assigned password';
-    }
+    helpText.textContent = 'Use your assigned password';
 
     hideAlerts();
 }

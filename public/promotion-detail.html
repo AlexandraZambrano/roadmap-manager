@@ -63,6 +63,11 @@
                             </a>
                         </li>
                         <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#access-settings" onclick="switchTab('access-settings')">
+                                <i class="bi bi-lock me-2"></i>Access Settings
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
                             <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
                                 <i class="bi bi-person-plus me-2"></i>Collaborators
                             </a>
@@ -205,6 +210,50 @@
 
                     <div id="students-list" class="row">
                         <!-- Students will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Access Settings Tab -->
+                <div id="access-settings-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Access Settings</h2>
+                    </div>
+
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0"><i class="bi bi-key me-2"></i>Student Access Password</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-4">Set a password that students must enter to access this promotion. This allows you to control access without requiring student login credentials.</p>
+
+                            <div class="row align-items-end g-3">
+                                <div class="col-md-6">
+                                    <label for="access-password-input" class="form-label">Access Password</label>
+                                    <input type="text" class="form-control" id="access-password-input" placeholder="Enter a password">
+                                    <small class="form-text text-muted">Leave empty to remove password protection</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <button class="btn btn-success w-100" onclick="updateAccessPassword()">
+                                        <i class="bi bi-save me-2"></i>Update Password
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="password-alert" class="alert alert-info mt-3 hidden" role="alert">
+                                <!-- Alert message will be displayed here -->
+                            </div>
+
+                            <hr class="my-4">
+
+                            <h6>Share with Students</h6>
+                            <p class="text-muted">Once a password is set, students can access the promotion using this link:</p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="student-access-link" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyAccessLink()">
+                                    <i class="bi bi-clipboard me-2"></i>Copy Link
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

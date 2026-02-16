@@ -25,6 +25,12 @@ const PromotionSchema = new mongoose.Schema({
     modules: [ModuleSchema],
     teacherId: { type: String, required: true },
     collaborators: [{ type: String }],
+    accessPassword: { type: String }, // Password for students to access promotion
+    passwordChangeHistory: [{
+        oldPassword: String,
+        newPassword: String,
+        changedAt: { type: Date, default: Date.now }
+    }],
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });

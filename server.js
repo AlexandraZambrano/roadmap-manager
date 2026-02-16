@@ -125,6 +125,76 @@ const canEditPromotion = (promotion, userId) => {
   return promotion.teacherId === userId || (promotion.collaborators && promotion.collaborators.includes(userId));
 };
 
+// ==================== PROMOTION PASSWORD ACCESS ====================
+
+// Set or change promotion access password (teacher only)
+app.post('/api/promotions/:promotionId/access-password', verifyToken, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    // Store old password in history
+    if (promotion.accessPassword) {
+      if (!promotion.passwordChangeHistory) promotion.passwordChangeHistory = [];
+      promotion.passwordChangeHistory.push({
+        oldPassword: promotion.accessPassword,
+        newPassword: password,
+        changedAt: new Date()
+      });
+    }
+
+    promotion.accessPassword = password;
+    await promotion.save();
+
+    res.json({ message: 'Access password updated', accessPassword: password });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Access promotion with password (session-based, no authentication required)
+app.post('/api/promotions/:promotionId/verify-password', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+
+    if (promotion.accessPassword !== password) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    // Create a session token (valid only for this promotion access)
+    const accessToken = jwt.sign(
+      { promotionId: req.params.promotionId, accessType: 'promotion-guest' },
+      JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    res.json({ message: 'Password verified', accessToken, promotion: { id: promotion.id, name: promotion.name } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get promotion access password (teacher only)
+app.get('/api/promotions/:promotionId/access-password', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    res.json({ accessPassword: promotion.accessPassword || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== AUTHENTICATION ====================
 
 app.post('/api/auth/register', async (req, res) => {
@@ -196,6 +266,7 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
   }
 });
 
+// Add student manually (teacher adds student for tracking)
 app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
@@ -205,19 +276,124 @@ app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) 
     const { email, name } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    // Check if student already exists
+    const existing = await Student.findOne({ email, promotionId: req.params.promotionId });
+    if (existing) return res.status(400).json({ error: 'Student already added to this promotion' });
 
     const student = await Student.create({
       id: uuidv4(),
       email,
       name: name || email.split('@')[0],
-      password: hashedPassword,
       promotionId: req.params.promotionId,
-      tempPassword: true
+      isManuallyAdded: true,
+      notes: ''
     });
 
-    res.status(201).json({ message: 'Student added successfully', student: { id: student.id, email: student.email, name: student.name }, tempPassword });
+    res.status(201).json({ message: 'Student added successfully', student: { id: student.id, email: student.email, name: student.name } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Auto-track student when they access promotion with password
+app.post('/api/promotions/:promotionId/track-student', async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+
+    // Check if student already exists
+    let student = await Student.findOne({ email, promotionId: req.params.promotionId });
+
+    if (!student) {
+      // Create new tracked student
+      student = await Student.create({
+        id: uuidv4(),
+        email,
+        name: name || email.split('@')[0],
+        promotionId: req.params.promotionId,
+        isManuallyAdded: false
+      });
+    }
+
+    // Update last accessed and access log
+    student.progress.lastAccessed = new Date();
+    if (!student.accessLog) student.accessLog = [];
+
+    student.accessLog.push({
+      accessedAt: new Date(),
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent']
+    });
+
+    await student.save();
+
+    res.json({ message: 'Student tracked', student: { id: student.id, email: student.email, name: student.name } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add or update student notes
+app.put('/api/promotions/:promotionId/students/:studentId/notes', verifyToken, async (req, res) => {
+  try {
+    const { notes } = req.body;
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const student = await Student.findOneAndUpdate(
+      { id: req.params.studentId, promotionId: req.params.promotionId },
+      { notes: notes || '' },
+      { new: true }
+    );
+
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    res.json({ message: 'Student notes updated', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update student progress
+app.put('/api/promotions/:promotionId/students/:studentId/progress', async (req, res) => {
+  try {
+    const { modulesViewed, sectionsCompleted } = req.body;
+
+    const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    if (modulesViewed) {
+      student.progress.modulesViewed = [...new Set([...(student.progress.modulesViewed || []), ...modulesViewed])];
+    }
+
+    if (sectionsCompleted) {
+      student.progress.sectionsCompleted = [...new Set([...(student.progress.sectionsCompleted || []), ...sectionsCompleted])];
+    }
+
+    student.progress.lastAccessed = new Date();
+    await student.save();
+
+    res.json({ message: 'Student progress updated', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get student details
+app.get('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    res.json(student);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

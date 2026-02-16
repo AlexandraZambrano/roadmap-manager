@@ -1,5 +1,8 @@
 const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
 let promotionId = null;
+let passwordModal = null;
+let promotionHasPassword = false;
+let isAccessVerified = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -10,12 +13,169 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Initialize password modal
+    const modalEl = document.getElementById('passwordModal');
+    if (modalEl) {
+        passwordModal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+    }
+
+    // Check if promotion requires password
+    checkPasswordRequirement();
+});
+
+async function checkPasswordRequirement() {
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`);
+
+        if (response.ok) {
+            const promotion = await response.json();
+            promotionHasPassword = !!promotion.accessPassword;
+
+            if (promotionHasPassword && !isAccessVerified) {
+                // Show password modal
+                if (passwordModal) {
+                    passwordModal.show();
+                }
+            } else {
+                // Load promotion content
+                loadPromotionContent();
+            }
+        }
+    } catch (error) {
+        console.error('Error checking password requirement:', error);
+    }
+}
+
+// Verify promotion password
+window.verifyPromotionPassword = async function() {
+    const password = document.getElementById('access-password').value;
+    const alertEl = document.getElementById('password-alert');
+    const btnSpinner = document.querySelector('.modal-footer .spinner-border');
+
+    if (!password) {
+        alertEl.textContent = 'Please enter the password';
+        alertEl.classList.remove('hidden');
+        return;
+    }
+
+    alertEl.classList.add('hidden');
+    btnSpinner.classList.remove('hidden');
+
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/verify-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            // Store access token in session storage (not localStorage) for security
+            sessionStorage.setItem('promotionAccessToken', data.accessToken);
+            sessionStorage.setItem('promotionId', promotionId);
+
+            isAccessVerified = true;
+
+            // Hide modal and load content
+            if (passwordModal) {
+                passwordModal.hide();
+            }
+
+            // Prompt for student email for tracking
+            promptForStudentInfo();
+        } else {
+            const data = await response.json();
+            alertEl.textContent = data.error || 'Invalid password. Please try again.';
+            alertEl.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Password verification error:', error);
+        alertEl.textContent = 'Connection error. Please try again.';
+        alertEl.classList.remove('hidden');
+    } finally {
+        btnSpinner.classList.add('hidden');
+    }
+};
+
+// Prompt for student email to track access
+function promptForStudentInfo() {
+    const promptHtml = `
+        <div class="modal fade" id="studentInfoModal" tabindex="-1" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header border-0">
+                        <h5 class="modal-title">Student Information</h5>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted mb-4">Please provide your information so we can track your progress.</p>
+                        <div class="mb-3">
+                            <label for="student-name" class="form-label">Full Name</label>
+                            <input type="text" class="form-control" id="student-name" placeholder="Your full name">
+                        </div>
+                        <div class="mb-3">
+                            <label for="student-email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="student-email" placeholder="your.email@example.com">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-secondary" onclick="skipStudentInfo()">Skip</button>
+                        <button type="button" class="btn btn-primary" onclick="submitStudentInfo()">Continue</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', promptHtml);
+    const studentModal = new bootstrap.Modal(document.getElementById('studentInfoModal'));
+    studentModal.show();
+}
+
+window.submitStudentInfo = async function() {
+    const name = document.getElementById('student-name').value;
+    const email = document.getElementById('student-email').value;
+
+    if (!email) {
+        alert('Please enter your email');
+        return;
+    }
+
+    try {
+        await fetch(`${API_URL}/api/promotions/${promotionId}/track-student`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email })
+        });
+
+        sessionStorage.setItem('studentEmail', email);
+        sessionStorage.setItem('studentName', name);
+    } catch (error) {
+        console.error('Error tracking student:', error);
+    }
+
+    // Close modal and load content
+    const modal = bootstrap.Modal.getInstance(document.getElementById('studentInfoModal'));
+    if (modal) modal.hide();
+    document.getElementById('studentInfoModal').remove();
+
+    loadPromotionContent();
+};
+
+window.skipStudentInfo = function() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('studentInfoModal'));
+    if (modal) modal.hide();
+    document.getElementById('studentInfoModal').remove();
+
+    loadPromotionContent();
+};
+
+async function loadPromotionContent() {
     loadPromotion();
     loadModules();
     loadQuickLinks();
     loadSections();
     loadCalendar();
-});
+}
 
 async function loadPromotion() {
     try {

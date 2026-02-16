@@ -11,6 +11,31 @@
 </head>
 
 <body>
+    <!-- Password Access Modal -->
+    <div class="modal fade" id="passwordModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">Enter Promotion Password</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-4">This promotion requires a password to access. Please enter the password provided to you.</p>
+                    <div id="password-alert" class="alert alert-danger hidden" role="alert"></div>
+                    <div class="mb-3">
+                        <label for="access-password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="access-password" placeholder="Enter promotion password">
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-primary" onclick="verifyPromotionPassword()">
+                        <span class="btn-text">Verify</span>
+                        <span class="spinner-border spinner-border-sm ms-2 hidden" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar -->
