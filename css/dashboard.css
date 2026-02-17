@@ -1,0 +1,254 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #ffffff;
+}
+
+.sidebar {
+    position: fixed;
+    top: 56px;
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    padding: 20px 0;
+    background-color: #ffffff;
+    border-right: 2px solid #ff4700;
+    overflow-y: auto;
+}
+
+.sidebar-sticky {
+    padding: 0 20px;
+}
+
+.sidebar .nav-link {
+    color: #333333;
+    padding: 10px 15px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.sidebar .nav-link:hover {
+    background-color: #ffe6d0;
+    color: #ff4700;
+    border-left: 3px solid #ff4700;
+}
+
+.sidebar .nav-link.active {
+    background-color: #ff4700;
+    color: white;
+    border-left: 3px solid #d63900;
+}
+
+main {
+    margin-top: 56px;
+    padding: 20px;
+}
+
+.card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    margin-bottom: 20px;
+}
+
+.card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.card-title {
+    color: #333;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.card-title i {
+    color: #ff4700;
+    margin-right: 8px;
+}
+
+.section-content {
+    display: block;
+}
+
+.section-content.hidden {
+    display: none;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #ff4700 0%, #d63900 100%);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255, 71, 0, 0.4);
+}
+
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 101;
+    background-color: #ffffff !important;
+    border-bottom: 2px solid #ff4700 !important;
+}
+
+.navbar-brand {
+    font-weight: 600;
+    color: #ff4700 !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-control,
+.form-select {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px 12px;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: #ff4700;
+    box-shadow: 0 0 0 0.2rem rgba(255, 71, 0, 0.25);
+}
+
+.promotion-card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.promotion-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.promotion-card-title {
+    color: #333;
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+.promotion-card-meta {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.badge-weeks {
+    background-color: #ff4700;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+}
+
+.modal-header {
+    border-bottom: 2px solid #ff4700;
+}
+
+.modal-title {
+    color: #333;
+    font-weight: 600;
+}
+
+.navbar {
+    background-color: #ffffff !important;
+    border-bottom: 2px solid #ff4700 !important;
+}
+
+/* Bootstrap color overrides for orange theme */
+.btn-warning {
+    background-color: #ff4700 !important;
+    border-color: #ff4700 !important;
+    color: white !important;
+}
+
+.btn-warning:hover {
+    background-color: #d63900 !important;
+    border-color: #d63900 !important;
+}
+
+.bg-warning {
+    background-color: #ff4700 !important;
+}
+
+.text-warning {
+    color: #ff4700 !important;
+}
+
+.alert-warning {
+    background-color: #ffe6d0;
+    border-color: #ff4700;
+    color: #333;
+}
+
+.border-warning {
+    border-color: #ff4700 !important;
+}
+
+.password-input-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-group input {
+    padding-right: 45px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+}
+
+.password-toggle:hover {
+    color: #ff4700;
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        width: 100%;
+        height: auto;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid #e9ecef;
+        padding: 10px 0;
+    }
+
+    main {
+        margin-top: 0;
+    }
+
+    .navbar {
+        position: relative;
+    }
+}

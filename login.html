@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Bootcamp Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet" />
+    <style>
+        body {
+            background: linear-gradient(135deg, #ff4700 0%, #d63900 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 450px;
+            background: white;
+            padding: 50px 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo-section img {
+            max-width: 80px;
+            margin-bottom: 20px;
+        }
+
+        .logo-section h1 {
+            color: #333;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .logo-section p {
+            color: #999;
+            font-size: 0.9rem;
+        }
+
+        .role-selection {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .role-btn {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .role-btn:hover {
+            border-color: #ff4700;
+            background: #ffe6d0;
+        }
+
+        .role-btn.active {
+            background: #ff4700;
+            color: white;
+            border-color: #ff4700;
+        }
+
+        .role-btn i {
+            display: block;
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .role-btn span {
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            color: #555;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .form-control {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px 15px;
+            font-size: 0.95rem;
+        }
+
+        .form-control:focus {
+            border-color: #ff4700;
+            box-shadow: 0 0 0 0.2rem rgba(255, 71, 0, 0.25);
+        }
+
+        .btn-login {
+            background: linear-gradient(135deg, #ff4700 0%, #d63900 100%);
+            border: none;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            width: 100%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+        }
+
+        .btn-login:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 71, 0, 0.4);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            margin-bottom: 20px;
+            border-radius: 6px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .spinner-sm {
+            display: none;
+            width: 16px;
+            height: 16px;
+        }
+
+        .divider {
+            margin: 20px 0;
+            position: relative;
+            color: #999;
+        }
+
+        .divider:before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #ddd;
+        }
+
+        .divider span {
+            position: relative;
+            background: white;
+            padding: 0 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .help-text {
+            color: #999;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+
+        .role-selection {
+            display: none !important;
+        }
+
+        .password-input-group {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .password-input-group input {
+            padding-right: 45px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s ease;
+        }
+
+        .password-toggle:hover {
+            color: #ff4700;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <!-- Language Switcher -->
+        <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 10px;">
+            <button onclick="setLanguage('en')" style="padding: 8px 12px; border: 1px solid white; background: transparent; color: white; border-radius: 4px; cursor: pointer;" id="lang-en">EN</button>
+            <button onclick="setLanguage('es')" style="padding: 8px 12px; border: 1px solid white; background: transparent; color: white; border-radius: 4px; cursor: pointer;" id="lang-es">ES</button>
+        </div>
+
+        <div class="logo-section">
+            <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" style="height: 80px;" />
+            <h2 data-i18n="sign-in" style="margin-top: 30px; font-size: 1.8rem;">Sign in to your account</h2>
+        </div>
+
+        <div id="danger-alert" class="alert alert-danger hidden" role="alert"></div>
+        <div id="success-alert" class="alert alert-success hidden" role="alert"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email" class="form-label" data-i18n="email-address">Email Address</label>
+                <input type="email" id="email" class="form-control" placeholder="your.email@example.com" required />
+            </div>
+
+            <div class="form-group">
+                <label for="password" class="form-label" data-i18n="password">Password</label>
+                <div class="password-input-group">
+                    <input type="password" id="password" class="form-control" placeholder="Enter your password" required />
+                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility('password')">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </div>
+                <div class="help-text" id="help-text" data-i18n="your-assigned-password">Use your assigned password</div>
+            </div>
+
+            <button type="button" class="btn-login" id="login-button" onclick="handleLogin()">
+                <span class="login-text">Sign In</span>
+                <span class="spinner-sm spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
+            </button>
+        </form>
+
+        <div class="divider"><span>Demo Credentials</span></div>
+        <div class="help-text" style="text-align: center; margin-top: 15px;">
+            <div class="mb-2"><strong>Admin:</strong> admin@test.com / admin123</div>
+            <div><strong>Teacher:</strong> alex@gmail.com / aA12345678910*</div>
+            <p class="text-muted small mt-3">Students access promotions via password link, not login credentials.</p>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/translations.js"></script>
+    <script src="js/login.js"></script>
+
+    <script>
+        // Highlight current language button
+        document.addEventListener('DOMContentLoaded', function() {
+            updateLangButtons();
+        });
+
+        function updateLangButtons() {
+            const currentLang = getCurrentLanguage();
+            document.getElementById('lang-en').style.background = currentLang === 'en' ? '#ff4700' : 'transparent';
+            document.getElementById('lang-es').style.background = currentLang === 'es' ? '#ff4700' : 'transparent';
+        }
+
+        // Override setLanguage to update buttons
+        const originalSetLanguage = setLanguage;
+        window.setLanguage = function(lang) {
+            originalSetLanguage(lang);
+            updateLangButtons();
+        };
+
+        // Toggle password visibility
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            const button = event.currentTarget;
+            const icon = button.querySelector('i');
+
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('bi-eye');
+                icon.classList.add('bi-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('bi-eye-slash');
+                icon.classList.add('bi-eye');
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bootcamp Roadmap</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet" />
+    <link href="css/style.css" rel="stylesheet" />
+</head>
+
+<body>
+    <!-- Password Access Modal -->
+    <div class="modal fade" id="passwordModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">Enter Promotion Password</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-4">This promotion requires a password to access. Please enter the password provided to you.</p>
+                    <div id="password-alert" class="alert alert-danger hidden" role="alert"></div>
+                    <div class="mb-3">
+                        <label for="access-password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="access-password" placeholder="Enter promotion password">
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-primary" onclick="verifyPromotionPassword()">
+                        <span class="btn-text">Verify</span>
+                        <span class="spinner-border spinner-border-sm ms-2 hidden" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-content d-flex flex-column h-100">
+                    <h1 id="nav-title" class="nav-title h3 mb-4 px-3">Bootcamp</h1>
+                    <ul class="nav" id="sidebar-nav">
+                        <!-- Navigation items will be populated here -->
+                    </ul>
+                    <figure class="logo-container text-center p-3 mt-auto">
+                        <a href="https://factoriaf5.org/" target="_blank">
+                            <img src="./img/logo-factoria-b.svg" alt="Logotipo FactoriaF5" class="img-fluid"
+                                style="max-width: 100px;">
+                        </a>
+                    </figure>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="container section-container mt-4">
+                    <div class="row g-4">
+                        <h2 class="section-title" id="promotion-title">Loading...</h2>
+
+                        <!-- Overview -->
+                        <div class="col-md-12" id="overview">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title section-title">
+                                        <i class="bi bi-eye"></i> Overview
+                                    </h5>
+                                    <p id="promotion-desc"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Roadmap -->
+                        <div class="col-md-12" id="roadmap">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title section-title">
+                                        <i class="bi bi-map me-2"></i> Roadmap
+                                    </h5>
+                                    <div class="table-responsive">
+                                        <table id="gantt-table" class="table table-sm">
+                                            <!-- Gantt chart will be populated here -->
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Calendar -->
+                        <div class="col-12" id="calendar">
+                            <div class="card hidden">
+                                <div class="card-body">
+                                    <h5 class="card-title section-title">
+                                        <i class="bi bi-calendar me-2"></i> Calendar
+                                    </h5>
+                                    <br />
+                                    <div class="ratio ratio-16x9">
+                                        <iframe id="calendar-iframe"></iframe>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Custom Sections -->
+                        <div id="sections-container">
+                            <!-- Custom sections will be populated here -->
+                        </div>
+
+                        <!-- Quick Links -->
+                        <div class="col-md-12" id="quick-links">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title section-title">
+                                        <i class="bi bi-lightning-charge"></i> Quick Links
+                                    </h5>
+                                    <div class="row" id="quick-links-list">
+                                        <!-- Quick links will be populated here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/public-promotion.js"></script>
+</body>
+
+</html>

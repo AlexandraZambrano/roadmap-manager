@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Promotion Details - Bootcamp Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet" />
+    <link href="css/dashboard.css" rel="stylesheet" />
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/dashboard">
+                <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" height="40" />
+                Bootcamp Manager
+            </a>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="/dashboard">
+                                <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#overview" onclick="switchTab('overview')">
+                                <i class="bi bi-eye me-2"></i>Overview
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#roadmap" onclick="switchTab('roadmap')">
+                                <i class="bi bi-map me-2"></i>Roadmap
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#quick-links" onclick="switchTab('quick-links')">
+                                <i class="bi bi-lightning me-2"></i>Quick Links
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#calendar" onclick="switchTab('calendar')">
+                                <i class="bi bi-calendar me-2"></i>Calendar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#sections" onclick="switchTab('sections')">
+                                <i class="bi bi-file-text me-2"></i>Sections
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#students" onclick="switchTab('students')">
+                                <i class="bi bi-people me-2"></i>Students
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#access-settings" onclick="switchTab('access-settings')">
+                                <i class="bi bi-lock me-2"></i>Access Settings
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
+                                <i class="bi bi-person-plus me-2"></i>Collaborators
+                            </a>
+                        </li>
+                        <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#info" onclick="switchTab('info')">
+                                <i class="bi bi-info-circle me-2"></i>Program Info
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <!-- Overview Tab -->
+                <div id="overview-tab" class="section-content">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <div>
+                            <h1 id="promotion-title">Loading...</h1>
+                            <p id="promotion-desc" class="text-muted"></p>
+                        </div>
+                        <button class="btn btn-info" onclick="previewPromotion()"
+                            title="Preview how students will see this page">
+                            <i class="bi bi-eye me-2"></i>Preview
+                        </button>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Program Information</h5>
+                                    <p><strong>Duration:</strong> <span id="promotion-weeks">-</span> weeks</p>
+                                    <p><strong>Start Date:</strong> <span id="promotion-start">-</span></p>
+                                    <p><strong>End Date:</strong> <span id="promotion-end">-</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Statistics</h5>
+                                    <p><strong>Modules:</strong> <span id="modules-count">0</span></p>
+                                    <p><strong>Quick Links:</strong> <span id="quicklinks-count">0</span></p>
+                                    <p><strong>Sections:</strong> <span id="sections-count">0</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Roadmap Tab -->
+                <div id="roadmap-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Roadmap & Modules</h2>
+                        <button class="btn btn-primary" onclick="openModuleModal()">
+                            <i class="bi bi-plus-circle me-2"></i>Add Module
+                        </button>
+                    </div>
+
+                    <div id="modules-list" class="row">
+                        <!-- Modules will be loaded here -->
+                    </div>
+
+                    <div class="mt-4">
+                        <h3>Gantt Chart</h3>
+                        <div class="table-responsive">
+                            <table id="gantt-table" class="table">
+                                <!-- Gantt will be generated here -->
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Links Tab -->
+                <div id="quick-links-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Quick Links</h2>
+                        <button class="btn btn-primary" onclick="openQuickLinkModal()">
+                            <i class="bi bi-plus-circle me-2"></i>Add Link
+                        </button>
+                    </div>
+
+                    <div id="quick-links-list" class="row">
+                        <!-- Quick links will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Calendar Tab -->
+                <div id="calendar-tab" class="section-content hidden">
+                    <div class="my-4">
+                        <h2>Google Calendar</h2>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Calendar Configuration</h5>
+                            <form id="calendar-form">
+                                <div class="mb-3">
+                                    <label for="google-calendar-id" class="form-label">Google Calendar ID</label>
+                                    <input type="text" class="form-control" id="google-calendar-id"
+                                        placeholder="your-calendar@group.calendar.google.com" />
+                                    <small class="text-muted">Get your calendar ID from Google Calendar settings</small>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Save Calendar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="calendar-preview" class="mt-4 hidden">
+                        <h5>Calendar Preview</h5>
+                        <div class="ratio ratio-16x9">
+                            <iframe id="calendar-iframe"></iframe>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sections Tab -->
+                <div id="sections-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Sections</h2>
+                        <button class="btn btn-primary" onclick="openSectionModal()">
+                            <i class="bi bi-plus-circle me-2"></i>Add Section
+                        </button>
+                    </div>
+
+                    <div id="sections-list">
+                        <!-- Sections will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Students Tab -->
+                <div id="students-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Students</h2>
+                        <button class="btn btn-primary" onclick="openStudentModal()">
+                            <i class="bi bi-person-plus me-2"></i>Add Student
+                        </button>
+                    </div>
+
+                    <div id="students-list" class="row">
+                        <!-- Students will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Access Settings Tab -->
+                <div id="access-settings-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Access Settings</h2>
+                    </div>
+
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0"><i class="bi bi-key me-2"></i>Student Access Password</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-4">Set a password that students must enter to access this promotion. This allows you to control access without requiring student login credentials.</p>
+
+                            <div class="row align-items-end g-3">
+                                <div class="col-md-6">
+                                    <label for="access-password-input" class="form-label">Access Password</label>
+                                    <div class="password-input-group">
+                                        <input type="text" class="form-control" id="access-password-input" placeholder="Enter a password">
+                                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('access-password-input')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                    <small class="form-text text-muted">Leave empty to remove password protection</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <button class="btn btn-success w-100" onclick="updateAccessPassword()">
+                                        <i class="bi bi-save me-2"></i>Update Password
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="password-alert" class="alert alert-info mt-3 hidden" role="alert">
+                                <!-- Alert message will be displayed here -->
+                            </div>
+
+                            <hr class="my-4">
+
+                            <h6>Share with Students</h6>
+                            <p class="text-muted">Once a password is set, students can access the promotion using this link:</p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="student-access-link" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyAccessLink()">
+                                    <i class="bi bi-clipboard me-2"></i>Copy Link
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Collaborators Tab -->
+                <div id="collaborators-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Program Collaborators</h2>
+                        <button class="btn btn-primary" onclick="openCollaboratorModal()">
+                            <i class="bi bi-person-plus me-2"></i>Add Teacher
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="text-muted mb-3">Teachers who have access to manage this program:</p>
+                            <div id="collaborators-list" class="list-group">
+                                <!-- Collaborators will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Program Info Tab (New) -->
+                <div id="info-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Program Details</h2>
+                        <button class="btn btn-primary" onclick="saveExtendedInfo()">
+                            <i class="bi bi-save me-2"></i>Save All Changes
+                        </button>
+                    </div>
+
+                    <div class="row">
+                        <!-- Schedule -->
+                        <div class="col-12 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-light">
+                                    <h5 class="mb-0"><i class="bi bi-clock me-2"></i>Horario (Schedule)</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 border-end">
+                                            <h6 class="text-primary mb-3">Online Days</h6>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Entry Hour</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-online-entry"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Start Píldoras</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-online-start"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Break</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-online-break"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Lunch (if any)</label>
+                                                <div class="col-sm-8"><input type="text" class="form-control"
+                                                        id="sched-online-lunch" placeholder="Use text if needed"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Finish Hour</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-online-finish"></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="text-success mb-3">Presential Days</h6>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Entry Hour</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-presential-entry"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Start Píldoras</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-presential-start"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Break</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-presential-break"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Lunch</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-presential-lunch"></div>
+                                            </div>
+                                            <div class="mb-2 row">
+                                                <label class="col-sm-4 col-form-label">Finish Hour</label>
+                                                <div class="col-sm-8"><input type="time" class="form-control"
+                                                        id="sched-presential-finish"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <label class="form-label">Additional Schedule Notes</label>
+                                        <textarea class="form-control" id="sched-notes" rows="2"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Team -->
+                        <div class="col-12 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="bi bi-people me-2"></i>Equipo (Team)</h5>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="openTeamModal()">
+                                        <i class="bi bi-plus"></i> Add Member
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Role</th>
+                                                    <th>Email</th>
+                                                    <th>LinkedIn</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="team-list-body">
+                                                <!-- Dynamic Content -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resources -->
+                        <div class="col-12 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Recursos (Resources)</h5>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="openResourceModal()">
+                                        <i class="bi bi-plus"></i> Add Resource
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Title</th>
+                                                    <th>Category (Type)</th>
+                                                    <th>URL</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="resources-list-body">
+                                                <!-- Dynamic Content -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Evaluation -->
+                        <div class="col-12 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-light">
+                                    <h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Evaluación (Evaluation
+                                        Criteria)</h5>
+                                </div>
+                                <div class="card-body">
+                                    <textarea class="form-control" id="evaluation-text" rows="6"
+                                        placeholder="Describe the evaluation criteria..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Collaborators Tab -->
+                <div id="collaborators-tab" class="section-content hidden">
+                    <div class="d-flex justify-content-between align-items-center my-4">
+                        <h2>Program Collaborators</h2>
+                        <button class="btn btn-primary" onclick="openCollaboratorModal()" id="add-collaborator-btn">
+                            <i class="bi bi-person-plus me-2"></i>Add Collaborator
+                        </button>
+                    </div>
+
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="collaborators-list-body">
+                                        <!-- Dynamic Content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Module Modal -->
+    <div class="modal fade" id="moduleModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="moduleModalTitle">Add Module</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="module-form">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="module-name" class="form-label">Module Name</label>
+                                    <input type="text" class="form-control" id="module-name" required />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="module-duration" class="form-label">Duration (weeks)</label>
+                                    <input type="number" class="form-control" id="module-duration" min="1" required />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Courses Section -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0"><i class="bi bi-book me-2"></i>Courses</h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCoursField()">
+                                    <i class="bi bi-plus"></i> Add Course
+                                </button>
+                            </div>
+                            <div id="courses-container" class="border rounded p-3 bg-light">
+                                <!-- Courses will be added dynamically here -->
+                            </div>
+                        </div>
+
+                        <!-- Projects Section -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0"><i class="bi bi-laptop me-2"></i>Projects</h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                    onclick="addProjectField()">
+                                    <i class="bi bi-plus"></i> Add Project
+                                </button>
+                            </div>
+                            <div id="projects-container" class="border rounded p-3 bg-light">
+                                <!-- Projects will be added dynamically here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Module</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Link Modal -->
+    <div class="modal fade" id="quickLinkModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Quick Link</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="quick-link-form">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="link-platform" class="form-label">Platform</label>
+                            <select class="form-control" id="link-platform" onchange="updateLinkName()">
+                                <option value="">Select a platform or custom</option>
+                                <option value="zoom">Zoom</option>
+                                <option value="discord">Discord</option>
+                                <option value="classroom">Google Classroom</option>
+                                <option value="github">GitHub</option>
+                                <option value="custom">Custom Link</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="link-name" class="form-label">Link Name</label>
+                            <input type="text" class="form-control" id="link-name" placeholder="e.g., Zoom Class" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="link-url" class="form-label">URL</label>
+                            <input type="url" class="form-control" id="link-url" required />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Link</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section Modal -->
+    <div class="modal fade" id="sectionModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Section</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="section-form">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="section-title" class="form-label">Section Title</label>
+                            <input type="text" class="form-control" id="section-title" required />
+                        </div>
+                        <div class="mb-3">
+                            <label for="section-content" class="form-label">Content</label>
+                            <textarea class="form-control" id="section-content" rows="8" required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Section</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Modal -->
+    <div class="modal fade" id="studentModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Student</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="student-form">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="student-email" class="form-label">Student Email</label>
+                            <input type="email" class="form-control" id="student-email" required />
+                        </div>
+                        <div class="mb-3">
+                            <label for="student-name" class="form-label">Student Name (Optional)</label>
+                            <input type="text" class="form-control" id="student-name" />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Student</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Success Modal -->
+    <div class="modal fade" id="studentSuccessModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-success">Student Added Successfully</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Please share these credentials with the student:</p>
+                    <div class="alert alert-info">
+                        <p class="mb-1"><strong>Email:</strong> <span id="new-student-email"></span></p>
+                        <p class="mb-0"><strong>Temporary Password:</strong> <span id="new-student-password"
+                                class="user-select-all fw-bold"></span></p>
+                    </div>
+                    <p class="small text-muted">The student will be prompted to change this password on first login.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Collaborator Modal (by Email) -->
+    <div class="modal fade" id="addCollaboratorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Teacher Collaborator</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="collaborator-form">
+                        <div class="mb-3">
+                            <label for="collaborator-email" class="form-label">Teacher Email</label>
+                            <input type="email" class="form-control" id="collaborator-email" required />
+                            <small class="text-muted">Enter the email of an existing teacher to add them as a
+                                collaborator</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addCollaboratorByEmail()">Add
+                        Collaborator</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Team Member Modal -->
+    <div class="modal fade" id="teamModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Team Member</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="team-form">
+                        <div class="mb-3">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-control" id="team-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Role</label>
+                            <input type="text" class="form-control" id="team-role" placeholder="e.g. Module 1 Lead">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="team-email">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">LinkedIn URL</label>
+                            <input type="url" class="form-control" id="team-linkedin">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addTeamMember()">Add Member</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Modal -->
+    <div class="modal fade" id="resourceModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Resource</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="resource-form">
+                        <div class="mb-3">
+                            <label class="form-label">Title</label>
+                            <input type="text" class="form-control" id="resource-title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Category</label>
+                            <select class="form-select" id="resource-category">
+                                <option value="Technical">Technical</option>
+                                <option value="Youtube">Youtube Channel</option>
+                                <option value="Book">Book</option>
+                                <option value="Podcast">Podcast</option>
+                                <option value="Tool">Tool</option>
+                                <option value="Math">Mathematics</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">URL</label>
+                            <input type="url" class="form-control" id="resource-url" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addResource()">Add Resource</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collaborator Selection Modal -->
+    <div class="modal fade" id="collaboratorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Collaborator</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="collaborator-select" class="form-label">Select Teacher</label>
+                        <select class="form-select" id="collaborator-select">
+                            <option value="">Loading teachers...</option>
+                        </select>
+                        <div class="form-text">Newly registered teachers must log in at least once to appear here.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addCollaboratorById()">Add
+                        Collaborator</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/promotion-detail.js"></script>
+</body>
+
+</html>
