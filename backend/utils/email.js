@@ -1,19 +1,21 @@
-let nodemailer;
+import nodemailer from 'nodemailer';
+
+// Create transporter
 let transporter;
-
 try {
-  nodemailer = (await import('nodemailer')).default;
-
-  // Create transporter
   transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER || 'noreply@factoriaf5.com',
-      pass: process.env.EMAIL_PASSWORD || ''
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
     }
   });
+
+  console.log(process.env.EMAIL_USER);
+  console.log(process.env.EMAIL_PASSWORD);
+
 } catch (error) {
-  console.warn('Nodemailer not installed. Email functionality will be limited. Install with: npm install nodemailer');
+  console.error('Failed to initialize email transporter:', error);
   transporter = null;
 }
 
