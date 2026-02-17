@@ -18,6 +18,7 @@ import QuickLink from './backend/models/QuickLink.js';
 import Section from './backend/models/Section.js';
 import ExtendedInfo from './backend/models/ExtendedInfo.js';
 import Calendar from './backend/models/Calendar.js';
+import BootcampTemplate from './backend/models/BootcampTemplate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,7 +30,11 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-m
 
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(async () => {
+    console.log('Connected to MongoDB');
+    // Initialize default templates
+    await initializeDefaultTemplates();
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Middleware
@@ -69,7 +74,8 @@ app.get('/student-dashboard', (req, res) => res.sendFile(join(__dirname, 'public
 app.get('/promotion-detail', (req, res) => res.sendFile(join(__dirname, 'public', 'promotion-detail.html')));
 app.get('/public-promotion', (req, res) => res.sendFile(join(__dirname, 'public', 'public-promotion.html')));
 app.get('/admin', (req, res) => res.sendFile(join(__dirname, 'public', 'admin.html')));
-app.get('/', (req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
+// Main page - serve login
+app.get('/', (req, res) => res.sendFile(join(__dirname, 'public', 'login.html')));
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -197,53 +203,153 @@ app.get('/api/promotions/:promotionId/access-password', verifyToken, async (req,
 
 // ==================== BOOTCAMP TEMPLATES ====================
 
-const bootcampTemplates = [
-  {
-    id: 'ia-bootcamp',
-    name: 'IA School Bootcamp',
-    description: 'Artificial Intelligence and Machine Learning bootcamp',
-    weeks: 39,
-    modules: []
-  },
-  {
-    id: 'fullstack-bootcamp',
-    name: 'Full Stack Bootcamp',
-    description: 'Full stack web development bootcamp',
-    weeks: 24,
-    modules: []
-  },
-  {
-    id: 'cybersecurity-bootcamp',
-    name: 'Cyber Security Bootcamp',
-    description: 'Cyber Security and Ethical Hacking bootcamp',
-    weeks: 20,
-    modules: []
-  },
-  {
-    id: 'datascience-bootcamp',
-    name: 'Data Science Bootcamp',
-    description: 'Data Science and Analytics bootcamp',
-    weeks: 30,
-    modules: []
-  },
-  {
-    id: 'frontend-bootcamp',
-    name: 'Frontend Bootcamp',
-    description: 'Frontend development with React, Vue, or Angular',
-    weeks: 16,
-    modules: []
-  },
-  {
-    id: 'backend-bootcamp',
-    name: 'Backend Bootcamp',
-    description: 'Backend development with Node.js, Python, or Java',
-    weeks: 20,
-    modules: []
-  }
-];
+// Initialize default templates if they don't exist
+async function initializeDefaultTemplates() {
+  const defaultTemplates = [
+    {
+      id: 'ia-bootcamp',
+      name: 'IA School Bootcamp',
+      description: 'Artificial Intelligence and Machine Learning bootcamp',
+      weeks: 39,
+      hours: 520,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    },
+    {
+      id: 'fullstack-bootcamp',
+      name: 'Full Stack Bootcamp',
+      description: 'Full stack web development bootcamp',
+      weeks: 24,
+      hours: 320,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    },
+    {
+      id: 'cybersecurity-bootcamp',
+      name: 'Cyber Security Bootcamp',
+      description: 'Cyber Security and Ethical Hacking bootcamp',
+      weeks: 20,
+      hours: 280,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    },
+    {
+      id: 'datascience-bootcamp',
+      name: 'Data Science Bootcamp',
+      description: 'Data Science and Analytics bootcamp',
+      weeks: 30,
+      hours: 420,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    },
+    {
+      id: 'frontend-bootcamp',
+      name: 'Frontend Bootcamp',
+      description: 'Frontend development with React, Vue, or Angular',
+      weeks: 16,
+      hours: 224,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    },
+    {
+      id: 'backend-bootcamp',
+      name: 'Backend Bootcamp',
+      description: 'Backend development with Node.js, Python, or Java',
+      weeks: 20,
+      hours: 280,
+      hoursPerWeek: 35,
+      isCustom: false,
+      modules: []
+    }
+  ];
 
-app.get('/api/bootcamp-templates', (req, res) => {
-  res.json(bootcampTemplates);
+  for (const template of defaultTemplates) {
+    const exists = await BootcampTemplate.findOne({ id: template.id });
+    if (!exists) {
+      await BootcampTemplate.create(template);
+    }
+  }
+}
+
+// Get all templates (system + custom)
+app.get('/api/bootcamp-templates', verifyToken, async (req, res) => {
+  try {
+    const templates = await BootcampTemplate.find({});
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create custom template
+app.post('/api/bootcamp-templates', verifyToken, async (req, res) => {
+  try {
+    const { name, description, weeks, hours, hoursPerWeek, modules, evaluation, schedule } = req.body;
+
+    if (!name || !weeks) {
+      return res.status(400).json({ error: 'Name and weeks are required' });
+    }
+
+    const template = await BootcampTemplate.create({
+      id: `custom-${uuidv4()}`,
+      name,
+      description,
+      weeks,
+      hours: hours || weeks * (hoursPerWeek || 35),
+      hoursPerWeek: hoursPerWeek || 35,
+      modules: modules || [],
+      evaluation: evaluation || '',
+      schedule: schedule || {},
+      isCustom: true,
+      createdBy: req.user.id
+    });
+
+    res.status(201).json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get template by ID
+app.get('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => {
+  try {
+    const template = await BootcampTemplate.findOne({ id: req.params.templateId });
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete custom template
+app.delete('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => {
+  try {
+    const template = await BootcampTemplate.findOne({ id: req.params.templateId });
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (!template.isCustom) {
+      return res.status(403).json({ error: 'Cannot delete system templates' });
+    }
+
+    if (template.createdBy !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    await BootcampTemplate.deleteOne({ id: req.params.templateId });
+    res.json({ message: 'Template deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ==================== AUTHENTICATION ====================
@@ -267,31 +373,35 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     let user = null;
-    let userRole = role;
+    let userRole = null;
 
-    if (userRole === 'teacher' || !role) {
+    // Try Admin first
+    user = await Admin.findOne({ email });
+    if (user && (await bcrypt.compare(password, user.password))) {
+      userRole = 'admin';
+    }
+
+    // Try Teacher
+    if (!user) {
       user = await Teacher.findOne({ email });
-      if (user && (await bcrypt.compare(password, user.password))) userRole = 'teacher';
-      else user = null;
+      if (user && (await bcrypt.compare(password, user.password))) {
+        userRole = 'teacher';
+      }
     }
 
-    if (!user && (userRole === 'student' || !role)) {
+    // Try Student (for reference, though students typically don't login)
+    if (!user) {
       user = await Student.findOne({ email });
-      if (user && (await bcrypt.compare(password, user.password))) userRole = 'student';
-      else user = null;
+      if (user && (await bcrypt.compare(password, user.password))) {
+        userRole = 'student';
+      }
     }
 
-    if (!user && (userRole === 'admin' || !role)) {
-      user = await Admin.findOne({ email });
-      if (user && (await bcrypt.compare(password, user.password))) userRole = 'admin';
-      else user = null;
-    }
-
-    if (user) {
+    if (user && userRole) {
       const token = jwt.sign({ id: user.id, email: user.email, role: userRole }, JWT_SECRET, { expiresIn: '7d' });
       return res.json({ message: 'Login successful', token, user: { id: user.id, name: user.name, email: user.email, role: userRole } });
     }

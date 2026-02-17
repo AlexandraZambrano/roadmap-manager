@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     promotionModal = new bootstrap.Modal(document.getElementById('promotionModal'));
     loadTeacherInfo();
     loadPromotions();
+    loadBootcampTemplates();
     setupNavigation();
     setupPromotionForm();
 });
@@ -140,15 +141,64 @@ function openNewPromotionModal() {
     promotionModal.show();
 }
 
-// Templates data
-const bootcampTemplates = {
-    'ia-bootcamp': { name: 'IA School Bootcamp', weeks: 39, description: 'Artificial Intelligence and Machine Learning bootcamp' },
-    'fullstack-bootcamp': { name: 'Full Stack Bootcamp', weeks: 24, description: 'Full stack web development bootcamp' },
-    'cybersecurity-bootcamp': { name: 'Cyber Security Bootcamp', weeks: 20, description: 'Cyber Security and Ethical Hacking bootcamp' },
-    'datascience-bootcamp': { name: 'Data Science Bootcamp', weeks: 30, description: 'Data Science and Analytics bootcamp' },
-    'frontend-bootcamp': { name: 'Frontend Bootcamp', weeks: 16, description: 'Frontend development with React, Vue, or Angular' },
-    'backend-bootcamp': { name: 'Backend Bootcamp', weeks: 20, description: 'Backend development with Node.js, Python, or Java' }
-};
+// Templates data (loaded from server)
+let bootcampTemplates = {};
+
+// Load templates from server
+async function loadBootcampTemplates() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/bootcamp-templates`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const templates = await response.json();
+            bootcampTemplates = {};
+
+            // Build templates object for easy lookup
+            templates.forEach(template => {
+                bootcampTemplates[template.id] = template;
+            });
+
+            // Populate the select dropdown
+            populateTemplateSelect(templates);
+        }
+    } catch (error) {
+        console.error('Error loading templates:', error);
+    }
+}
+
+// Populate template select dropdown
+function populateTemplateSelect(templates) {
+    const select = document.getElementById('promotion-template');
+
+    // Keep the first default option
+    select.innerHTML = '<option value="">-- Select a template to start --</option>';
+
+    // Add system templates first
+    templates.filter(t => !t.isCustom).forEach(template => {
+        const option = document.createElement('option');
+        option.value = template.id;
+        option.textContent = `${template.name} (${template.weeks} weeks, ${template.hours || template.weeks * 35} hours)`;
+        select.appendChild(option);
+    });
+
+    // Add divider for custom templates
+    if (templates.some(t => t.isCustom)) {
+        const divider = document.createElement('optgroup');
+        divider.label = 'Custom Templates';
+
+        templates.filter(t => t.isCustom).forEach(template => {
+            const option = document.createElement('option');
+            option.value = template.id;
+            option.textContent = `${template.name} (${template.weeks} weeks, ${template.hours || template.weeks * 35} hours)`;
+            divider.appendChild(option);
+        });
+
+        select.appendChild(divider);
+    }
+}
 
 window.applyTemplate = function() {
     const templateId = document.getElementById('promotion-template').value;
@@ -158,6 +208,8 @@ window.applyTemplate = function() {
     const template = bootcampTemplates[templateId];
     if (template) {
         document.getElementById('promotion-weeks').value = template.weeks;
+        document.getElementById('promotion-name').value = template.name;
+        document.getElementById('promotion-desc').value = template.description || '';
     }
 }
 

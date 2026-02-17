@@ -175,6 +175,10 @@
             font-size: 0.85rem;
             margin-top: 5px;
         }
+
+        .role-selection {
+            display: none !important;
+        }
     </style>
 </head>
 
@@ -187,27 +191,12 @@
         </div>
 
         <div class="logo-section">
-            <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" />
-            <h1>Bootcamp Manager</h1>
-            <p data-i18n="sign-in">Sign in to your account</p>
+            <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" style="height: 80px;" />
+            <h2 data-i18n="sign-in" style="margin-top: 30px; font-size: 1.8rem;">Sign in to your account</h2>
         </div>
 
         <div id="danger-alert" class="alert alert-danger hidden" role="alert"></div>
         <div id="success-alert" class="alert alert-success hidden" role="alert"></div>
-
-        <div class="form-group">
-            <label class="form-label" data-i18n="i-am-a">I am a:</label>
-            <div class="role-selection">
-                <button class="role-btn active" data-role="teacher" onclick="selectRole('teacher')">
-                    <i class="bi bi-person-workspace"></i>
-                    <span data-i18n="teacher">Teacher</span>
-                </button>
-                <button class="role-btn" data-role="admin" onclick="selectRole('admin')">
-                    <i class="bi bi-shield-lock"></i>
-                    <span data-i18n="admin">Admin</span>
-                </button>
-            </div>
-        </div>
 
         <form id="login-form">
             <div class="form-group">

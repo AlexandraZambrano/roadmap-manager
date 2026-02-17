@@ -1,21 +1,4 @@
 const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
-let selectedRole = 'teacher';
-
-function selectRole(role) {
-    selectedRole = role;
-
-    // Update UI
-    document.querySelectorAll('.role-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelector(`[data-role="${role}"]`).classList.add('active');
-
-    // Update help text
-    const helpText = document.getElementById('help-text');
-    helpText.textContent = 'Use your assigned password';
-
-    hideAlerts();
-}
 
 function showAlert(message, type = 'danger') {
     const alert = document.getElementById(`${type}-alert`);
@@ -34,7 +17,6 @@ function hideAlerts() {
     const success = document.getElementById('success-alert');
     if (success) success.classList.add('hidden');
 
-    // Legacy support just in case
     const error = document.getElementById('error-alert');
     if (error) error.classList.add('hidden');
 }
@@ -67,13 +49,13 @@ window.handleLogin = async function () {
     hideAlerts();
     setLoading(true);
 
-    console.log(`Attempting login for: ${email} as ${selectedRole}`);
+    console.log(`Attempting login for: ${email}`);
 
     try {
         const response = await fetch(`${API_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, role: selectedRole })
+            body: JSON.stringify({ email, password })
         });
 
         const data = await response.json();
@@ -85,10 +67,12 @@ window.handleLogin = async function () {
             localStorage.setItem('role', data.user.role);
             showAlert('Login successful! Redirecting...', 'success');
 
+            // Redirect based on role returned from server
             setTimeout(() => {
-                if (selectedRole === 'admin') {
+                const role = data.user.role;
+                if (role === 'admin') {
                     window.location.href = 'admin.html';
-                } else if (selectedRole === 'teacher') {
+                } else if (role === 'teacher') {
                     window.location.href = 'dashboard.html';
                 } else {
                     window.location.href = 'student-dashboard.html';
@@ -106,9 +90,6 @@ window.handleLogin = async function () {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Set default role UI
-    selectRole('teacher');
-
     // Add enter key listener
     const form = document.getElementById('login-form');
     if (form) {
