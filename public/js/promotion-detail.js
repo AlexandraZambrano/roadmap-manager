@@ -1629,7 +1629,7 @@ async function loadAccessPassword() {
     }
 }
 
-window.updateAccessPassword = async function() {
+window.updateAccessPassword = async function () {
     const password = document.getElementById('access-password-input').value;
     const token = localStorage.getItem('token');
     const alertEl = document.getElementById('password-alert');
@@ -1680,12 +1680,15 @@ window.updateAccessPassword = async function() {
 function updateStudentAccessLink() {
     const linkInput = document.getElementById('student-access-link');
     if (linkInput) {
-        const baseUrl = window.location.origin;
+        // Construct base URL dynamically to handle subfolders (like GitHub Pages)
+        const path = window.location.pathname;
+        const directory = path.substring(0, path.lastIndexOf('/'));
+        const baseUrl = window.location.origin + (directory === '/' ? '' : directory);
         linkInput.value = `${baseUrl}/public-promotion.html?id=${promotionId}`;
     }
 }
 
-window.copyAccessLink = function() {
+window.copyAccessLink = function () {
     const linkInput = document.getElementById('student-access-link');
     if (linkInput && linkInput.value) {
         navigator.clipboard.writeText(linkInput.value).then(() => {
@@ -1697,7 +1700,7 @@ window.copyAccessLink = function() {
 // Student Detail Functions
 let currentStudentId = null;
 
-window.openStudentDetailModal = async function(studentId) {
+window.openStudentDetailModal = async function (studentId) {
     currentStudentId = studentId;
     const token = localStorage.getItem('token');
 
@@ -1846,7 +1849,7 @@ function displayStudentDetail(student) {
     modal.show();
 }
 
-window.saveStudentProfile = async function() {
+window.saveStudentProfile = async function () {
     const token = localStorage.getItem('token');
     const alertEl = document.getElementById('student-save-alert');
 

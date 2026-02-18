@@ -43,7 +43,7 @@ function displayPromotions(promotions) {
     promotions.forEach(promotion => {
         const card = document.createElement('div');
         card.className = 'promotion-card';
-        card.onclick = () => window.location.href = `/public-promotion.html?id=${promotion.id}`;
+        card.onclick = () => window.location.href = `public-promotion.html?id=${promotion.id}`;
         card.innerHTML = `
             <div class="promotion-card-body">
                 <h3>${escapeHtml(promotion.name)}</h3>
