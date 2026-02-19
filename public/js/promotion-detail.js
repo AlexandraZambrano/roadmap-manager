@@ -45,6 +45,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Set up student dashboard preview iframe in Overview
+    const previewIframe = document.getElementById('student-preview-iframe');
+    if (previewIframe) {
+        const path = window.location.pathname;
+        const directory = path.substring(0, path.lastIndexOf('/'));
+        const baseUrl = window.location.origin + (directory === '/' ? '' : directory);
+        previewIframe.src = `${baseUrl}/public-promotion.html?id=${promotionId}&preview=1`;
+    }
+
     // Initialize modals only if elements exist (teacher view)
     const moduleModalEl = document.getElementById('moduleModal');
     if (moduleModalEl) moduleModal = new bootstrap.Modal(moduleModalEl);

@@ -54,12 +54,7 @@
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link active" href="#dashboard">
-                                <i class="bi bi-speedometer2 me-2"></i>Dashboard
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#promotions">
+                            <a class="nav-link active" href="#promotions">
                                 <i class="bi bi-briefcase me-2"></i>Promotions
                             </a>
                         </li>
@@ -69,47 +64,8 @@
 
             <!-- Main Content -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
-                <!-- Dashboard Section -->
-                <div id="dashboard-section" class="section-content">
-                    <div class="d-flex justify-content-between align-items-center my-4">
-                        <h1>Dashboard</h1>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h5 class="card-title">
-                                        <i class="bi bi-briefcase"></i> Total Promotions
-                                    </h5>
-                                    <p class="card-text display-6" id="promotions-count">0</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h5 class="card-title">
-                                        <i class="bi bi-bookmark"></i> Total Modules
-                                    </h5>
-                                    <p class="card-text display-6" id="modules-count">0</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h5 class="card-title">
-                                        <i class="bi bi-lightning"></i> Quick Links
-                                    </h5>
-                                    <p class="card-text display-6" id="quicklinks-count">0</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Promotions Section -->
-                <div id="promotions-section" class="section-content hidden">
+                <!-- Promotions Section (default) -->
+                <div id="promotions-section" class="section-content">
                     <div class="d-flex justify-content-between align-items-center my-4">
                         <h1>Promotions</h1>
                         <button class="btn btn-primary" onclick="openNewPromotionModal()">

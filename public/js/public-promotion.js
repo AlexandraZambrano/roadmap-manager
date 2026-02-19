@@ -3,24 +3,32 @@ let promotionId = null;
 let passwordModal = null;
 let promotionHasPassword = false;
 let isAccessVerified = false;
+let isPreviewMode = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    promotionId = new URLSearchParams(window.location.search).get('id');
+    const params = new URLSearchParams(window.location.search);
+    promotionId = params.get('id');
+    isPreviewMode = params.get('preview') === '1';
 
     if (!promotionId) {
         document.body.innerHTML = '<div class="alert alert-danger m-5">Promotion not found</div>';
         return;
     }
 
-    // Initialize password modal
+    // Initialize password modal (student access mode only)
     const modalEl = document.getElementById('passwordModal');
     if (modalEl) {
         passwordModal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
     }
 
-    // Check if promotion requires password
-    checkPasswordRequirement();
+    if (isPreviewMode) {
+        // In preview mode (from teacher overview), bypass password and tracking
+        loadPromotionContent();
+    } else {
+        // Check if promotion requires password
+        checkPasswordRequirement();
+    }
 });
 
 async function checkPasswordRequirement() {

@@ -124,10 +124,8 @@ function setupNavigation() {
                 section.classList.add('hidden');
             });
 
-            // Show selected section
-            if (href === '#dashboard') {
-                document.getElementById('dashboard-section').classList.remove('hidden');
-            } else if (href === '#promotions') {
+            // Show promotions section (only section we keep)
+            if (href === '#promotions') {
                 document.getElementById('promotions-section').classList.remove('hidden');
             }
         });
