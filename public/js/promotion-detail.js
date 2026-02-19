@@ -1887,6 +1887,7 @@ async function loadStudents() {
         if (response.ok) {
             const students = await response.json();
             displayStudents(students);
+            window.currentStudents = students; // cache for CSV export
         }
     } catch (error) {
         console.error('Error loading students:', error);
@@ -1932,6 +1933,62 @@ function displayStudents(students) {
         list.appendChild(card);
     });
 }
+
+// Export students info as CSV
+window.exportStudentsCsv = async function () {
+    const token = localStorage.getItem('token');
+    let students = window.currentStudents;
+
+    try {
+        // Ensure we have fresh data
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            students = await response.json();
+            window.currentStudents = students;
+        }
+    } catch (error) {
+        console.error('Error reloading students for CSV:', error);
+    }
+
+    if (!students || students.length === 0) {
+        alert('No students to export.');
+        return;
+    }
+
+    const rows = [];
+    // Header
+    rows.push(['Name', 'Email', 'Manual/Auto', 'Last Accessed'].join(','));
+
+    students.forEach(student => {
+        const name = (student.name || '').replace(/"/g, '""');
+        const email = (student.email || '').replace(/"/g, '""');
+        const mode = student.isManuallyAdded ? 'Manual' : 'Auto-tracked';
+        const lastAccessed = student.progress?.lastAccessed
+            ? new Date(student.progress.lastAccessed).toISOString()
+            : '';
+
+        rows.push([
+            `"${name}"`,
+            `"${email}"`,
+            `"${mode}"`,
+            `"${lastAccessed}"`
+        ].join(','));
+    });
+
+    const csvContent = rows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `students-promotion-${promotionId}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
 
 async function deleteStudent(studentId) {
     if (!confirm('Are you sure you want to remove this student?')) return;

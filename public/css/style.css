@@ -222,3 +222,26 @@ body {
 .hidden {
     display: none !important;
 }
+
+/* Responsive tweaks for smaller devices */
+@media (max-width: 768px) {
+    .sidebar {
+        position: static;
+        height: auto;
+    }
+
+    main {
+        margin-top: 1rem;
+    }
+
+    .section-container {
+        padding: 0 0.5rem;
+    }
+
+    #gantt-table th,
+    #gantt-table td {
+        font-size: 9px;
+        padding: 4px;
+        min-width: 24px;
+    }
+}
