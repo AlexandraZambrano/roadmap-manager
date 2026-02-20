@@ -1,6 +1,6 @@
 const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
 let promotionId = null;
-let moduleModal, quickLinkModal, sectionModal, studentModal, studentSuccessModal, teamModal, resourceModal, collaboratorModal;
+let moduleModal, quickLinkModal, sectionModal, studentModal, teamModal, resourceModal, collaboratorModal;
 const userRole = localStorage.getItem('role') || 'student';
 let currentUser = {};
 try {
@@ -15,6 +15,19 @@ let extendedInfoData = {
     resources: [],
     evaluation: ''
 };
+
+// Utility function to escape HTML to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, function(m) { return map[m]; });
+}
 
 // Immediate CSS injection for student view (to prevent flicker)
 if (userRole === 'student') {
@@ -66,9 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const studentModalEl = document.getElementById('studentModal');
     if (studentModalEl) studentModal = new bootstrap.Modal(studentModalEl);
-
-    const studentSuccessModalEl = document.getElementById('studentSuccessModal');
-    if (studentSuccessModalEl) studentSuccessModal = new bootstrap.Modal(studentSuccessModalEl);
 
     // New Modals (Teacher)
     const teamModalEl = document.getElementById('teamModal');
@@ -1504,37 +1514,344 @@ function setupForms() {
     document.getElementById('student-form').addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const email = document.getElementById('student-email').value;
         const name = document.getElementById('student-name').value;
+        const lastname = document.getElementById('student-lastname').value;
+        const email = document.getElementById('student-email').value;
+        const age = document.getElementById('student-age').value;
+        const nationality = document.getElementById('student-nationality').value;
+        const profession = document.getElementById('student-profession').value;
+        const address = document.getElementById('student-address').value;
+        
+        // Check if we're editing an existing student
+        const editingStudentId = document.getElementById('student-form').dataset.editingStudentId;
+        
         const token = localStorage.getItem('token');
 
+        const studentData = {
+            name,
+            lastname,
+            email,
+            age: age ? parseInt(age) : null,
+            nationality,
+            profession,
+            address
+        };
+
+        console.log('Sending student data:', studentData);
+
         try {
-            const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ email, name })
-            });
+            let response;
+            
+            if (editingStudentId) {
+                // Update existing student using the /profile endpoint which works reliably
+                response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${editingStudentId}/profile`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(studentData)
+                });
+            } else {
+                // Create new student
+                response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(studentData)
+                });
+            }
 
             if (response.ok) {
                 const data = await response.json();
                 studentModal.hide();
                 document.getElementById('student-form').reset();
+                delete document.getElementById('student-form').dataset.editingStudentId;
                 loadStudents();
-
-                // Show success modal with temp password
-                document.getElementById('new-student-email').textContent = data.student.email;
-                document.getElementById('new-student-password').textContent = data.tempPassword || 'Error';
-                studentSuccessModal.show();
+                
+                const action = editingStudentId ? 'updated' : 'added';
+                alert(`Student ${action} successfully!`);
             } else {
-                alert('Error adding student');
+                console.error('Response status:', response.status);
+                console.error('Response headers:', response.headers);
+                let errorMessage = 'Unknown error';
+                
+                // Clone the response so we can read it multiple times if needed
+                const responseClone = response.clone();
+                
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    // If response is not JSON (like HTML error page), get text from the clone
+                    try {
+                        const errorText = await responseClone.text();
+                        console.error('Error response text:', errorText.substring(0, 200));
+                        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                    } catch (textError) {
+                        console.error('Could not read response text:', textError);
+                        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                    }
+                }
+                
+                alert(`Error ${editingStudentId ? 'updating' : 'adding'} student: ${errorMessage}`);
             }
         } catch (error) {
-            console.error('Error adding student:', error);
+            console.error(`Error ${editingStudentId ? 'updating' : 'adding'} student:`, error);
+            alert(`Error ${editingStudentId ? 'updating' : 'adding'} student`);
         }
     });
+}
+
+// ==================== STUDENT MANAGEMENT FUNCTIONS ====================
+
+// Debug function to test student endpoints
+async function debugStudentEndpoints() {
+    console.log('=== TESTING STUDENT ENDPOINTS ===');
+    const token = localStorage.getItem('token');
+    
+    if (!window.currentStudents || window.currentStudents.length === 0) {
+        console.log('No students available for testing');
+        return;
+    }
+    
+    const student = window.currentStudents[0];
+    console.log('Testing with student:', student);
+    console.log('Student fields present:', {
+        id: !!student.id,
+        name: !!student.name,
+        lastname: !!student.lastname,
+        email: !!student.email,
+        age: !!student.age,
+        nationality: !!student.nationality,
+        profession: !!student.profession,
+        address: !!student.address
+    });
+    
+    // Test GET endpoint
+    try {
+        const getResponse = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${student.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        console.log('GET /students/:id status:', getResponse.status);
+        if (getResponse.ok) {
+            const studentData = await getResponse.json();
+            console.log('GET student data:', studentData);
+        }
+    } catch (error) {
+        console.log('GET /students/:id error:', error.message);
+    }
+    
+    // Test PUT /profile endpoint
+    try {
+        const testData = {
+            name: student.name || 'Test Name',
+            lastname: student.lastname || 'Test Lastname',
+            email: student.email,
+            age: student.age || 25,
+            nationality: student.nationality || 'Test Nationality',
+            profession: student.profession || 'Test Profession',
+            address: student.address || 'Test Address'
+        };
+        
+        console.log('Testing PUT with data:', testData);
+        
+        const putResponse = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${student.id}/profile`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(testData)
+        });
+        
+        console.log('PUT /students/:id/profile status:', putResponse.status);
+        if (putResponse.ok) {
+            const updatedData = await putResponse.json();
+            console.log('✓ Profile endpoint works!');
+            console.log('Updated student data:', updatedData);
+        } else {
+            const errorText = await putResponse.text();
+            console.log('PUT error response:', errorText);
+        }
+    } catch (error) {
+        console.log('PUT /students/:id/profile error:', error.message);
+    }
+}
+
+// Load and display students for the promotion
+async function loadStudents() {
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const students = await response.json();
+        console.log('Loaded students:', students);
+        
+        // Store students data globally for multi-select operations
+        // Backend already normalizes the ID field, so we can use it directly
+        window.currentStudents = students;
+        displayStudents(window.currentStudents);
+    } catch (error) {
+        console.error('Error loading students:', error);
+        alert(`Error loading students: ${error.message}`);
+    }
+}
+
+// Display students with checkboxes for multi-select
+function displayStudents(students) {
+    const studentsContainer = document.getElementById('students-list');
+    if (!studentsContainer) {
+        console.warn('Students container not found');
+        return;
+    }
+    
+    if (!students || students.length === 0) {
+        studentsContainer.innerHTML = '<p class="text-muted">No students registered yet.</p>';
+        return;
+    }
+    
+    studentsContainer.innerHTML = students.map((student, index) => `
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-2">
+                    <input type="checkbox" class="form-check-input me-3 student-checkbox" 
+                           data-student-id="${student.id}" 
+                           onchange="updateSelectionState()">
+                    <h6 class="card-title mb-0">${student.name || 'N/A'} ${student.lastname || ''}</h6>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="card-text mb-1"><strong>Email:</strong> ${student.email || 'N/A'}</p>
+                        <p class="card-text mb-1"><strong>Age:</strong> ${student.age || 'N/A'}</p>
+                        <p class="card-text mb-1"><strong>Nationality:</strong> ${student.nationality || 'N/A'}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="card-text mb-1"><strong>Profession:</strong> ${student.profession || 'N/A'}</p>
+                        <p class="card-text mb-1"><strong>Address:</strong> ${student.address || 'N/A'}</p>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <button class="btn btn-sm btn-primary me-2" onclick="editStudent('${student.id}')">
+                        <i class="bi bi-pencil"></i> Edit
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteStudent('${student.id}', '${student.email}')">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    updateSelectionState();
+}
+
+// Delete individual student
+async function deleteStudent(studentId, studentEmail) {
+    if (!confirm(`Are you sure you want to delete student ${studentEmail}?`)) return;
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+            alert('Student deleted successfully');
+            loadStudents();
+        } else {
+            alert('Error deleting student');
+        }
+    } catch (error) {
+        console.error('Error deleting student:', error);
+        alert('Error deleting student');
+    }
+}
+
+// Edit student - populate form with existing data
+function editStudent(studentId) {
+    const student = window.currentStudents?.find(s => s.id === studentId);
+    if (!student) {
+        alert('Student not found');
+        return;
+    }
+    
+    // Populate the form with existing data
+    document.getElementById('student-name').value = student.name || '';
+    document.getElementById('student-lastname').value = student.lastname || '';
+    document.getElementById('student-email').value = student.email || '';
+    document.getElementById('student-age').value = student.age || '';
+    document.getElementById('student-nationality').value = student.nationality || '';
+    document.getElementById('student-profession').value = student.profession || '';
+    document.getElementById('student-address').value = student.address || '';
+    
+    // Store the student ID for updating
+    document.getElementById('student-form').dataset.editingStudentId = studentId;
+    
+    // Update modal title
+    const modalTitle = document.querySelector('#studentModal .modal-title');
+    if (modalTitle) modalTitle.textContent = 'Edit Student';
+    
+    // Show the modal
+    studentModal.show();
+}
+
+// Export all students as CSV
+function exportStudentsToCSV(students, filename) {
+    const rows = [];
+    // Header - removed Entry Type and Last Accessed
+    rows.push(['Name', 'Last Name', 'Email', 'Age', 'Nationality', 'Profession', 'Address'].join(','));
+
+    students.forEach(student => {
+        const name = (student.name || '').replace(/"/g, '""');
+        const lastname = (student.lastname || '').replace(/"/g, '""');
+        const email = (student.email || '').replace(/"/g, '""');
+        const age = student.age || '';
+        const nationality = (student.nationality || '').replace(/"/g, '""');
+        const profession = (student.profession || '').replace(/"/g, '""');
+        const address = (student.address || '').replace(/"/g, '""');
+
+        rows.push([
+            `"${name}"`,
+            `"${lastname}"`,
+            `"${email}"`,
+            `"${age}"`,
+            `"${nationality}"`,
+            `"${profession}"`,
+            `"${address}"`
+        ].join(','));
+    });
+
+    const csvContent = rows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+// Export all students
+function exportAllStudentsCSV() {
+    const students = window.currentStudents || [];
+    if (students.length === 0) {
+        alert('No students to export.');
+        return;
+    }
+    exportStudentsToCSV(students, `all-students-promotion-${promotionId}.csv`);
 }
 
 const platformIcons = {
@@ -1589,6 +1906,14 @@ function openSectionModal() {
 
 function openStudentModal() {
     document.getElementById('student-form').reset();
+    
+    // Clear any editing state
+    delete document.getElementById('student-form').dataset.editingStudentId;
+    
+    // Update modal title
+    const modalTitle = document.querySelector('#studentModal .modal-title');
+    if (modalTitle) modalTitle.textContent = 'Add Student';
+    
     studentModal.show();
 }
 
@@ -1878,110 +2203,148 @@ async function removeCollaborator(teacherId) {
     }
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// ==================== STUDENT MULTI-SELECT FUNCTIONALITY ====================
 
-// Student Management Functions
-async function loadStudents() {
-    const token = localStorage.getItem('token');
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            const students = await response.json();
-            displayStudents(students);
-            window.currentStudents = students; // cache for CSV export
-        }
-    } catch (error) {
-        console.error('Error loading students:', error);
-    }
-}
-
-function displayStudents(students) {
-    const list = document.getElementById('students-list');
-    list.innerHTML = '';
-
-    if (students.length === 0) {
-        list.innerHTML = '<div class="col-12"><p class="text-muted">No students enrolled yet</p></div>';
-        return;
-    }
-
-    students.forEach(student => {
-        const card = document.createElement('div');
-        card.className = 'col-md-6 mb-3';
-        const badge = student.isManuallyAdded ? '<span class="badge bg-secondary">Manual</span>' : '<span class="badge bg-info">Auto-tracked</span>';
-        const lastAccessed = student.progress?.lastAccessed ? new Date(student.progress.lastAccessed).toLocaleDateString() : 'Not accessed';
-
-        card.innerHTML = `
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <h5 class="card-title mb-1">${escapeHtml(student.name)}</h5>
-                            <p class="card-text text-muted mb-2">${escapeHtml(student.email)}</p>
-                            ${badge}
-                        </div>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}')">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                    <hr class="my-2">
-                    <small class="text-muted">Last accessed: ${lastAccessed}</small><br>
-                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="openStudentDetailModal('${student.id}')">
-                        <i class="bi bi-eye me-1"></i>View Details
-                    </button>
-                </div>
-            </div>
-        `;
-        list.appendChild(card);
+// Toggle all students selection
+window.toggleAllStudents = function() {
+    const selectAllCheckbox = document.getElementById('select-all-students');
+    const studentCheckboxes = document.querySelectorAll('.student-checkbox');
+    
+    studentCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
     });
+    
+    updateSelectionState();
+};
+
+// Update selection state and show/hide bulk action buttons
+window.updateSelectionState = function() {
+    const studentCheckboxes = document.querySelectorAll('.student-checkbox');
+    const selectAllCheckbox = document.getElementById('select-all-students');
+    const selectedCount = document.querySelectorAll('.student-checkbox:checked').length;
+    const totalCount = studentCheckboxes.length;
+    
+    // Update select all checkbox state
+    if (selectedCount === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } else if (selectedCount === totalCount) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    }
+    
+    // Update selected count display
+    document.getElementById('selected-count').textContent = `${selectedCount} selected`;
+    
+    // Show/hide bulk action buttons
+    const exportSelectedBtn = document.getElementById('export-selected-btn');
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    
+    if (selectedCount > 0) {
+        exportSelectedBtn.style.display = 'inline-block';
+        deleteSelectedBtn.style.display = 'inline-block';
+    } else {
+        exportSelectedBtn.style.display = 'none';
+        deleteSelectedBtn.style.display = 'none';
+    }
+};
+
+// Get selected students data
+function getSelectedStudents() {
+    const selectedCheckboxes = document.querySelectorAll('.student-checkbox:checked');
+    const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.studentId);
+    
+    // Get current students data
+    const currentStudents = window.currentStudents || [];
+    return currentStudents.filter(student => selectedIds.includes(student.id));
 }
 
-// Export students info as CSV
-window.exportStudentsCsv = async function () {
-    const token = localStorage.getItem('token');
-    let students = window.currentStudents;
-
-    try {
-        // Ensure we have fresh data
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-            students = await response.json();
-            window.currentStudents = students;
-        }
-    } catch (error) {
-        console.error('Error reloading students for CSV:', error);
-    }
-
-    if (!students || students.length === 0) {
-        alert('No students to export.');
+// Export selected students as CSV
+window.exportSelectedStudentsCsv = function() {
+    const selectedStudents = getSelectedStudents();
+    
+    if (selectedStudents.length === 0) {
+        alert('No students selected.');
         return;
     }
+    
+    exportStudentsToCSV(selectedStudents, `selected-students-promotion-${promotionId}.csv`);
+};
 
+// Delete selected students
+
+window.deleteSelectedStudents = async function() {
+    const selectedStudents = getSelectedStudents();
+    
+    if (selectedStudents.length === 0) {
+        alert('No students selected.');
+        return;
+    }
+    
+    const confirmMessage = `Are you sure you want to delete ${selectedStudents.length} selected student(s)? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) return;
+    
+    const token = localStorage.getItem('token');
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Delete students one by one
+    for (const student of selectedStudents) {
+        try {
+            const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${student.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                successCount++;
+            } else {
+                errorCount++;
+                console.error(`Failed to delete student ${student.email}`);
+            }
+        } catch (error) {
+            errorCount++;
+            console.error(`Error deleting student ${student.email}:`, error);
+        }
+    }
+    
+    // Show results
+    if (errorCount === 0) {
+        alert(`Successfully deleted ${successCount} student(s).`);
+    } else {
+        alert(`Deleted ${successCount} student(s). Failed to delete ${errorCount} student(s).`);
+    }
+    
+    // Reload students list
+    loadStudents();
+};
+
+// Helper function to export students to CSV
+function exportStudentsToCSV(students, filename) {
     const rows = [];
-    // Header
-    rows.push(['Name', 'Email', 'Manual/Auto', 'Last Accessed'].join(','));
+    // Header - removed Entry Type and Last Accessed
+    rows.push(['Name', 'Last Name', 'Email', 'Age', 'Nationality', 'Profession', 'Address'].join(','));
 
     students.forEach(student => {
         const name = (student.name || '').replace(/"/g, '""');
+        const lastname = (student.lastname || '').replace(/"/g, '""');
         const email = (student.email || '').replace(/"/g, '""');
-        const mode = student.isManuallyAdded ? 'Manual' : 'Auto-tracked';
-        const lastAccessed = student.progress?.lastAccessed
-            ? new Date(student.progress.lastAccessed).toISOString()
-            : '';
+        const age = student.age || '';
+        const nationality = (student.nationality || '').replace(/"/g, '""');
+        const profession = (student.profession || '').replace(/"/g, '""');
+        const address = (student.address || '').replace(/"/g, '""');
 
         rows.push([
             `"${name}"`,
+            `"${lastname}"`,
             `"${email}"`,
-            `"${mode}"`,
-            `"${lastAccessed}"`
+            `"${age}"`,
+            `"${nationality}"`,
+            `"${profession}"`,
+            `"${address}"`
         ].join(','));
     });
 
@@ -1991,357 +2354,9 @@ window.exportStudentsCsv = async function () {
 
     const link = document.createElement('a');
     link.href = url;
-    link.download = `students-promotion-${promotionId}.csv`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-};
-
-async function deleteStudent(studentId) {
-    if (!confirm('Are you sure you want to remove this student?')) return;
-
-    const token = localStorage.getItem('token');
-    try {
-        await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        loadStudents();
-    } catch (error) {
-        console.error('Error deleting student:', error);
-    }
-}
-
-// Access Settings Functions
-async function loadAccessPassword() {
-    const token = localStorage.getItem('token');
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            const contentType = response.headers.get('content-type');
-            const data = contentType && contentType.includes('application/json')
-                ? await response.json()
-                : {};
-            const passwordInput = document.getElementById('access-password-input');
-            if (passwordInput) {
-                passwordInput.value = data.accessPassword || '';
-                updateStudentAccessLink();
-            }
-        } else {
-            console.error('Error loading access password:', response.status);
-        }
-    } catch (error) {
-        console.error('Error loading access password:', error);
-    }
-}
-
-window.updateAccessPassword = async function () {
-    const password = document.getElementById('access-password-input').value;
-    const token = localStorage.getItem('token');
-    const alertEl = document.getElementById('password-alert');
-
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ password })
-        });
-
-        const contentType = response.headers.get('content-type');
-        let data;
-
-        try {
-            data = contentType && contentType.includes('application/json')
-                ? await response.json()
-                : await response.text();
-        } catch (parseError) {
-            console.error('Error parsing response:', parseError);
-            throw new Error('Invalid server response');
-        }
-
-        if (response.ok) {
-            alertEl.className = 'alert alert-success mt-3';
-            alertEl.textContent = 'Password updated successfully!';
-            alertEl.classList.remove('hidden');
-            updateStudentAccessLink();
-            setTimeout(() => alertEl.classList.add('hidden'), 3000);
-        } else {
-            const errorMsg = typeof data === 'object' && data.error ? data.error : 'Failed to update password';
-            alertEl.className = 'alert alert-danger mt-3';
-            alertEl.textContent = errorMsg;
-            alertEl.classList.remove('hidden');
-            console.error('Password update response:', response.status, data);
-        }
-    } catch (error) {
-        console.error('Error updating password:', error);
-        alertEl.className = 'alert alert-danger mt-3';
-        alertEl.textContent = 'Error: ' + error.message;
-        alertEl.classList.remove('hidden');
-    }
-};
-
-function updateStudentAccessLink() {
-    const linkInput = document.getElementById('student-access-link');
-    if (linkInput) {
-        // Construct base URL dynamically to handle subfolders (like GitHub Pages)
-        const path = window.location.pathname;
-        const directory = path.substring(0, path.lastIndexOf('/'));
-        const baseUrl = window.location.origin + (directory === '/' ? '' : directory);
-        linkInput.value = `${baseUrl}/public-promotion.html?id=${promotionId}`;
-    }
-}
-
-window.copyAccessLink = function () {
-    const linkInput = document.getElementById('student-access-link');
-    if (linkInput && linkInput.value) {
-        navigator.clipboard.writeText(linkInput.value).then(() => {
-            alert('Link copied to clipboard!');
-        });
-    }
-};
-
-// Student Detail Functions
-let currentStudentId = null;
-
-window.openStudentDetailModal = async function (studentId) {
-    currentStudentId = studentId;
-    const token = localStorage.getItem('token');
-
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        const contentType = response.headers.get('content-type');
-        let student;
-        try {
-            student = contentType && contentType.includes('application/json')
-                ? await response.json()
-                : null;
-        } catch (parseError) {
-            console.error('Error parsing student data:', parseError);
-            alert('Error loading student details: Invalid response from server');
-            return;
-        }
-
-        if (response.ok && student) {
-            displayStudentDetail(student);
-        } else {
-            const error = student?.error || `Error loading student details (${response.status})`;
-            alert(error);
-            console.error('Student detail response:', response.status, student);
-        }
-    } catch (error) {
-        console.error('Error loading student details:', error);
-        alert('Error: ' + error.message);
-    }
-};
-
-function displayStudentDetail(student) {
-    const modalHtml = `
-        <div class="modal fade" id="studentDetailModal" tabindex="-1">
-            <div class="modal-dialog modal-xl">
-                <div class="modal-content">
-                    <div class="modal-header bg-warning bg-opacity-10 border-warning">
-                        <h5 class="modal-title">Student Profile: ${escapeHtml(student.name || 'No Name')}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <!-- Basic Information Section -->
-                        <div class="mb-4">
-                            <h6 class="text-warning fw-bold mb-3">Personal Information</h6>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">First Name</label>
-                                    <input type="text" class="form-control" id="student-name" value="${escapeHtml(student.name || '')}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Last Name</label>
-                                    <input type="text" class="form-control" id="student-lastName" value="${escapeHtml(student.lastName || '')}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="student-email" value="${escapeHtml(student.email || '')}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Age</label>
-                                    <input type="number" class="form-control" id="student-age" value="${student.age || ''}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Nationality</label>
-                                    <input type="text" class="form-control" id="student-nationality" value="${escapeHtml(student.nationality || '')}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Paper Status (DNI/NIE/Pasaporte)</label>
-                                    <input type="text" class="form-control" id="student-paperStatus" value="${escapeHtml(student.paperStatus || '')}">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Additional Information Section -->
-                        <div class="mb-4">
-                            <h6 class="text-warning fw-bold mb-3">Additional Information</h6>
-                            <div class="row g-3">
-                                <div class="col-12">
-                                    <label class="form-label">Description</label>
-                                    <textarea class="form-control" id="student-description" rows="3" placeholder="Brief description about the student...">${escapeHtml(student.description || '')}</textarea>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Work Background</label>
-                                    <textarea class="form-control" id="student-workBackground" rows="3" placeholder="Previous work experience and skills...">${escapeHtml(student.workBackground || '')}</textarea>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Progress Section -->
-                        <div class="mb-4">
-                            <h6 class="text-warning fw-bold mb-3">Progress & Engagement</h6>
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <div class="card bg-light border-0">
-                                        <div class="card-body">
-                                            <p class="card-text text-muted mb-0">Modules Viewed</p>
-                                            <h5 class="text-warning">${(student.progress?.modulesViewed || []).length}</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="card bg-light border-0">
-                                        <div class="card-body">
-                                            <p class="card-text text-muted mb-0">Sections Completed</p>
-                                            <h5 class="text-warning">${(student.progress?.sectionsCompleted || []).length}</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="card bg-light border-0">
-                                        <div class="card-body">
-                                            <p class="card-text text-muted mb-0">Last Accessed</p>
-                                            <h6 class="text-warning mb-0">${student.progress?.lastAccessed ? new Date(student.progress.lastAccessed).toLocaleDateString() : 'Not yet'}</h6>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Teacher Notes Section -->
-                        <div class="mb-4">
-                            <h6 class="text-warning fw-bold mb-3">Teacher Notes</h6>
-                            <textarea class="form-control" id="student-notes" rows="4" placeholder="Add notes about this student...">${escapeHtml(student.notes || '')}</textarea>
-                        </div>
-
-                        <div id="student-save-alert" class="alert alert-info mt-3 hidden"></div>
-                    </div>
-                    <div class="modal-footer border-top">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="button" class="btn btn-warning" onclick="saveStudentProfile()">
-                            <i class="bi bi-save me-2"></i>Save All Changes
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Remove existing modal if any
-    const existing = document.getElementById('studentDetailModal');
-    if (existing) existing.remove();
-
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    const modal = new bootstrap.Modal(document.getElementById('studentDetailModal'));
-    modal.show();
-}
-
-window.saveStudentProfile = async function () {
-    const token = localStorage.getItem('token');
-    const alertEl = document.getElementById('student-save-alert');
-
-    const profileData = {
-        name: document.getElementById('student-name').value,
-        lastName: document.getElementById('student-lastName').value,
-        email: document.getElementById('student-email').value,
-        age: parseInt(document.getElementById('student-age').value) || null,
-        nationality: document.getElementById('student-nationality').value,
-        paperStatus: document.getElementById('student-paperStatus').value,
-        description: document.getElementById('student-description').value,
-        workBackground: document.getElementById('student-workBackground').value,
-        notes: document.getElementById('student-notes').value
-    };
-
-    try {
-        // Save profile information
-        const profileResponse = await fetch(`${API_URL}/api/promotions/${promotionId}/students/${currentStudentId}/profile`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(profileData)
-        });
-
-        const contentType = profileResponse.headers.get('content-type');
-        let data;
-        try {
-            data = contentType && contentType.includes('application/json')
-                ? await profileResponse.json()
-                : {};
-        } catch (parseError) {
-            data = {};
-        }
-
-        // Save notes separately if profile update succeeds
-        if (profileResponse.ok) {
-            await fetch(`${API_URL}/api/promotions/${promotionId}/students/${currentStudentId}/notes`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ notes: profileData.notes })
-            });
-
-            alertEl.className = 'alert alert-success';
-            alertEl.textContent = 'Student profile saved successfully!';
-            alertEl.classList.remove('hidden');
-            setTimeout(() => {
-                alertEl.classList.add('hidden');
-                loadStudents(); // Refresh student list
-            }, 2000);
-        } else {
-            const errorMsg = data.error || 'Error saving student profile';
-            alertEl.className = 'alert alert-danger';
-            alertEl.textContent = errorMsg;
-            alertEl.classList.remove('hidden');
-            console.error('Save profile response:', profileResponse.status, data);
-        }
-    } catch (error) {
-        console.error('Error saving student profile:', error);
-        alertEl.className = 'alert alert-danger';
-        alertEl.textContent = 'Error: ' + error.message;
-        alertEl.classList.remove('hidden');
-    }
-};
-
-// Toggle password visibility
-function togglePasswordVisibility(inputId) {
-    const input = document.getElementById(inputId);
-    const button = event.currentTarget;
-    const icon = button.querySelector('i');
-
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.classList.remove('bi-eye');
-        icon.classList.add('bi-eye-slash');
-    } else {
-        input.type = 'password';
-        icon.classList.remove('bi-eye-slash');
-        icon.classList.add('bi-eye');
-    }
 }

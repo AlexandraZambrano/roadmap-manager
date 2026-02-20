@@ -219,11 +219,28 @@
                         <h2>Students</h2>
                         <div class="d-flex flex-wrap gap-2">
                             <button class="btn btn-outline-secondary" onclick="exportStudentsCsv()">
-                                <i class="bi bi-download me-2"></i>Download CSV
+                                <i class="bi bi-download me-2"></i>Download All CSV
+                            </button>
+                            <button class="btn btn-outline-success" onclick="exportSelectedStudentsCsv()" id="export-selected-btn" style="display:none;">
+                                <i class="bi bi-download me-2"></i>Download Selected CSV
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteSelectedStudents()" id="delete-selected-btn" style="display:none;">
+                                <i class="bi bi-trash me-2"></i>Delete Selected
                             </button>
                             <button class="btn btn-primary" onclick="openStudentModal()">
                                 <i class="bi bi-person-plus me-2"></i>Add Student
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Selection controls -->
+                    <div class="mb-3" id="selection-controls" style="display:none;">
+                        <div class="d-flex align-items-center gap-3">
+                            <label class="form-check">
+                                <input type="checkbox" class="form-check-input" id="select-all-students" onchange="toggleAllStudents()">
+                                <span class="form-check-label">Select All</span>
+                            </label>
+                            <span class="text-muted" id="selected-count">0 selected</span>
                         </div>
                     </div>
 
@@ -625,7 +642,7 @@
 
     <!-- Student Modal -->
     <div class="modal fade" id="studentModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Student</h5>
@@ -633,13 +650,39 @@
                 </div>
                 <form id="student-form">
                     <div class="modal-body">
-                        <div class="mb-3">
-                            <label for="student-email" class="form-label">Student Email</label>
-                            <input type="email" class="form-control" id="student-email" required />
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="student-name" class="form-label">Name *</label>
+                                <input type="text" class="form-control" id="student-name" required />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="student-lastname" class="form-label">Last Name *</label>
+                                <input type="text" class="form-control" id="student-lastname" required />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="student-email" class="form-label">Email *</label>
+                                <input type="email" class="form-control" id="student-email" required />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="student-age" class="form-label">Age</label>
+                                <input type="number" class="form-control" id="student-age" min="16" max="99" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="student-nationality" class="form-label">Nationality</label>
+                                <input type="text" class="form-control" id="student-nationality" placeholder="e.g., Spanish, French, etc." />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="student-profession" class="form-label">Current Profession</label>
+                                <input type="text" class="form-control" id="student-profession" placeholder="e.g., Engineer, Designer, etc." />
+                            </div>
                         </div>
                         <div class="mb-3">
-                            <label for="student-name" class="form-label">Student Name (Optional)</label>
-                            <input type="text" class="form-control" id="student-name" />
+                            <label for="student-address" class="form-label">Address</label>
+                            <textarea class="form-control" id="student-address" rows="2" placeholder="Street, City, Country"></textarea>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -652,29 +695,6 @@
     </div>
 
     <!-- Student Success Modal -->
-    <div class="modal fade" id="studentSuccessModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title text-success">Student Added Successfully</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Please share these credentials with the student:</p>
-                    <div class="alert alert-info">
-                        <p class="mb-1"><strong>Email:</strong> <span id="new-student-email"></span></p>
-                        <p class="mb-0"><strong>Temporary Password:</strong> <span id="new-student-password"
-                                class="user-select-all fw-bold"></span></p>
-                    </div>
-                    <p class="small text-muted">The student will be prompted to change this password on first login.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Add Collaborator Modal (by Email) -->
     <div class="modal fade" id="addCollaboratorModal" tabindex="-1">
         <div class="modal-dialog">

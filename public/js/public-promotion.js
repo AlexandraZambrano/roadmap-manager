@@ -102,8 +102,8 @@ window.verifyPromotionPassword = async function () {
                 passwordModal.hide();
             }
 
-            // Auto-track student without prompting for info
-            await trackStudentQuietly();
+            // Load content after successful password verification
+            loadPromotionContent();
         } else {
             const errorMsg = data.error || 'Invalid password. Please try again.';
             alertEl.textContent = errorMsg;
@@ -118,29 +118,6 @@ window.verifyPromotionPassword = async function () {
         btnSpinner.classList.add('hidden');
     }
 };
-
-// Auto-track student without prompting
-async function trackStudentQuietly() {
-    try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/track-student`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            sessionStorage.setItem('studentId', data.student.id);
-        } else {
-            console.error('Error tracking student:', response.status);
-        }
-    } catch (error) {
-        console.error('Error tracking student:', error);
-    }
-
-    // Load content regardless of tracking result
-    loadPromotionContent();
-}
 
 async function loadPromotionContent() {
     loadPromotion();

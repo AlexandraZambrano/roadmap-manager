@@ -576,23 +576,40 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
-
+    
     const students = await Student.find({ promotionId: req.params.promotionId });
-    res.json(students);
+    console.log('Found students:', students.map(s => ({ customId: s.id, mongoId: s._id, name: s.name, lastname: s.lastname, email: s.email })));
+    
+    // Normalize the response to ensure consistent ID field
+    const normalizedStudents = students.map(student => ({
+      id: student.id || student._id.toString(), // Prefer custom id, fallback to string version of _id
+      _id: student._id, // Keep _id for internal operations
+      name: student.name,
+      lastname: student.lastname,
+      email: student.email,
+      age: student.age,
+      nationality: student.nationality,
+      profession: student.profession,
+      address: student.address,
+      promotionId: student.promotionId
+    }));
+    
+    res.json(normalizedStudents);
   } catch (error) {
+    console.error('Error fetching students:', error);
     res.status(500).json({ error: error.message });
   }
-});
-
-// Add student manually (teacher adds student for tracking)
+});// Add student manually (teacher adds student for tracking)
 app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const { email, name } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const { name, lastname, email, age, nationality, profession, address } = req.body;
+    console.log('Creating student:', { name, lastname, email });
+    
+    if (!email || !name || !lastname) return res.status(400).json({ error: 'Email, name, and lastname are required' });
 
     // Check if student already exists
     const existing = await Student.findOne({ email, promotionId: req.params.promotionId });
@@ -600,15 +617,130 @@ app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) 
 
     const student = await Student.create({
       id: uuidv4(),
+      name,
+      lastname, 
       email,
-      name: name || email.split('@')[0],
+      age: age || null,
+      nationality: nationality || '',
+      profession: profession || '',
+      address: address || '',
       promotionId: req.params.promotionId,
       isManuallyAdded: true,
       notes: ''
     });
 
-    res.status(201).json({ message: 'Student added successfully', student: { id: student.id, email: student.email, name: student.name } });
+    res.status(201).json({ 
+      message: 'Student added successfully', 
+      student: { 
+        id: student.id, 
+        name: student.name, 
+        lastname: student.lastname,
+        email: student.email,
+        age: student.age,
+        nationality: student.nationality,
+        profession: student.profession,
+        address: student.address
+      } 
+    });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update student information
+app.put('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
+  try {
+    console.log('=== PUT STUDENT UPDATE REQUEST ===');
+    console.log('Request URL:', req.originalUrl);
+    console.log('Request method:', req.method);
+    console.log('Update student request - studentId:', req.params.studentId);
+    console.log('Update student request - promotionId:', req.params.promotionId);
+    console.log('Request body:', req.body);
+    
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) {
+      console.log('Promotion not found with ID:', req.params.promotionId);
+      return res.status(404).json({ error: 'Promotion not found' });
+    }
+    if (!canEditPromotion(promotion, req.user.id)) {
+      console.log('User unauthorized for promotion:', req.user.id);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { name, lastname, email, age, nationality, profession, address } = req.body;
+    console.log('Updating student with data:', { name, lastname, email, age, nationality, profession, address });
+    
+    if (!email || !name || !lastname) return res.status(400).json({ error: 'Email, name, and lastname are required' });
+
+    // First, let's find the student to see what we're working with
+    let existingStudent = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    
+    if (!existingStudent) {
+      // Try by MongoDB _id
+      try {
+        existingStudent = await Student.findOne({ _id: req.params.studentId, promotionId: req.params.promotionId });
+      } catch (mongoError) {
+        console.log('Invalid MongoDB ObjectId format:', req.params.studentId);
+      }
+    }
+    
+    if (!existingStudent) {
+      console.log('Student not found with ID:', req.params.studentId);
+      console.log('Available students in promotion:', await Student.find({ promotionId: req.params.promotionId }, 'id _id email name lastname'));
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    console.log('Found existing student:', { 
+      customId: existingStudent.id, 
+      mongoId: existingStudent._id, 
+      email: existingStudent.email 
+    });
+
+    // Check if email is being changed and if it conflicts with another student
+    const emailConflict = await Student.findOne({ 
+      email, 
+      promotionId: req.params.promotionId, 
+      $and: [
+        { _id: { $ne: existingStudent._id } }
+      ]
+    });
+    
+    if (emailConflict) {
+      return res.status(400).json({ error: 'Email already exists for another student in this promotion' });
+    }
+
+    // Update the student using the _id (which is always available)
+    const student = await Student.findByIdAndUpdate(
+      existingStudent._id,
+      {
+        name,
+        lastname,
+        email,
+        age: age || null,
+        nationality: nationality || '',
+        profession: profession || '',
+        address: address || ''
+      },
+      { new: true }
+    );
+
+    if (!student) return res.status(404).json({ error: 'Failed to update student' });
+
+    res.json({ 
+      message: 'Student updated successfully', 
+      student: {
+        id: student.id || student._id,
+        name: student.name,
+        lastname: student.lastname,
+        email: student.email,
+        age: student.age,
+        nationality: student.nationality,
+        profession: student.profession,
+        address: student.address
+      }
+    });
+  } catch (error) {
+    console.error('Error updating student:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -720,44 +852,129 @@ app.get('/api/promotions/:promotionId/students/:studentId', verifyToken, async (
 // Update student detailed information
 app.put('/api/promotions/:promotionId/students/:studentId/profile', verifyToken, async (req, res) => {
   try {
+    console.log('Updating student profile:', req.params.studentId);
+    
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
-    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!promotion) {
+      return res.status(404).json({ error: 'Promotion not found' });
+    }
+    if (!canEditPromotion(promotion, req.user.id)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
-    const { name, lastName, age, nationality, paperStatus, description, workBackground, email } = req.body;
+    // Support both old and new field names for compatibility
+    const { 
+      name, 
+      lastName, lastname,  // Support both lastName and lastname
+      age, 
+      nationality, 
+      profession,          // New field
+      address,            // New field
+      paperStatus, 
+      description, 
+      workBackground, 
+      email 
+    } = req.body;
 
-    const student = await Student.findOneAndUpdate(
-      { id: req.params.studentId, promotionId: req.params.promotionId },
+    // Use lastname if provided, otherwise use lastName for backward compatibility
+    const finalLastname = lastname || lastName;
+
+    // First try to find by custom id
+    let student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    
+    if (!student) {
+      // Try by MongoDB _id
+      try {
+        student = await Student.findOne({ _id: req.params.studentId, promotionId: req.params.promotionId });
+      } catch (mongoError) {
+        // Invalid ObjectId format
+      }
+    }
+    
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Update the student using findByIdAndUpdate for reliability
+    const updatedStudent = await Student.findByIdAndUpdate(
+      student._id,
       {
-        name: name || undefined,
-        lastName: lastName || undefined,
-        age: age || undefined,
-        nationality: nationality || undefined,
-        paperStatus: paperStatus || undefined,
-        description: description || undefined,
-        workBackground: workBackground || undefined,
-        email: email || undefined
+        name: name || student.name,
+        lastname: finalLastname || student.lastname || '',  // Provide default if field doesn't exist
+        age: age !== undefined ? age : (student.age || null),
+        nationality: nationality !== undefined ? nationality : (student.nationality || ''),
+        profession: profession !== undefined ? profession : (student.profession || ''),     // New field
+        address: address !== undefined ? address : (student.address || ''),             // New field
+        paperStatus: paperStatus || student.paperStatus,
+        description: description || student.description,
+        workBackground: workBackground || student.workBackground,
+        email: email || student.email
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-    res.json({ message: 'Student profile updated', student });
+    console.log('Student profile updated successfully:', updatedStudent.name, updatedStudent.lastname);
+
+    res.json({ 
+      message: 'Student profile updated', 
+      student: {
+        id: updatedStudent.id || updatedStudent._id,
+        name: updatedStudent.name,
+        lastname: updatedStudent.lastname,
+        email: updatedStudent.email,
+        age: updatedStudent.age,
+        nationality: updatedStudent.nationality,
+        profession: updatedStudent.profession,
+        address: updatedStudent.address
+      }
+    });
   } catch (error) {
+    console.error('Error updating student profile:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
   try {
+    console.log('Delete student request - studentId:', req.params.studentId);
+    console.log('Delete student request - promotionId:', req.params.promotionId);
+    
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const result = await Student.deleteOne({ id: req.params.studentId, promotionId: req.params.promotionId });
-    if (result.deletedCount === 0) return res.status(404).json({ error: 'Student not found' });
-    res.json({ message: 'Student deleted' });
+    // First, let's find the student to see what we're working with
+    let existingStudent = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
+    
+    if (!existingStudent) {
+      // Try by MongoDB _id
+      try {
+        existingStudent = await Student.findOne({ _id: req.params.studentId, promotionId: req.params.promotionId });
+      } catch (mongoError) {
+        console.log('Invalid MongoDB ObjectId format:', req.params.studentId);
+      }
+    }
+    
+    if (!existingStudent) {
+      console.log('Student not found for deletion with ID:', req.params.studentId);
+      console.log('Available students in promotion:', await Student.find({ promotionId: req.params.promotionId }, 'id _id email name lastname'));
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    console.log('Found student to delete:', { 
+      customId: existingStudent.id, 
+      mongoId: existingStudent._id, 
+      email: existingStudent.email 
+    });
+
+    // Delete the student using the _id (which is always available)
+    const student = await Student.findByIdAndDelete(existingStudent._id);
+    
+    if (!student) return res.status(404).json({ error: 'Failed to delete student' });
+
+    res.json({ message: 'Student deleted successfully' });
   } catch (error) {
+    console.error('Error deleting student:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1170,7 +1387,7 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
 
 app.put('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const teacher = await Teacher.findOneAndUpdate({ id: req.params.id }, { ...req.body }, { new: true });
+    const teacher = await Teacher.findOneAndUpdate({ id: req.params.id }, { ...req.body }, { returnDocument: 'after' });
     if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
     res.json(teacher);
   } catch (error) {

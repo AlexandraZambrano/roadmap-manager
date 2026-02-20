@@ -2,14 +2,13 @@ import mongoose from 'mongoose';
 
 const StudentSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
-    name: { type: String },
+    name: { type: String, required: true },
+    lastname: { type: String, required: false, default: '' }, // Changed to not required for existing students
     email: { type: String, required: true },
-    lastName: { type: String },
-    age: { type: Number },
-    nationality: { type: String },
-    paperStatus: { type: String }, // e.g., "DNI", "NIE", "Pasaporte"
-    description: { type: String },
-    workBackground: { type: String },
+    age: { type: Number, default: null },
+    nationality: { type: String, default: '' },
+    profession: { type: String, default: '' }, // Current profession/background
+    address: { type: String, default: '' }, // Full address
     promotionId: { type: String },
     notes: { type: String, default: '' }, // Teacher notes about the student
     progress: {
@@ -18,7 +17,7 @@ const StudentSchema = new mongoose.Schema({
         sectionsCompleted: [{ type: String }], // IDs of sections completed
         lastAccessed: { type: Date }
     },
-    isManuallyAdded: { type: Boolean, default: false }, // True if teacher added manually, false if auto-tracked
+    isManuallyAdded: { type: Boolean, default: true }, // Changed default to true since we removed auto-tracking
     accessLog: [{
         accessedAt: { type: Date, default: Date.now },
         ipAddress: { type: String },
