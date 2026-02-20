@@ -158,7 +158,6 @@ async function loadPromotion() {
         if (response.ok) {
             const promotion = await response.json();
             document.getElementById('promotion-title').textContent = `¡Hola Coder! 👋 - ${promotion.name}`;
-            document.getElementById('promotion-desc').textContent = promotion.description || '';
             document.title = `${promotion.name} - Bootcamp`;
 
             generateGanttChart(promotion);
@@ -765,13 +764,13 @@ function generateScheduleHTML(schedule) {
     if (schedule.online && Object.values(schedule.online).some(v => v && v.trim())) {
         html += `
             <div class="mb-3">
-                <h6 class="text-primary">📱 Online Schedule</h6>
+                <h6 >Horario Clases Online:</h6>
                 <ul>
-                    ${schedule.online.entry ? `<li><strong>Entry:</strong> ${escapeHtml(schedule.online.entry)}</li>` : ''}
-                    ${schedule.online.start ? `<li><strong>Start:</strong> ${escapeHtml(schedule.online.start)}</li>` : ''}
+                    ${schedule.online.entry ? `<li><strong>Inicio:</strong> ${escapeHtml(schedule.online.entry)}</li>` : ''}
+                    ${schedule.online.start ? `<li><strong>Píldora:</strong> ${escapeHtml(schedule.online.start)}</li>` : ''}
                     ${schedule.online.break ? `<li><strong>Break:</strong> ${escapeHtml(schedule.online.break)}</li>` : ''}
-                    ${schedule.online.lunch ? `<li><strong>Lunch:</strong> ${escapeHtml(schedule.online.lunch)}</li>` : ''}
-                    ${schedule.online.finish ? `<li><strong>Finish:</strong> ${escapeHtml(schedule.online.finish)}</li>` : ''}
+                    ${schedule.online.lunch ? `<li><strong>Comida:</strong> ${escapeHtml(schedule.online.lunch)}</li>` : ''}
+                    ${schedule.online.finish ? `<li><strong>Cierre:</strong> ${escapeHtml(schedule.online.finish)}</li>` : ''}
                 </ul>
             </div>
         `;
@@ -780,13 +779,13 @@ function generateScheduleHTML(schedule) {
     if (schedule.presential && Object.values(schedule.presential).some(v => v && v.trim())) {
         html += `
             <div class="mb-3">
-                <h6 class="text-success">🏢 Presential Schedule</h6>
+                <h6 >Horario Clases Presenciales:</h6>
                 <ul>
-                    ${schedule.presential.entry ? `<li><strong>Entry:</strong> ${escapeHtml(schedule.presential.entry)}</li>` : ''}
-                    ${schedule.presential.start ? `<li><strong>Start:</strong> ${escapeHtml(schedule.presential.start)}</li>` : ''}
+                    ${schedule.presential.entry ? `<li><strong>Inicio:</strong> ${escapeHtml(schedule.presential.entry)}</li>` : ''}
+                    ${schedule.presential.start ? `<li><strong>Píldora:</strong> ${escapeHtml(schedule.presential.start)}</li>` : ''}
                     ${schedule.presential.break ? `<li><strong>Break:</strong> ${escapeHtml(schedule.presential.break)}</li>` : ''}
-                    ${schedule.presential.lunch ? `<li><strong>Lunch:</strong> ${escapeHtml(schedule.presential.lunch)}</li>` : ''}
-                    ${schedule.presential.finish ? `<li><strong>Finish:</strong> ${escapeHtml(schedule.presential.finish)}</li>` : ''}
+                    ${schedule.presential.lunch ? `<li><strong>Comida:</strong> ${escapeHtml(schedule.presential.lunch)}</li>` : ''}
+                    ${schedule.presential.finish ? `<li><strong>Cierre:</strong> ${escapeHtml(schedule.presential.finish)}</li>` : ''}
                 </ul>
             </div>
         `;
@@ -808,8 +807,8 @@ function generateTeamHTML(team) {
             <div class="col-md-6 mb-3">
                 <div class="card">
                     <div class="card-body">
-                        <h6 class="card-title text-primary">${escapeHtml(member.name || 'Unknown')}</h6>
-                        ${member.role ? `<p class="card-text"><span class="badge bg-secondary">${escapeHtml(member.role)}</span></p>` : ''}
+                        <h6 class="card-title">${escapeHtml(member.name || 'Unknown')}</h6>
+                        ${member.role ? `<p class="card-text"><span><strong>${escapeHtml(member.role)}</strong></span></p>` : ''}
                         ${member.email ? `<p class="card-text"><i class="bi bi-envelope me-2"></i><a href="mailto:${escapeHtml(member.email)}">${escapeHtml(member.email)}</a></p>` : ''}
                         ${member.linkedin ? `<p class="card-text"><a href="${escapeHtml(member.linkedin)}" target="_blank" class="text-decoration-none"><i class="bi bi-linkedin me-2"></i>LinkedIn Profile</a></p>` : ''}
                     </div>
