@@ -998,7 +998,144 @@ app.put('/api/promotions/:promotionId/students/:studentId/projects/:assignmentId
 });
 
 // ==================== PÍLDORAS MANAGEMENT ====================
-// Upload Excel file for píldoras
+// Upload Excel file for píldoras to a specific module
+app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = promotion.modules.find(m => m.id === req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No Excel file provided' });
+    }
+
+    // Parse Excel file
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      return res.status(400).json({ error: 'Excel file is empty' });
+    }
+
+    // Get current students for validation
+    const students = await Student.find({ promotionId: req.params.promotionId });
+    const studentMap = new Map();
+    students.forEach(student => {
+      const fullName = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
+      studentMap.set(fullName, student);
+    });
+
+    const pildoras = [];
+    
+    for (const row of data) {
+      // Handle different column name variations
+      const mode = row['Presentación'] || row['Presentacion'] || row['presentación'] || row['presentacion'] || 'Virtual';
+      const dateText = row['Fecha'] || row['fecha'] || '';
+      const title = row['Píldora'] || row['Pildora'] || row['píldora'] || row['pildora'] || '';
+      const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
+      const status = row['Estado'] || row['estado'] || '';
+
+      // Process assigned students
+      const assignedStudents = [];
+      if (studentText && studentText.toLowerCase() !== 'desierta') {
+        const studentNames = studentText.split(',').map(name => name.trim().toLowerCase());
+        
+        for (const name of studentNames) {
+          const student = studentMap.get(name);
+          if (student) {
+            assignedStudents.push({
+              id: student.id,
+              name: student.name,
+              lastname: student.lastname
+            });
+          }
+        }
+      }
+
+      // Process date
+      let isoDate = '';
+      if (dateText) {
+        try {
+          const date = new Date(dateText);
+          if (!isNaN(date.getTime())) {
+            isoDate = date.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          console.warn('Invalid date format:', dateText);
+        }
+      }
+
+      if (title) { // Only add if title is provided
+        pildoras.push({
+          mode: mode || 'Virtual',
+          date: isoDate,
+          title,
+          students: assignedStudents,
+          status: status || ''
+        });
+      }
+    }
+
+    // Get current extended info and update píldoras for this module
+    let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    if (!extendedInfo) {
+      extendedInfo = await ExtendedInfo.create({
+        promotionId: req.params.promotionId,
+        schedule: {},
+        team: [],
+        resources: [],
+        evaluation: '',
+        pildoras: [],
+        modulesPildoras: []
+      });
+    }
+
+    // Initialize modulesPildoras if it doesn't exist
+    if (!extendedInfo.modulesPildoras) {
+      extendedInfo.modulesPildoras = [];
+    }
+
+    // Find or create module píldoras entry
+    let modulePildoras = extendedInfo.modulesPildoras.find(mp => mp.moduleId === req.params.moduleId);
+    if (!modulePildoras) {
+      modulePildoras = {
+        moduleId: req.params.moduleId,
+        moduleName: module.name,
+        pildoras: []
+      };
+      extendedInfo.modulesPildoras.push(modulePildoras);
+    }
+
+    // Add imported píldoras to the module (append to existing ones)
+    modulePildoras.pildoras.push(...pildoras);
+
+    await extendedInfo.save();
+
+    res.json({
+      message: `Successfully imported ${pildoras.length} píldoras to module "${module.name}"`,
+      pildoras: pildoras,
+      module: {
+        id: module.id,
+        name: module.name
+      },
+      totalPildoras: modulePildoras.pildoras.length
+    });
+
+  } catch (error) {
+    console.error('Error uploading Excel file to module:', error);
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload Excel file for píldoras (legacy endpoint - will add to first module)
 app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
@@ -1109,6 +1246,130 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
   }
 });
 
+// Get module-based píldoras for a promotion
+app.get('/api/promotions/:promotionId/modules-pildoras', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    if (!extendedInfo) {
+      extendedInfo = await ExtendedInfo.create({
+        promotionId: req.params.promotionId,
+        schedule: {},
+        team: [],
+        resources: [],
+        evaluation: '',
+        pildoras: [],
+        modulesPildoras: []
+      });
+    }
+
+    // If modulesPildoras is empty but pildoras exists, migrate data
+    if (!extendedInfo.modulesPildoras || extendedInfo.modulesPildoras.length === 0) {
+      if (extendedInfo.pildoras && extendedInfo.pildoras.length > 0) {
+        // Migrate existing píldoras to first module
+        const firstModule = promotion.modules && promotion.modules.length > 0 ? promotion.modules[0] : null;
+        if (firstModule) {
+          extendedInfo.modulesPildoras = [{
+            moduleId: firstModule.id,
+            moduleName: firstModule.name,
+            pildoras: extendedInfo.pildoras
+          }];
+          await extendedInfo.save();
+        }
+      }
+    }
+
+    // Ensure all modules have entries in modulesPildoras
+    if (promotion.modules) {
+      for (const module of promotion.modules) {
+        const existingModulePildoras = extendedInfo.modulesPildoras.find(mp => mp.moduleId === module.id);
+        if (!existingModulePildoras) {
+          extendedInfo.modulesPildoras.push({
+            moduleId: module.id,
+            moduleName: module.name,
+            pildoras: []
+          });
+        } else {
+          // Update module name in case it changed
+          existingModulePildoras.moduleName = module.name;
+        }
+      }
+      await extendedInfo.save();
+    }
+
+    res.json({
+      modules: promotion.modules || [],
+      modulesPildoras: extendedInfo.modulesPildoras || []
+    });
+  } catch (error) {
+    console.error('Error fetching modules píldoras:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update píldoras for a specific module
+app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, async (req, res) => {
+  try {
+    const { pildoras } = req.body;
+    if (!Array.isArray(pildoras)) {
+      return res.status(400).json({ error: 'pildoras array is required' });
+    }
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = promotion.modules.find(m => m.id === req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    if (!extendedInfo) {
+      extendedInfo = await ExtendedInfo.create({
+        promotionId: req.params.promotionId,
+        schedule: {},
+        team: [],
+        resources: [],
+        evaluation: '',
+        pildoras: [],
+        modulesPildoras: []
+      });
+    }
+
+    // Find or create module píldoras entry
+    let modulePildoras = extendedInfo.modulesPildoras.find(mp => mp.moduleId === req.params.moduleId);
+    if (!modulePildoras) {
+      modulePildoras = {
+        moduleId: req.params.moduleId,
+        moduleName: module.name,
+        pildoras: []
+      };
+      extendedInfo.modulesPildoras.push(modulePildoras);
+    }
+
+    // Update píldoras for this module
+    modulePildoras.pildoras = pildoras.map(p => ({
+      mode: p.mode || 'Virtual',
+      date: p.date || '',
+      title: p.title || '',
+      students: Array.isArray(p.students) ? p.students : [],
+      status: p.status || ''
+    }));
+
+    await extendedInfo.save();
+
+    res.json({ 
+      message: 'Module píldoras updated successfully',
+      modulePildoras: modulePildoras
+    });
+  } catch (error) {
+    console.error('Error updating module píldoras:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get pildoras for a module
 app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, async (req, res) => {
   try {
@@ -1124,33 +1385,7 @@ app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
   }
 });
 
-// Replace pildoras list for a module
-app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, async (req, res) => {
-  try {
-    const { pildoras } = req.body;
-    if (!Array.isArray(pildoras)) return res.status(400).json({ error: 'pildoras array is required' });
 
-    const promotion = await Promotion.findOne({ id: req.params.promotionId });
-    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
-
-    const idx = (promotion.modules || []).findIndex(m => m.id === req.params.moduleId);
-    if (idx === -1) return res.status(404).json({ error: 'Module not found' });
-
-    // Normalize and assign IDs
-    const normalized = pildoras.map(p => ({
-      id: p.id || uuidv4(),
-      title: p.title,
-      type: ['individual', 'couple'].includes(p.type) ? p.type : 'individual',
-      assignedStudentIds: Array.isArray(p.assignedStudentIds) ? p.assignedStudentIds : []
-    }));
-    promotion.modules[idx].pildoras = normalized;
-    await promotion.save();
-    res.json(promotion.modules[idx].pildoras);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Assign students to a specific pildora entry
 app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/:pildoraId/assign', verifyToken, async (req, res) => {

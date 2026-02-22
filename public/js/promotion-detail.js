@@ -3,6 +3,8 @@ let promotionId = null;
 let moduleModal, quickLinkModal, sectionModal, studentModal, studentProgressModal, teamModal, resourceModal, collaboratorModal, projectAssignmentDetailModal;
 const userRole = localStorage.getItem('role') || 'student';
 let currentUser = {};
+let promotionModules = []; // Store promotion modules
+let currentModuleIndex = 0; // Track current module for píldoras navigation
 try {
     const userJson = localStorage.getItem('user');
     currentUser = userJson && userJson !== 'undefined' ? JSON.parse(userJson) : {};
@@ -148,7 +150,9 @@ async function loadExtendedInfo() {
             // Populate Additional Lists
             displayTeam();
             displayResources();
-            displayPildoras();
+            
+            // Load modules and display píldoras
+            loadModulesPildoras();
 
             // Populate Evaluation
             const defaultEvaluation = `Evaluación del Proyecto
@@ -219,17 +223,83 @@ function displayResources() {
     });
 }
 
+// Load modules and píldoras data
+async function loadModulesPildoras() {
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/modules-pildoras`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            promotionModules = data.modules || [];
+            
+            // Initialize modulesPildoras in extendedInfoData if not present
+            if (!extendedInfoData.modulesPildoras) {
+                extendedInfoData.modulesPildoras = data.modulesPildoras || [];
+            }
+
+            // Ensure all modules have entries
+            promotionModules.forEach(module => {
+                const existingModulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === module.id);
+                if (!existingModulePildoras) {
+                    extendedInfoData.modulesPildoras.push({
+                        moduleId: module.id,
+                        moduleName: module.name,
+                        pildoras: []
+                    });
+                }
+            });
+
+            // Show/hide module navigation based on modules availability
+            const moduleNav = document.getElementById('pildoras-module-nav');
+            if (moduleNav) {
+                if (promotionModules.length > 1) {
+                    moduleNav.style.display = 'flex';
+                } else {
+                    moduleNav.style.display = 'none';
+                }
+            }
+
+            // Set current module to first module
+            currentModuleIndex = 0;
+            displayPildoras();
+        } else {
+            console.error('Error loading modules píldoras:', response.statusText);
+            // Fallback to regular píldoras display
+            displayPildoras();
+        }
+    } catch (error) {
+        console.error('Error loading modules píldoras:', error);
+        // Fallback to regular píldoras display
+        displayPildoras();
+    }
+}
+
 function displayPildoras() {
     const tbody = document.getElementById('pildoras-list-body');
     if (!tbody) return;
 
-    const pildoras = Array.isArray(extendedInfoData.pildoras) ? extendedInfoData.pildoras : [];
-    extendedInfoData.pildoras = pildoras;
+    // Get current module píldoras
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No modules found.</td></tr>';
+        return;
+    }
+
+    // Find píldoras for current module
+    const modulesPildoras = extendedInfoData.modulesPildoras || [];
+    const currentModulePildoras = modulesPildoras.find(mp => mp.moduleId === currentModule.id);
+    const pildoras = currentModulePildoras ? currentModulePildoras.pildoras : [];
 
     const students = window.currentStudents || [];
 
+    // Update module navigation display
+    updateModuleNavigation();
+
     if (pildoras.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No píldoras configuradas todavía.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="6" class="text-muted">No píldoras configuradas para ${currentModule.name}.</td></tr>`;
         return;
     }
 
@@ -309,67 +379,187 @@ function displayPildoras() {
     // Add event listeners for student checkboxes
     document.querySelectorAll('.pildora-student-checkbox').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
-            const pildoraIndex = parseInt(this.dataset.pildoraIndex);
-            const studentId = this.value;
-            const isChecked = this.checked;
-            
-            if (!extendedInfoData.pildoras[pildoraIndex]) return;
-            
-            if (!extendedInfoData.pildoras[pildoraIndex].students) {
-                extendedInfoData.pildoras[pildoraIndex].students = [];
-            }
-            
-            if (isChecked) {
-                // Add student if not already present
-                const student = students.find(s => s.id === studentId);
-                if (student && !extendedInfoData.pildoras[pildoraIndex].students.some(s => s.id === studentId)) {
-                    extendedInfoData.pildoras[pildoraIndex].students.push({
-                        id: student.id,
-                        name: student.name,
-                        lastname: student.lastname
-                    });
-                }
-            } else {
-                // Remove student
-                extendedInfoData.pildoras[pildoraIndex].students = extendedInfoData.pildoras[pildoraIndex].students.filter(s => s.id !== studentId);
-            }
-            
-            // Update dropdown button text
-            const dropdown = this.closest('.dropdown');
-            const button = dropdown.querySelector('.dropdown-toggle');
-            const selectedStudents = extendedInfoData.pildoras[pildoraIndex].students || [];
-            
-            if (selectedStudents.length === 0) {
-                button.textContent = 'Seleccionar estudiantes';
-            } else if (selectedStudents.length === 1) {
-                const student = selectedStudents[0];
-                button.textContent = `${student.name} ${student.lastname || ''}`.trim();
-            } else {
-                button.textContent = `${selectedStudents.length} estudiantes seleccionados`;
-            }
+            updatePildoraStudentSelection(parseInt(this.dataset.pildoraIndex), this.value, this.checked);
         });
     });
 }
 
 function addPildoraRow() {
-    if (!Array.isArray(extendedInfoData.pildoras)) {
-        extendedInfoData.pildoras = [];
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) {
+        alert('No module selected');
+        return;
     }
-    extendedInfoData.pildoras.push({
+
+    // Initialize modulesPildoras if needed
+    if (!extendedInfoData.modulesPildoras) {
+        extendedInfoData.modulesPildoras = [];
+    }
+
+    // Find or create module píldoras entry
+    let modulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === currentModule.id);
+    if (!modulePildoras) {
+        modulePildoras = {
+            moduleId: currentModule.id,
+            moduleName: currentModule.name,
+            pildoras: []
+        };
+        extendedInfoData.modulesPildoras.push(modulePildoras);
+    }
+
+    // Add new píldora to current module
+    modulePildoras.pildoras.push({
         mode: 'Virtual',
         date: '',
         title: '',
         students: [],
         status: ''
     });
+
     displayPildoras();
 }
 
 function deletePildoraRow(index) {
-    if (!Array.isArray(extendedInfoData.pildoras)) return;
-    if (index < 0 || index >= extendedInfoData.pildoras.length) return;
-    extendedInfoData.pildoras.splice(index, 1);
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) return;
+
+    const modulePildoras = extendedInfoData.modulesPildoras?.find(mp => mp.moduleId === currentModule.id);
+    if (!modulePildoras || !modulePildoras.pildoras) return;
+
+    if (index < 0 || index >= modulePildoras.pildoras.length) return;
+    
+    if (!confirm('Are you sure you want to delete this píldora?')) return;
+    
+    // Remove from local data
+    modulePildoras.pildoras.splice(index, 1);
+    
+    // Save changes to server
+    savePildorasToServer(currentModule);
+    
+    // Update display
     displayPildoras();
+}
+
+// Save píldoras changes to server
+async function savePildorasToServer(module) {
+    try {
+        const modulePildoras = extendedInfoData.modulesPildoras?.find(mp => mp.moduleId === module.id);
+        if (!modulePildoras) return;
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('No auth token found');
+            return;
+        }
+
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/modules/${module.id}/pildoras`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                pildoras: modulePildoras.pildoras
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to save píldoras: ${response.statusText}`);
+        }
+
+        console.log('Píldoras saved successfully');
+    } catch (error) {
+        console.error('Error saving píldoras:', error);
+        alert('Error saving changes to server');
+    }
+}
+
+// Update module navigation display
+function updateModuleNavigation() {
+    const moduleNameEl = document.getElementById('current-module-name');
+    const prevBtn = document.getElementById('prev-module-btn');
+    const nextBtn = document.getElementById('next-module-btn');
+    const countEl = document.getElementById('module-pildoras-count');
+
+    if (!moduleNameEl || !prevBtn || !nextBtn || !countEl) return;
+
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) return;
+
+    // Update module name
+    moduleNameEl.textContent = currentModule.name;
+
+    // Update navigation buttons
+    prevBtn.disabled = currentModuleIndex === 0;
+    nextBtn.disabled = currentModuleIndex === promotionModules.length - 1;
+
+    // Update píldoras count
+    const modulePildoras = extendedInfoData.modulesPildoras?.find(mp => mp.moduleId === currentModule.id);
+    const count = modulePildoras ? modulePildoras.pildoras.length : 0;
+    countEl.textContent = count;
+}
+
+// Navigation functions
+function navigateToPreviousModule() {
+    if (currentModuleIndex > 0) {
+        currentModuleIndex--;
+        displayPildoras();
+    }
+}
+
+function navigateToNextModule() {
+    if (currentModuleIndex < promotionModules.length - 1) {
+        currentModuleIndex++;
+        displayPildoras();
+    }
+}
+
+// Helper function to update student selection for píldoras
+function updatePildoraStudentSelection(pildoraIndex, studentId, isChecked) {
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) return;
+
+    const modulePildoras = extendedInfoData.modulesPildoras?.find(mp => mp.moduleId === currentModule.id);
+    if (!modulePildoras || !modulePildoras.pildoras || !modulePildoras.pildoras[pildoraIndex]) return;
+
+    const pildora = modulePildoras.pildoras[pildoraIndex];
+    const students = window.currentStudents || [];
+
+    if (!pildora.students) {
+        pildora.students = [];
+    }
+
+    if (isChecked) {
+        // Add student if not already present
+        const student = students.find(s => s.id === studentId);
+        if (student && !pildora.students.some(s => s.id === studentId)) {
+            pildora.students.push({
+                id: student.id,
+                name: student.name,
+                lastname: student.lastname
+            });
+        }
+    } else {
+        // Remove student
+        pildora.students = pildora.students.filter(s => s.id !== studentId);
+    }
+
+    // Update dropdown button text
+    const checkbox = document.querySelector(`input[data-pildora-index="${pildoraIndex}"][value="${studentId}"]`);
+    if (checkbox) {
+        const dropdown = checkbox.closest('.dropdown');
+        const button = dropdown.querySelector('.dropdown-toggle');
+        const selectedStudents = pildora.students || [];
+
+        if (selectedStudents.length === 0) {
+            button.textContent = 'Seleccionar estudiantes';
+        } else if (selectedStudents.length === 1) {
+            const student = selectedStudents[0];
+            button.textContent = `${student.name} ${student.lastname || ''}`.trim();
+        } else {
+            button.textContent = `${selectedStudents.length} estudiantes seleccionados`;
+        }
+    }
 }
 
 function importPildorasFromCsv(input) {
@@ -400,6 +590,13 @@ function importPildorasFromCsv(input) {
 
             const students = window.currentStudents || [];
             const pildoras = [];
+            const currentModule = promotionModules[currentModuleIndex];
+
+            if (!currentModule) {
+                alert('No module selected. Please select a module first.');
+                input.value = '';
+                return;
+            }
 
             for (let i = 1; i < lines.length; i++) {
                 const raw = lines[i];
@@ -448,7 +645,26 @@ function importPildorasFromCsv(input) {
                 });
             }
 
-            extendedInfoData.pildoras = pildoras;
+            // Add píldoras to the current module instead of the global pildoras array
+            if (!extendedInfoData.modulesPildoras) {
+                extendedInfoData.modulesPildoras = [];
+            }
+
+            // Find or create module píldoras entry
+            let modulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === currentModule.id);
+            if (!modulePildoras) {
+                modulePildoras = {
+                    moduleId: currentModule.id,
+                    moduleName: currentModule.name,
+                    pildoras: []
+                };
+                extendedInfoData.modulesPildoras.push(modulePildoras);
+            }
+
+            // Add imported píldoras to current module
+            modulePildoras.pildoras.push(...pildoras);
+
+            alert(`Successfully imported ${pildoras.length} píldoras to module "${currentModule.name}"`);
             displayPildoras();
             input.value = '';
         } catch (err) {
@@ -462,6 +678,13 @@ function importPildorasFromCsv(input) {
 function importPildorasFromExcel(input) {
     const file = input.files && input.files[0];
     if (!file) return;
+
+    const currentModule = promotionModules[currentModuleIndex];
+    if (!currentModule) {
+        alert('No module selected. Please select a module first.');
+        input.value = '';
+        return;
+    }
 
     const formData = new FormData();
     formData.append('excelFile', file);
@@ -477,7 +700,8 @@ function importPildorasFromExcel(input) {
     document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML = 
         '<i class="bi bi-hourglass-split"></i> Importing...';
 
-    fetch(`${API_URL}/api/promotions/${promotionId}/pildoras/upload-excel`, {
+    // Use module-specific endpoint
+    fetch(`${API_URL}/api/promotions/${promotionId}/modules/${currentModule.id}/pildoras/upload-excel`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -489,8 +713,27 @@ function importPildorasFromExcel(input) {
         if (data.error) {
             alert(`Error importing Excel file: ${data.error}`);
         } else {
-            alert(`Successfully imported ${data.pildoras.length} píldoras from Excel file`);
-            extendedInfoData.pildoras = data.pildoras;
+            alert(`Successfully imported ${data.pildoras.length} píldoras to module "${data.module.name}"`);
+            
+            // Update the current module's píldoras in our local data structure
+            if (!extendedInfoData.modulesPildoras) {
+                extendedInfoData.modulesPildoras = [];
+            }
+
+            let modulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === currentModule.id);
+            if (!modulePildoras) {
+                modulePildoras = {
+                    moduleId: currentModule.id,
+                    moduleName: currentModule.name,
+                    pildoras: []
+                };
+                extendedInfoData.modulesPildoras.push(modulePildoras);
+            }
+
+            // Add imported píldoras to local data structure
+            modulePildoras.pildoras.push(...data.pildoras);
+
+            // Refresh the display
             displayPildoras();
         }
         input.value = ''; // Clear input
@@ -719,49 +962,67 @@ async function saveExtendedInfo() {
     };
 
     const pildorasRows = document.querySelectorAll('#pildoras-list-body tr');
-    const pildoras = [];
+    
+    // Collect current module píldoras from the displayed rows
+    const currentModule = promotionModules[currentModuleIndex];
+    if (currentModule && pildorasRows.length > 0) {
+        const currentModulePildoras = [];
+        const students = window.currentStudents || [];
 
-    const students = window.currentStudents || [];
+        pildorasRows.forEach(row => {
+            const modeEl = row.querySelector('.pildora-mode');
+            const dateEl = row.querySelector('.pildora-date');
+            const titleEl = row.querySelector('.pildora-title');
+            const statusEl = row.querySelector('.pildora-status');
+            const dropdown = row.querySelector('.pildora-students-dropdown');
 
-    pildorasRows.forEach(row => {
-        const modeEl = row.querySelector('.pildora-mode');
-        const dateEl = row.querySelector('.pildora-date');
-        const titleEl = row.querySelector('.pildora-title');
-        const statusEl = row.querySelector('.pildora-status');
-        const dropdown = row.querySelector('.pildora-students-dropdown');
+            if (!modeEl || !dateEl || !titleEl || !statusEl || !dropdown) return;
 
-        if (!modeEl || !dateEl || !titleEl || !statusEl || !dropdown) return;
+            const mode = modeEl.value || '';
+            const date = dateEl.value || '';
+            const title = titleEl.value || '';
+            const status = statusEl.value || '';
 
-        const mode = modeEl.value || '';
-        const date = dateEl.value || '';
-        const title = titleEl.value || '';
-        const status = statusEl.value || '';
+            // Get selected students from checkboxes in dropdown
+            const selectedIds = Array.from(dropdown.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(input => input.value)
+                .filter(Boolean);
+            const studentsForPildora = selectedIds.map(id => {
+                const s = students.find(st => st.id === id);
+                return {
+                    id,
+                    name: s ? (s.name || '') : '',
+                    lastname: s ? (s.lastname || '') : ''
+                };
+            });
 
-        // Get selected students from checkboxes in dropdown
-        const selectedIds = Array.from(dropdown.querySelectorAll('input[type="checkbox"]:checked'))
-            .map(input => input.value)
-            .filter(Boolean);
-        const studentsForPildora = selectedIds.map(id => {
-            const s = students.find(st => st.id === id);
-            return {
-                id,
-                name: s ? (s.name || '') : '',
-                lastname: s ? (s.lastname || '') : ''
+            // Only add if there's actual content
+            if (mode || date || title || status || studentsForPildora.length > 0) {
+                currentModulePildoras.push({
+                    mode,
+                    date,
+                    title,
+                    students: studentsForPildora,
+                    status
+                });
+            }
+        });
+
+        // Update the current module's píldoras in the data structure
+        let modulePildoras = extendedInfoData.modulesPildoras?.find(mp => mp.moduleId === currentModule.id);
+        if (!modulePildoras) {
+            if (!extendedInfoData.modulesPildoras) {
+                extendedInfoData.modulesPildoras = [];
+            }
+            modulePildoras = {
+                moduleId: currentModule.id,
+                moduleName: currentModule.name,
+                pildoras: []
             };
-        });
-
-        if (!mode && !date && !title && !status && studentsForPildora.length === 0) {
-            return;
+            extendedInfoData.modulesPildoras.push(modulePildoras);
         }
-
-        pildoras.push({
-            mode,
-            date,
-            title,
-            students: studentsForPildora,
-            status
-        });
-    });
+        modulePildoras.pildoras = currentModulePildoras;
+    }
 
     // Gather Evaluation
     const evaluation = document.getElementById('evaluation-text').value;
@@ -769,7 +1030,17 @@ async function saveExtendedInfo() {
     // Update global object
     extendedInfoData.schedule = schedule;
     extendedInfoData.evaluation = evaluation;
-    extendedInfoData.pildoras = pildoras;
+    
+    // Keep legacy pildoras for backward compatibility (flatten all module pildoras)
+    const allPildoras = [];
+    if (extendedInfoData.modulesPildoras) {
+        extendedInfoData.modulesPildoras.forEach(mp => {
+            if (mp.pildoras) {
+                allPildoras.push(...mp.pildoras);
+            }
+        });
+    }
+    extendedInfoData.pildoras = allPildoras;
 
     console.log('Saving extended info for promotion:', promotionId);
     console.log('Data to save:', extendedInfoData);

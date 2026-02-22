@@ -40,7 +40,24 @@ const ExtendedInfoSchema = new mongoose.Schema({
             name: String,
             lastname: String
         }],
-        status: String
+        status: String,
+        moduleId: String // Add module association
+    }],
+    // New structure for organizing píldoras by modules
+    modulesPildoras: [{
+        moduleId: String,
+        moduleName: String,
+        pildoras: [{
+            mode: String,
+            date: String,
+            title: String,
+            students: [{
+                id: String,
+                name: String,
+                lastname: String
+            }],
+            status: String
+        }]
     }]
 }, { timestamps: true });
 
