@@ -540,13 +540,35 @@ function updateSidebarWithExtendedInfo(info) {
     
     console.log('Updating sidebar with extended info:', info);
     
-    // Find Quick Links item as reference point, or append at the end if not found
+    // Find roadmap item as reference point for píldoras
+    const roadmapAnchor = nav.querySelector('a[href="#roadmap"]');
+    const roadmapItem = roadmapAnchor ? roadmapAnchor.parentElement : null;
+    
+    // Find Quick Links item as reference point for other sections
     const quickLinksAnchor = nav.querySelector('a[href="#quick-links"]');
     const quickLinksItem = quickLinksAnchor ? quickLinksAnchor.parentElement : null;
     
+    console.log('Roadmap item found:', !!roadmapItem);
     console.log('Quick links item found:', !!quickLinksItem);
     
-    // Add Program Info sections only if they have data
+    // Add Píldoras right after Roadmap if they exist
+    if ((Array.isArray(info.pildoras) && info.pildoras.length > 0) || 
+        (Array.isArray(info.modulesPildoras) && info.modulesPildoras.some(mp => Array.isArray(mp.pildoras) && mp.pildoras.length > 0))) {
+        console.log('Adding pildoras section to sidebar right after roadmap');
+        const li = document.createElement('li');
+        li.className = 'nav-item';
+        li.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
+        
+        if (roadmapItem) {
+            roadmapItem.insertAdjacentElement('afterend', li);
+        } else if (quickLinksItem) {
+            nav.insertBefore(li, quickLinksItem);
+        } else {
+            nav.appendChild(li);
+        }
+    }
+    
+    // Add other Program Info sections before Quick Links
     if (info.schedule && hasScheduleData(info.schedule)) {
         console.log('Adding schedule section to sidebar');
         const li = document.createElement('li');
@@ -598,37 +620,6 @@ function updateSidebarWithExtendedInfo(info) {
             nav.appendChild(li);
         }
     }
-
-    if (Array.isArray(info.pildoras) && info.pildoras.length > 0) {
-        console.log('Adding pildoras section to sidebar (legacy)');
-        const li = document.createElement('li');
-        li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
-        
-        if (quickLinksItem) {
-            nav.insertBefore(li, quickLinksItem);
-        } else {
-            nav.appendChild(li);
-        }
-    }
-
-    // Check for new module-based píldoras structure
-    if (Array.isArray(info.modulesPildoras) && info.modulesPildoras.length > 0) {
-        // Check if any modules have píldoras
-        const hasPildoras = info.modulesPildoras.some(mp => Array.isArray(mp.pildoras) && mp.pildoras.length > 0);
-        if (hasPildoras) {
-            console.log('Adding pildoras section to sidebar (modules)');
-            const li = document.createElement('li');
-            li.className = 'nav-item';
-            li.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
-            
-            if (quickLinksItem) {
-                nav.insertBefore(li, quickLinksItem);
-            } else {
-                nav.appendChild(li);
-            }
-        }
-    }
 }
 
 async function loadCalendar() {
@@ -673,15 +664,33 @@ async function loadExtendedInfo() {
 // Display Program Info sections
 function displayExtendedInfo(info) {
     const sectionsContainer = document.getElementById('sections-container');
+    const roadmapSection = document.getElementById('roadmap');
     
     // Store extended info globally for píldoras navigation
     window.publicPromotionExtendedInfo = info;
     
-    // Create Program Info sections and add them to the page
+    // Create Program Info sections
     const programInfoSections = createProgramInfoSections(info);
-    programInfoSections.forEach(section => {
-        sectionsContainer.appendChild(section);
-    });
+    
+    // Find píldoras section and insert it right after roadmap
+    const pildorasSection = programInfoSections.find(section => section.id === 'pildoras');
+    if (pildorasSection && roadmapSection) {
+        // Insert píldoras right after roadmap
+        roadmapSection.insertAdjacentElement('afterend', pildorasSection);
+        
+        // Remove píldoras from the regular sections array
+        const otherSections = programInfoSections.filter(section => section.id !== 'pildoras');
+        
+        // Add remaining sections to sections container
+        otherSections.forEach(section => {
+            sectionsContainer.appendChild(section);
+        });
+    } else {
+        // If no píldoras section, add all sections normally
+        programInfoSections.forEach(section => {
+            sectionsContainer.appendChild(section);
+        });
+    }
     
     // Update sidebar to include the new sections
     updateSidebarWithExtendedInfo(info);
@@ -692,6 +701,194 @@ function displayExtendedInfo(info) {
 // Create Program Info sections HTML
 function createProgramInfoSections(info) {
     const sections = [];
+    
+    // Píldoras Section (Legacy format) - MOVED TO FIRST POSITION
+    if (Array.isArray(info.pildoras) && info.pildoras.length > 0) {
+        const pildorasSection = document.createElement('div');
+        pildorasSection.className = 'col-md-12';
+        pildorasSection.id = 'pildoras';
+
+        const rows = info.pildoras.map(p => {
+            const mode = p.mode || '';
+            const date = p.date || '';
+            const title = p.title || '';
+            const students = Array.isArray(p.students) ? p.students : [];
+            const studentsText = students.length
+                ? students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
+                : 'Desierta';
+            const status = p.status || '';
+
+            return `
+                <tr>
+                    <td style="width: 20%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(mode)}</td>
+                    <td style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(date)}</td>
+                    <td style="width: 30%; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; padding: 8px;">${escapeHtml(title)}</td>
+                    <td style="width: 25%; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; padding: 8px;">${escapeHtml(studentsText)}</td>
+                    <td style="width: 10%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(status)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        pildorasSection.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title section-title">
+                        <i class="bi bi-lightbulb me-2"></i>Píldoras
+                    </h5>
+                    <div class="table-responsive mt-3">
+                        <table class="table table-sm table-bordered" style="border-color: #dee2e6;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 20%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Presentación</th>
+                                    <th style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Fecha</th>
+                                    <th style="width: 30%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Píldora</th>
+                                    <th style="width: 25%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Coder</th>
+                                    <th style="width: 10%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        sections.push(pildorasSection);
+    }
+
+    // Píldoras Section (Module-based format) - MOVED TO FIRST POSITION
+    if (Array.isArray(info.modulesPildoras) && info.modulesPildoras.length > 0) {
+        // Get promotion modules to match with module names
+        const promotionModules = window.publicPromotionData?.modules || [];
+        
+        // Filter modules that have píldoras and enrich with promotion module data
+        const modulesWithPildoras = info.modulesPildoras
+            .filter(moduleData => Array.isArray(moduleData.pildoras) && moduleData.pildoras.length > 0)
+            .map(moduleData => {
+                // Find matching promotion module to get correct name
+                const promotionModule = promotionModules.find(pm => pm.id === moduleData.moduleId);
+                return {
+                    ...moduleData,
+                    moduleName: promotionModule?.name || moduleData.moduleName || 'Unknown Module'
+                };
+            });
+
+        if (modulesWithPildoras.length > 0) {
+            const pildorasSection = document.createElement('div');
+            pildorasSection.className = 'col-md-12';
+            pildorasSection.id = 'pildoras';
+
+            // Initialize with first module
+            let currentModuleIndex = 0;
+            
+            function renderPildorasTable() {
+                const currentModule = modulesWithPildoras[currentModuleIndex];
+                
+                const rows = currentModule.pildoras.map(p => {
+                    const mode = p.mode || '';
+                    const date = p.date || '';
+                    const title = p.title || '';
+                    const students = Array.isArray(p.students) ? p.students : [];
+                    const studentsText = students.length
+                        ? students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
+                        : 'Desierta';
+                    const status = p.status || '';
+
+                    return `
+                        <tr>
+                            <td style="width: 20%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(mode)}</td>
+                            <td style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(date)}</td>
+                            <td style="width: 30%; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; padding: 8px;">${escapeHtml(title)}</td>
+                            <td style="width: 25%; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; padding: 8px;">${escapeHtml(studentsText)}</td>
+                            <td style="width: 10%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(status)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const tableContainer = pildorasSection.querySelector('.pildoras-table-container');
+                if (tableContainer) {
+                    tableContainer.innerHTML = `
+                        <table class="table table-sm table-bordered" style="border-color: #dee2e6;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 20%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Presentación</th>
+                                    <th style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Fecha</th>
+                                    <th style="width: 30%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Píldora</th>
+                                    <th style="width: 25%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Coder</th>
+                                    <th style="width: 10%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                    `;
+                }
+
+                // Update navigation
+                const moduleTitle = pildorasSection.querySelector('.current-module-name');
+                const prevBtn = pildorasSection.querySelector('.prev-module-btn');
+                const nextBtn = pildorasSection.querySelector('.next-module-btn');
+                const countBadge = pildorasSection.querySelector('.module-pildoras-count');
+
+                if (moduleTitle) moduleTitle.textContent = currentModule.moduleName;
+                if (prevBtn) prevBtn.disabled = currentModuleIndex === 0;
+                if (nextBtn) nextBtn.disabled = currentModuleIndex === modulesWithPildoras.length - 1;
+                if (countBadge) countBadge.textContent = currentModule.pildoras.length;
+            }
+
+            pildorasSection.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="card-title section-title mb-0">
+                                <i class="bi bi-lightbulb me-2"></i>Píldoras
+                            </h5>
+                            <div class="d-flex align-items-center gap-3">
+                                <!-- Module Navigation -->
+                                <div class="d-flex align-items-center gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary prev-module-btn" onclick="navigatePildorasPrevious()">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </button>
+                                    <span class="fw-semibold text-primary current-module-name">Módulo I</span>
+                                    <button class="btn btn-sm btn-outline-secondary next-module-btn" onclick="navigatePildorasNext()">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </button>
+                                </div>
+                                <div class="badge bg-info text-dark">
+                                    <span class="module-pildoras-count">0</span> píldoras
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-responsive pildoras-table-container">
+                            <!-- Table will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Add navigation functions to window object
+            window.navigatePildorasPrevious = function() {
+                if (currentModuleIndex > 0) {
+                    currentModuleIndex--;
+                    renderPildorasTable();
+                }
+            };
+
+            window.navigatePildorasNext = function() {
+                if (currentModuleIndex < modulesWithPildoras.length - 1) {
+                    currentModuleIndex++;
+                    renderPildorasTable();
+                }
+            };
+
+            // Initial render
+            renderPildorasTable();
+            
+            sections.push(pildorasSection);
+        }
+    }
     
     // Schedule Section
     if (info.schedule && hasScheduleData(info.schedule)) {
@@ -765,194 +962,6 @@ function createProgramInfoSections(info) {
             </div>
         `;
         sections.push(resourcesSection);
-    }
-
-    // Píldoras Section (Legacy format)
-    if (Array.isArray(info.pildoras) && info.pildoras.length > 0) {
-        const pildorasSection = document.createElement('div');
-        pildorasSection.className = 'col-md-12';
-        pildorasSection.id = 'pildoras';
-
-        const rows = info.pildoras.map(p => {
-            const mode = p.mode || '';
-            const date = p.date || '';
-            const title = p.title || '';
-            const students = Array.isArray(p.students) ? p.students : [];
-            const studentsText = students.length
-                ? students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
-                : 'Desierta';
-            const status = p.status || '';
-
-            return `
-                <tr>
-                    <td>${escapeHtml(mode)}</td>
-                    <td>${escapeHtml(date)}</td>
-                    <td>${escapeHtml(title)}</td>
-                    <td>${escapeHtml(studentsText)}</td>
-                    <td>${escapeHtml(status)}</td>
-                </tr>
-            `;
-        }).join('');
-
-        pildorasSection.innerHTML = `
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title section-title">
-                        <i class="bi bi-lightbulb me-2"></i>Píldoras
-                    </h5>
-                    <div class="table-responsive mt-3">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Presentación</th>
-                                    <th>Fecha</th>
-                                    <th>Píldora</th>
-                                    <th>Coder</th>
-                                    <th>Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rows}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-        sections.push(pildorasSection);
-    }
-
-    // Píldoras Section (Module-based format)
-    if (Array.isArray(info.modulesPildoras) && info.modulesPildoras.length > 0) {
-        // Get promotion modules to match with module names
-        const promotionModules = window.publicPromotionData?.modules || [];
-        
-        // Filter modules that have píldoras and enrich with promotion module data
-        const modulesWithPildoras = info.modulesPildoras
-            .filter(moduleData => Array.isArray(moduleData.pildoras) && moduleData.pildoras.length > 0)
-            .map(moduleData => {
-                // Find matching promotion module to get correct name
-                const promotionModule = promotionModules.find(pm => pm.id === moduleData.moduleId);
-                return {
-                    ...moduleData,
-                    moduleName: promotionModule?.name || moduleData.moduleName || 'Unknown Module'
-                };
-            });
-
-        if (modulesWithPildoras.length > 0) {
-            const pildorasSection = document.createElement('div');
-            pildorasSection.className = 'col-md-12';
-            pildorasSection.id = 'pildoras';
-
-            // Initialize with first module
-            let currentModuleIndex = 0;
-            
-            function renderPildorasTable() {
-                const currentModule = modulesWithPildoras[currentModuleIndex];
-                
-                const rows = currentModule.pildoras.map(p => {
-                    const mode = p.mode || '';
-                    const date = p.date || '';
-                    const title = p.title || '';
-                    const students = Array.isArray(p.students) ? p.students : [];
-                    const studentsText = students.length
-                        ? students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
-                        : 'Desierta';
-                    const status = p.status || '';
-
-                    return `
-                        <tr>
-                            <td>${escapeHtml(mode)}</td>
-                            <td>${escapeHtml(date)}</td>
-                            <td>${escapeHtml(title)}</td>
-                            <td>${escapeHtml(studentsText)}</td>
-                            <td>${escapeHtml(status)}</td>
-                        </tr>
-                    `;
-                }).join('');
-
-                const tableContainer = pildorasSection.querySelector('.pildoras-table-container');
-                if (tableContainer) {
-                    tableContainer.innerHTML = `
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Presentación</th>
-                                    <th>Fecha</th>
-                                    <th>Píldora</th>
-                                    <th>Coder</th>
-                                    <th>Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rows}
-                            </tbody>
-                        </table>
-                    `;
-                }
-
-                // Update navigation
-                const moduleTitle = pildorasSection.querySelector('.current-module-name');
-                const prevBtn = pildorasSection.querySelector('.prev-module-btn');
-                const nextBtn = pildorasSection.querySelector('.next-module-btn');
-                const countBadge = pildorasSection.querySelector('.module-pildoras-count');
-
-                if (moduleTitle) moduleTitle.textContent = currentModule.moduleName;
-                if (prevBtn) prevBtn.disabled = currentModuleIndex === 0;
-                if (nextBtn) nextBtn.disabled = currentModuleIndex === modulesWithPildoras.length - 1;
-                if (countBadge) countBadge.textContent = currentModule.pildoras.length;
-            }
-
-            pildorasSection.innerHTML = `
-                <div class="card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="card-title section-title mb-0">
-                                <i class="bi bi-lightbulb me-2"></i>Píldoras
-                            </h5>
-                            <div class="d-flex align-items-center gap-3">
-                                <!-- Module Navigation -->
-                                <div class="d-flex align-items-center gap-2">
-                                    <button class="btn btn-sm btn-outline-secondary prev-module-btn" onclick="navigatePildorasPrevious()">
-                                        <i class="bi bi-chevron-left"></i>
-                                    </button>
-                                    <span class="fw-semibold text-primary current-module-name">Módulo I</span>
-                                    <button class="btn btn-sm btn-outline-secondary next-module-btn" onclick="navigatePildorasNext()">
-                                        <i class="bi bi-chevron-right"></i>
-                                    </button>
-                                </div>
-                                <div class="badge bg-info text-dark">
-                                    <span class="module-pildoras-count">0</span> píldoras
-                                </div>
-                            </div>
-                        </div>
-                        <div class="table-responsive pildoras-table-container">
-                            <!-- Table will be populated here -->
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Add navigation functions to window object
-            window.navigatePildorasPrevious = function() {
-                if (currentModuleIndex > 0) {
-                    currentModuleIndex--;
-                    renderPildorasTable();
-                }
-            };
-
-            window.navigatePildorasNext = function() {
-                if (currentModuleIndex < modulesWithPildoras.length - 1) {
-                    currentModuleIndex++;
-                    renderPildorasTable();
-                }
-            };
-
-            // Initial render
-            renderPildorasTable();
-            
-            sections.push(pildorasSection);
-        }
     }
     
     return sections;

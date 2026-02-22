@@ -50,51 +50,11 @@
 </head>
 
 <body>
-    <div class="welcome-container">
-        <h1 class="mb-4">🎓 Bootcamp Manager</h1>
-        <p class="mb-4">Welcome to the Bootcamp Management System</p>
-        
-        <div>
-            <a href="login.html" class="btn-custom">
-                <i class="bi bi-person-circle"></i> Teacher/Admin Login
-            </a>
-            <a href="public-promotion.html" class="btn-custom">
-                <i class="bi bi-eye"></i> View Public Promotion
-            </a>
-        </div>
-
-        <div class="server-info">
-            <p class="mb-1"><strong>⚠️ Important:</strong></p>
-            <p class="mb-1">This application requires the Node.js server to be running.</p>
-            <p class="mb-0">If you see errors, make sure to access via: <strong>http://localhost:3001</strong></p>
-        </div>
-
         <script>
-            // Check if we're on Live Server and redirect to proper server
-            if (window.location.port === '5500' || window.location.hostname === '127.0.0.1') {
-                const currentPath = window.location.pathname;
-                const search = window.location.search;
-                const newUrl = `http://localhost:3001${currentPath}${search}`;
-                
-                // Show warning and redirect
-                document.body.innerHTML = `
-                    <div class="welcome-container">
-                        <h2>🔄 Redirecting...</h2>
-                        <p>Redirecting to Node.js server at:</p>
-                        <p><strong>${newUrl}</strong></p>
-                        <p class="mt-3">If this doesn't work, please:</p>
-                        <ol class="text-start mt-3">
-                            <li>Stop Live Server</li>
-                            <li>Run <code>npm start</code> in terminal</li>
-                            <li>Access <strong>http://localhost:3001</strong></li>
-                        </ol>
-                    </div>
-                `;
-                
-                setTimeout(() => {
-                    window.location.href = newUrl;
-                }, 3000);
-            }
+            // Auto-redirect to login page
+            setTimeout(() => {
+                window.location.href = 'login.html';
+            }, 1500); // 1.5 second delay to show welcome message briefly
         </script>
     </div>
 </body>
