@@ -555,17 +555,25 @@ function updateSidebarWithExtendedInfo(info) {
     if ((Array.isArray(info.pildoras) && info.pildoras.length > 0) || 
         (Array.isArray(info.modulesPildoras) && info.modulesPildoras.some(mp => Array.isArray(mp.pildoras) && mp.pildoras.length > 0))) {
         console.log('Adding pildoras section to sidebar right after roadmap');
-        const li = document.createElement('li');
-        li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
+        const pildorasLi = document.createElement('li');
+        pildorasLi.className = 'nav-item';
+        pildorasLi.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
         
         if (roadmapItem) {
-            roadmapItem.insertAdjacentElement('afterend', li);
+            roadmapItem.insertAdjacentElement('afterend', pildorasLi);
         } else if (quickLinksItem) {
-            nav.insertBefore(li, quickLinksItem);
+            nav.insertBefore(pildorasLi, quickLinksItem);
         } else {
-            nav.appendChild(li);
+            nav.appendChild(pildorasLi);
         }
+
+        // Add Calendar right after Píldoras
+        console.log('Adding calendar section to sidebar right after pildoras');
+        const calendarLi = document.createElement('li');
+        calendarLi.className = 'nav-item';
+        calendarLi.innerHTML = '<a class="nav-link" href="#calendar"><i class="bi bi-calendar me-2"></i>Calendario</a>';
+        
+        pildorasLi.insertAdjacentElement('afterend', calendarLi);
     }
     
     // Add other Program Info sections before Quick Links
@@ -759,8 +767,11 @@ function createProgramInfoSections(info) {
 
     // Píldoras Section (Module-based format) - MOVED TO FIRST POSITION
     if (Array.isArray(info.modulesPildoras) && info.modulesPildoras.length > 0) {
+        console.log('Processing modulesPildoras:', info.modulesPildoras);
+        
         // Get promotion modules to match with module names
         const promotionModules = window.publicPromotionData?.modules || [];
+        console.log('Promotion modules for matching:', promotionModules);
         
         // Filter modules that have píldoras and enrich with promotion module data
         const modulesWithPildoras = info.modulesPildoras
@@ -774,7 +785,10 @@ function createProgramInfoSections(info) {
                 };
             });
 
+        console.log('Modules with píldoras after filtering:', modulesWithPildoras);
+
         if (modulesWithPildoras.length > 0) {
+            console.log('Creating píldoras section with', modulesWithPildoras.length, 'modules');
             const pildorasSection = document.createElement('div');
             pildorasSection.className = 'col-md-12';
             pildorasSection.id = 'pildoras';
@@ -783,9 +797,52 @@ function createProgramInfoSections(info) {
             let currentModuleIndex = 0;
             
             function renderPildorasTable() {
-                const currentModule = modulesWithPildoras[currentModuleIndex];
+                console.log('=== EXECUTING renderPildorasTable() ===');
+                console.log('Current module index:', currentModuleIndex);
+                console.log('Total modules with píldoras:', modulesWithPildoras.length);
                 
-                const rows = currentModule.pildoras.map(p => {
+                const currentModule = modulesWithPildoras[currentModuleIndex];
+                console.log('Current module:', currentModule);
+                
+                const currentDate = new Date();
+                currentDate.setHours(0, 0, 0, 0); // Reset time to compare only dates
+                
+                console.log('Current date for comparison:', currentDate);
+                console.log('Pildoras in current module:', currentModule.pildoras);
+                
+                // Find the next upcoming date
+                let nextDateIndex = -1;
+                let nextDate = null;
+                
+                for (let i = 0; i < currentModule.pildoras.length; i++) {
+                    const pildora = currentModule.pildoras[i];
+                    if (pildora.date) {
+                        // Try different date parsing methods
+                        let pildoraDate;
+                        
+                        // If date is in YYYY-MM-DD format
+                        if (pildora.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                            pildoraDate = new Date(pildora.date + 'T00:00:00');
+                        } else {
+                            pildoraDate = new Date(pildora.date);
+                        }
+                        
+                        pildoraDate.setHours(0, 0, 0, 0);
+                        
+                        console.log(`Pildora ${i}: date="${pildora.date}", parsed date:`, pildoraDate, 'comparison with current:', pildoraDate >= currentDate);
+                        
+                        if (pildoraDate >= currentDate) {
+                            if (!nextDate || pildoraDate < nextDate) {
+                                nextDate = pildoraDate;
+                                nextDateIndex = i;
+                            }
+                        }
+                    }
+                }
+                
+                console.log('Next date index:', nextDateIndex, 'Next date:', nextDate);
+                
+                const rows = currentModule.pildoras.map((p, index) => {
                     const mode = p.mode || '';
                     const date = p.date || '';
                     const title = p.title || '';
@@ -795,8 +852,14 @@ function createProgramInfoSections(info) {
                         : 'Desierta';
                     const status = p.status || '';
 
+                    // Apply orange background for the next upcoming date
+                    const isNextDate = index === nextDateIndex;
+                    const rowStyle = isNextDate ? 'background-color: #ff4700; color: white;' : '';
+                    
+                    console.log(`Row ${index}: isNextDate=${isNextDate}, date="${date}"`);
+
                     return `
-                        <tr>
+                        <tr style="${rowStyle}">
                             <td style="width: 20%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(mode)}</td>
                             <td style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; padding: 8px;">${escapeHtml(date)}</td>
                             <td style="width: 30%; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; padding: 8px;">${escapeHtml(title)}</td>
@@ -836,6 +899,8 @@ function createProgramInfoSections(info) {
                 if (prevBtn) prevBtn.disabled = currentModuleIndex === 0;
                 if (nextBtn) nextBtn.disabled = currentModuleIndex === modulesWithPildoras.length - 1;
                 if (countBadge) countBadge.textContent = currentModule.pildoras.length;
+                
+                console.log('=== FINISHED renderPildorasTable() ===');
             }
 
             pildorasSection.innerHTML = `
