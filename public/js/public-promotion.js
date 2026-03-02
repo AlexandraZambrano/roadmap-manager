@@ -311,41 +311,101 @@ function generateGanttChart(promotion) {
 
     table.appendChild(headerRow);
 
-    // Sesiones Empleabilidad before modules
+    // Sesiones Empleabilidad — accordion header row + collapsible tbody (one row per session)
     if (employability && employability.length > 0) {
+        const empGroupId = 'employability-group';
 
-        // Employability items
+        // Header row (acts as the accordion toggle)
+        const headerRow = document.createElement('tr');
+        headerRow.style.cursor = 'pointer';
+        headerRow.setAttribute('data-bs-toggle', 'collapse');
+        headerRow.setAttribute('data-bs-target', `#${empGroupId}`);
+        headerRow.setAttribute('aria-expanded', 'false');
+        headerRow.setAttribute('aria-controls', empGroupId);
+
+        const headerLabel = document.createElement('td');
+        headerLabel.innerHTML = `
+            <div class="d-flex align-items-center">
+                <button class="btn btn-link p-0 me-1" type="button" style="font-size: 0.7rem;">
+                    <i class="bi bi-chevron-right" id="chevron-${empGroupId}"></i>
+                </button>
+                <strong style="font-size: 0.7rem;">Sesiones Empleabilidad</strong>
+                <span class="badge bg-warning text-dark ms-2" style="font-size: 0.6rem;">${employability.length}</span>
+            </div>
+        `;
+        headerLabel.style.minWidth = '150px';
+        headerLabel.style.maxWidth = '200px';
+        headerLabel.style.padding = '4px';
+        headerRow.appendChild(headerLabel);
+
+        // Compute the overall span of all employability sessions to show on the header row
+        const allStartWeeks = employability.map(e => (e.startMonth - 1) * 4);
+        const allEndWeeks   = employability.map(e => (e.startMonth - 1) * 4 + (e.duration * 4));
+        const minStart = Math.min(...allStartWeeks);
+        const maxEnd   = Math.min(Math.max(...allEndWeeks), weeks);
+
+        for (let i = 0; i < weeks; i++) {
+            const cell = document.createElement('td');
+            cell.style.textAlign = 'center';
+            cell.style.height = '28px';
+            cell.style.minWidth = '20px';
+            cell.style.maxWidth = '25px';
+            cell.style.padding = '1px';
+            if (i >= minStart && i < maxEnd) {
+                cell.style.backgroundColor = '#ffe082';
+            }
+            headerRow.appendChild(cell);
+        }
+        table.appendChild(headerRow);
+
+        // Toggle chevron on expand/collapse
+        headerRow.addEventListener('click', () => {
+            const chevron = document.getElementById(`chevron-${empGroupId}`);
+            const collapseEl = document.getElementById(empGroupId);
+            const isExpanded = collapseEl.classList.contains('show');
+            if (chevron) {
+                chevron.style.transform = isExpanded ? '' : 'rotate(90deg)';
+                chevron.style.transition = 'transform 0.2s';
+            }
+        });
+
+        // Collapsible tbody — one row per session
+        const collapseBody = document.createElement('tbody');
+        collapseBody.className = 'collapse';
+        collapseBody.id = empGroupId;
+
         employability.forEach((item) => {
             const itemRow = document.createElement('tr');
             const itemLabel = document.createElement('td');
-            const itemUrl = item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" class="text-decoration-none">${escapeHtml(item.name)}</a>` : escapeHtml(item.name);
-            itemLabel.innerHTML = `<small><strong>Sesiones Empleabilidad:</strong> ${itemUrl}</small>`;
+            const itemUrl = item.url
+                ? `<a href="${escapeHtml(item.url)}" target="_blank" class="text-decoration-none">${escapeHtml(item.name)}</a>`
+                : escapeHtml(item.name);
+            itemLabel.innerHTML = `<small style="margin-left: 1.5rem; font-size: 0.6rem;">${itemUrl}</small>`;
             itemLabel.style.minWidth = '150px';
             itemLabel.style.maxWidth = '200px';
-            itemLabel.style.fontSize = '0.65rem';
-            itemLabel.style.padding = '4px';
+            itemLabel.style.padding = '2px';
             itemRow.appendChild(itemLabel);
 
-            // Convert months to weeks: startMonth is 1-indexed
             const startWeek = (item.startMonth - 1) * 4;
-            const endWeek = startWeek + (item.duration * 4);
+            const endWeek   = startWeek + (item.duration * 4);
 
             for (let i = 0; i < weeks; i++) {
                 const cell = document.createElement('td');
                 cell.style.textAlign = 'center';
-                cell.style.height = '25px';
+                cell.style.height = '22px';
                 cell.style.minWidth = '20px';
                 cell.style.maxWidth = '25px';
                 cell.style.padding = '1px';
                 cell.style.fontSize = '0.7rem';
-
                 if (i >= startWeek && i < endWeek) {
                     cell.style.backgroundColor = '#fff3cd';
                 }
                 itemRow.appendChild(cell);
             }
-            table.appendChild(itemRow);
+            collapseBody.appendChild(itemRow);
         });
+
+        table.appendChild(collapseBody);
     }
 
     // Create rows for modules (below Sesiones Empleabilidad)
