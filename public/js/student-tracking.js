@@ -558,9 +558,9 @@
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
-                            <p class="mb-1">${_esc(n.note || '')}</p>
+                            <p class="mb-1">${_esc(n.text || n.note || '')}</p>
                             <small class="text-muted">
-                                <i class="bi bi-calendar3 me-1"></i>${_fmtDate(n.createdAt)}
+                                <i class="bi bi-calendar3 me-1"></i>${_fmtDate(n.date || n.createdAt)}
                             </small>
                         </div>
                         <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="window.StudentTracking._removeNote(${i})" title="Eliminar">
@@ -592,7 +592,8 @@
     function _saveNote() {
         const note = document.getElementById('note-content')?.value?.trim() || '';
         if (!note) { _showToast('La nota no puede estar vacía', 'warning'); return; }
-        _teacherNotes.push({ note, createdAt: new Date().toISOString() });
+        // Use 'text' + 'date' to match the Student model schema (prevents Mongoose strict mode stripping the fields)
+        _teacherNotes.push({ text: note, date: new Date().toISOString() });
         _markUnsaved('technical');
         _renderTeacherNotes();
         _cancelInlineForm('ficha-teacher-notes-list');
@@ -1681,12 +1682,30 @@
 
     async function _saveTechnical() {
         const token = localStorage.getItem('token');
+
+        // Compute completedPildoras from live ExtendedInfo data (status === 'Presentada' + student is in the list)
+        const completedPildoras = [];
+        _modulesPildarasExtended.forEach(mp => {
+            (mp.pildoras || []).forEach(p => {
+                if (p.status !== 'Presentada') return;
+                const studentIds = (p.students || []).map(s => String(s.id));
+                if (studentIds.includes(String(_currentStudentId))) {
+                    completedPildoras.push({
+                        pildoraTitle: p.title || '—',
+                        moduleId: mp.moduleId || '',
+                        moduleName: mp.moduleName || '—',
+                        date: p.date || null
+                    });
+                }
+            });
+        });
+
         const payload = {
             teacherNotes: _teacherNotes,
             teams: _teams,
             competences: _competences,
-            completedModules: _completedModules
-            // completedPildoras se deriva automáticamente de ExtendedInfo, no se persiste aquí
+            completedModules: _completedModules,
+            completedPildoras
         };
         try {
             const res = await fetch(`${API_URL}/api/promotions/${_promotionId}/students/${_currentStudentId}/ficha/technical`, {
