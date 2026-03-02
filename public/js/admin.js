@@ -21,7 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Template from promotion form
+    document.getElementById('form-template-from-promo').addEventListener('submit', handleCreateTemplateFromPromotion);
+
     loadTeachers();
+    showSection('users');
 });
 
 function checkAuth() {
@@ -228,4 +232,171 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ==================== SECTION NAVIGATION ====================
+
+function showSection(section) {
+    document.getElementById('section-users').style.display     = section === 'users'     ? '' : 'none';
+    document.getElementById('section-templates').style.display = section === 'templates' ? '' : 'none';
+    document.getElementById('nav-users').classList.toggle('active',     section === 'users');
+    document.getElementById('nav-templates').classList.toggle('active', section === 'templates');
+
+    if (section === 'templates') {
+        loadPromotionsForTemplateSelect();
+        loadTemplates();
+    }
+}
+
+// ==================== TEMPLATES ====================
+
+async function loadPromotionsForTemplateSelect() {
+    const token = localStorage.getItem('token');
+    const select = document.getElementById('tpl-promotion-select');
+    try {
+        const res = await fetch(`${API_URL}/api/admin/all-promotions`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const promotions = await res.json();
+            select.innerHTML = '<option value="">— Select promotion —</option>';
+            promotions.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `${escapeHtml(p.name)}${p.weeks ? ` (${p.weeks}w)` : ''}`;
+                // Auto-fill template name when selected
+                opt.dataset.name = p.name;
+                select.appendChild(opt);
+            });
+            select.addEventListener('change', () => {
+                const selected = select.options[select.selectedIndex];
+                if (selected && selected.value) {
+                    const nameInput = document.getElementById('tpl-name');
+                    if (!nameInput.value) nameInput.value = selected.dataset.name || '';
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Error loading promotions for template select', e);
+    }
+}
+
+async function loadTemplates() {
+    const token = localStorage.getItem('token');
+    const container = document.getElementById('templates-list');
+    container.innerHTML = '<div class="col-12 text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>';
+    try {
+        const res = await fetch(`${API_URL}/api/bootcamp-templates`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const templates = await res.json();
+            renderTemplates(templates);
+        } else {
+            container.innerHTML = '<div class="col-12 alert alert-danger">Error loading templates.</div>';
+        }
+    } catch (e) {
+        container.innerHTML = '<div class="col-12 alert alert-danger">Connection error.</div>';
+    }
+}
+
+function renderTemplates(templates) {
+    const container = document.getElementById('templates-list');
+    if (!templates.length) {
+        container.innerHTML = '<div class="col-12 text-muted text-center py-4">No templates found.</div>';
+        return;
+    }
+    container.innerHTML = '';
+    templates.forEach(t => {
+        const isCustom = t.isCustom;
+        const modulesCount = (t.modules || []).length;
+        const competencesCount = (t.competences || []).length;
+        const pildorasCount = (t.modulesPildoras || []).reduce((acc, mp) => acc + (mp.pildoras || []).length, 0);
+        const card = document.createElement('div');
+        card.className = 'col-md-6 col-lg-4';
+        card.innerHTML = `
+            <div class="card h-100 shadow-sm border-0" style="border-left: 4px solid ${isCustom ? '#28a745' : '#ff4700'} !important;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="fw-bold mb-0">${escapeHtml(t.name)}</h6>
+                        <span class="badge ${isCustom ? 'bg-success' : 'bg-primary'} ms-2">${isCustom ? 'Custom' : 'System'}</span>
+                    </div>
+                    <p class="text-muted small mb-2">${escapeHtml(t.description || '—')}</p>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="badge bg-light text-dark border"><i class="bi bi-calendar3 me-1"></i>${t.weeks || '?'}w</span>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-clock me-1"></i>${t.hours || '?'}h</span>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-grid me-1"></i>${modulesCount} módulos</span>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-stars me-1"></i>${competencesCount} competencias</span>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-lightbulb me-1"></i>${pildorasCount} píldoras</span>
+                    </div>
+                    ${isCustom ? `
+                    <button class="btn btn-sm btn-outline-danger w-100" onclick="deleteTemplate('${escapeHtml(t.id)}', '${escapeHtml(t.name)}')">
+                        <i class="bi bi-trash me-1"></i>Delete Template
+                    </button>` : `<span class="text-muted small"><i class="bi bi-lock me-1"></i>System template — cannot be deleted</span>`}
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+async function handleCreateTemplateFromPromotion(e) {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    const promotionId = document.getElementById('tpl-promotion-select').value;
+    const templateName = document.getElementById('tpl-name').value.trim();
+    const templateDescription = document.getElementById('tpl-description').value.trim();
+    const feedback = document.getElementById('tpl-create-feedback');
+
+    if (!promotionId || !templateName) return;
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    feedback.innerHTML = '';
+
+    try {
+        const res = await fetch(`${API_URL}/api/admin/templates-from-promotion`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ promotionId, templateName, templateDescription })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            feedback.innerHTML = `<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-2"></i>Template "<strong>${escapeHtml(data.name)}</strong>" created successfully with ${(data.modules || []).length} modules.</div>`;
+            document.getElementById('form-template-from-promo').reset();
+            loadTemplates();
+        } else {
+            feedback.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(data.error || 'Error creating template')}</div>`;
+        }
+    } catch (err) {
+        feedback.innerHTML = `<div class="alert alert-danger py-2 mb-0">Connection error.</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+    }
+}
+
+async function deleteTemplate(templateId, templateName) {
+    if (!confirm(`Delete template "${templateName}"? This cannot be undone.`)) return;
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/bootcamp-templates/${templateId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            loadTemplates();
+        } else {
+            const data = await res.json();
+            alert(data.error || 'Error deleting template');
+        }
+    } catch (e) {
+        alert('Connection error');
+    }
 }

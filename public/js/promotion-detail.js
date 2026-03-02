@@ -179,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initEmployabilityModal();
 
     if (userRole === 'teacher') {
-        loadStudents();
         loadExtendedInfo();
         loadCollaborators();
     } else {
@@ -196,6 +195,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (userRole === 'teacher') {
         setupForms();
+        // Load students after a short delay to let the promotion be fully available
+        setTimeout(() => loadStudents(), 800);
     }
 
     // Set overview as active tab on initial load
@@ -210,6 +211,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadExtendedInfo() {
     const token = localStorage.getItem('token');
+
+    // Show loading overlay while fetching
+    _showExtendedInfoLoading(true);
+
     try {
         // Ensure Schedule tab is active on load
         const scheduleTab = document.getElementById('program-details-schedule-tab');
@@ -297,6 +302,38 @@ Evaluación Global al Final del Bootcamp
         }
     } catch (error) {
         console.error('Error loading extended info:', error);
+    } finally {
+        _showExtendedInfoLoading(false);
+    }
+}
+
+// ── Loading overlay helper ────────────────────────────────────────────────────
+function _showExtendedInfoLoading(show) {
+    let overlay = document.getElementById('extended-info-loading-overlay');
+    if (show) {
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'extended-info-loading-overlay';
+            overlay.style.cssText = `
+                position: fixed; inset: 0; z-index: 9999;
+                background: rgba(255,255,255,0.85);
+                display: flex; flex-direction: column;
+                align-items: center; justify-content: center;
+                gap: 1rem;
+            `;
+            overlay.innerHTML = `
+                <div class="spinner-border text-primary" style="width:3rem;height:3rem;" role="status"></div>
+                <p class="text-primary fw-semibold mb-0" style="font-size:1.1rem;">Cargando información de la promoción…</p>
+            `;
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+    } else {
+        if (overlay) {
+            overlay.style.transition = 'opacity 0.3s';
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay && overlay.remove(), 320);
+        }
     }
 }
 
@@ -3100,6 +3137,12 @@ async function loadStudents() {
         });
 
         if (!response.ok) {
+            // For brand-new promotions (404) just show empty list silently
+            if (response.status === 404) {
+                window.currentStudents = [];
+                displayStudents([]);
+                return;
+            }
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
@@ -3107,12 +3150,15 @@ async function loadStudents() {
         console.log('Loaded students:', students);
 
         // Store students data globally for multi-select operations
-        // Backend already normalizes the ID field, so we can use it directly
         window.currentStudents = students;
         displayStudents(window.currentStudents);
     } catch (error) {
         console.error('Error loading students:', error);
-        alert(`Error loading students: ${error.message}`);
+        // Show error silently in the students container — never alert()
+        const studentsContainer = document.getElementById('students-list');
+        if (studentsContainer) {
+            studentsContainer.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle me-2"></i>Error al cargar estudiantes. <a href="#" onclick="loadStudents();return false;">Reintentar</a></td></tr>`;
+        }
     }
 }
 

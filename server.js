@@ -3144,6 +3144,96 @@ const verifyAdmin = (req, res, next) => {
   else res.status(403).json({ error: 'Admin role required' });
 };
 
+// Create a template from an existing promotion
+app.post('/api/admin/templates-from-promotion', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { promotionId, templateName, templateDescription } = req.body;
+    if (!promotionId || !templateName) {
+      return res.status(400).json({ error: 'promotionId and templateName are required' });
+    }
+
+    const promotion = await Promotion.findOne({ id: promotionId }).lean();
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+
+    const extInfo = await ExtendedInfo.findOne({ promotionId }).lean();
+
+    const templateId = `custom-${uuidv4()}`;
+
+    const templateData = {
+      id: templateId,
+      name: templateName,
+      description: templateDescription || promotion.description || '',
+      weeks: promotion.weeks || 36,
+      hours: promotion.hours || 1250,
+      hoursPerWeek: promotion.hoursPerWeek || Math.round((promotion.hours || 1250) / (promotion.weeks || 36)),
+      isCustom: true,
+      createdBy: req.user.id,
+      // Modules from promotion (strip student-specific data, keep structure)
+      modules: (promotion.modules || []).map(m => ({
+        name: m.name,
+        duration: m.duration,
+        courses: (m.courses || []).map(({ name, url, duration, startOffset }) => ({ name, url: url || '', duration: duration || 1, startOffset: startOffset || 0 })),
+        projects: (m.projects || []).map(({ name, url, duration, startOffset }) => ({ name, url: url || '', duration: duration || 1, startOffset: startOffset || 0 }))
+      })),
+      // Employability from promotion
+      employability: (promotion.employability || []).map(({ name, url, startMonth, duration }) => ({ name, url: url || '', startMonth: startMonth || 1, duration: duration || 1 })),
+      // All ExtendedInfo fields
+      evaluation: extInfo?.evaluation || '',
+      resources: (extInfo?.resources || []).map(({ title, category, url }) => ({ title, category, url })),
+      competences: (extInfo?.competences || []).map(c => ({
+        id: c.id,
+        area: c.area,
+        name: c.name,
+        description: c.description,
+        levels: (c.levels || []).map(l => ({ level: l.level, description: l.description, indicators: l.indicators || [] })),
+        allTools: c.allTools || [],
+        selectedTools: c.selectedTools || [],
+        startModule: c.startModule ? { id: '', name: c.startModule.name || '' } : { id: '', name: '' }
+      })),
+      schedule: extInfo?.schedule || {},
+      modulesPildoras: (extInfo?.modulesPildoras || []).map(mp => ({
+        moduleName: mp.moduleName,
+        pildoras: (mp.pildoras || []).map(p => ({ title: p.title, mode: p.mode || 'Virtual' }))
+      })),
+      school: extInfo?.school || '',
+      projectType: extInfo?.projectType || '',
+      totalHours: extInfo?.totalHours || String(promotion.hours || ''),
+      modality: extInfo?.modality || '',
+      materials: extInfo?.materials || '',
+      internships: extInfo?.internships !== undefined ? extInfo.internships : null,
+      funders: extInfo?.funders || '',
+      funderDeadlines: extInfo?.funderDeadlines || '',
+      okrKpis: extInfo?.okrKpis || '',
+      funderKpis: extInfo?.funderKpis || '',
+      projectMeetings: extInfo?.projectMeetings || '',
+      teamMeetings: extInfo?.teamMeetings || '',
+      trainerDayOff: extInfo?.trainerDayOff || '',
+      cotrainerDayOff: extInfo?.cotrainerDayOff || ''
+    };
+
+    const template = await BootcampTemplate.findOneAndUpdate(
+      { id: templateId },
+      { $set: templateData },
+      { upsert: true, strict: false, runValidators: false, returnDocument: 'after' }
+    );
+
+    res.status(201).json(template);
+  } catch (error) {
+    console.error('[POST /api/admin/templates-from-promotion]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all promotions (admin view, with names)
+app.get('/api/admin/all-promotions', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const promotions = await Promotion.find({}, 'id name weeks hours description teacherId').lean();
+    res.json(promotions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const teachers = await Teacher.find({}, '-password');

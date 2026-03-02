@@ -98,8 +98,13 @@
                 </div>
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link active" href="admin.html">
+                        <a class="nav-link active" id="nav-users" href="#" onclick="showSection('users')">
                             <i class="bi bi-people me-2"></i>Users Management
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="nav-templates" href="#" onclick="showSection('templates')">
+                            <i class="bi bi-layout-text-window me-2"></i>Bootcamp Templates
                         </a>
                     </li>
                     <li class="nav-item">
@@ -112,6 +117,9 @@
 
             <!-- Main Content -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+
+                <!-- ── Users Section ── -->
+                <div id="section-users">
                 <div
                     class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">User Accounts</h1>
@@ -131,6 +139,53 @@
                         </div>
                     </div>
                 </div>
+                </div>
+
+                <!-- ── Templates Section ── -->
+                <div id="section-templates" style="display:none;">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2"><i class="bi bi-layout-text-window me-2"></i>Bootcamp Templates</h1>
+                </div>
+
+                <!-- Create template from promotion -->
+                <div class="card shadow-sm mb-4 border-0" style="border-left: 4px solid #ff4700 !important;">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-1"><i class="bi bi-magic me-2 text-primary"></i>Create Template from Promotion</h5>
+                        <p class="text-muted small mb-3">Choose an existing promotion and save its full content (roadmap, píldoras, acta, evaluation, competences) as a reusable template.</p>
+                        <form id="form-template-from-promo" class="row g-3 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Promotion</label>
+                                <select class="form-select" id="tpl-promotion-select" required>
+                                    <option value="">— Select promotion —</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Template Name</label>
+                                <input type="text" class="form-control" id="tpl-name" required placeholder="e.g. IA Bootcamp P6">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">Description <span class="text-muted">(optional)</span></label>
+                                <input type="text" class="form-control" id="tpl-description" placeholder="Short description">
+                            </div>
+                            <div class="col-md-1 d-flex">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-plus-lg"></i>
+                                </button>
+                            </div>
+                        </form>
+                        <div id="tpl-create-feedback" class="mt-2"></div>
+                    </div>
+                </div>
+
+                <!-- Existing templates list -->
+                <h5 class="fw-bold mb-3">Existing Templates</h5>
+                <div id="templates-list" class="row g-3">
+                    <div class="col-12 text-center py-4">
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                </div>
+                </div>
+
             </main>
         </div>
     </div>
