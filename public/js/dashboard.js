@@ -221,6 +221,10 @@ function setupPromotionForm() {
         const weeks = parseInt(document.getElementById('promotion-weeks').value);
         const startDate = document.getElementById('promotion-start').value;
         const endDate = document.getElementById('promotion-end').value;
+        // Only pass templateId on creation (not when editing an existing promotion)
+        const templateId = !currentPromotionId
+            ? (document.getElementById('promotion-template').value || null)
+            : null;
 
         const token = localStorage.getItem('token');
         const method = currentPromotionId ? 'PUT' : 'POST';
@@ -235,7 +239,7 @@ function setupPromotionForm() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ name, description, weeks, startDate, endDate })
+                body: JSON.stringify({ name, description, weeks, startDate, endDate, templateId })
             });
 
             if (response.ok) {

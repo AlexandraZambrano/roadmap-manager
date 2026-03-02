@@ -466,12 +466,216 @@ async function initializeDefaultTemplates() {
     {
       id: 'ia-bootcamp',
       name: 'IA School Bootcamp',
-      description: 'Artificial Intelligence and Machine Learning bootcamp',
-      weeks: 39,
-      hours: 520,
-      hoursPerWeek: 35,
+      description: 'Inteligencia Artificial y Machine Learning — bootcamp completo de 36 semanas',
+      weeks: 36,
+      hours: 1250,
+      hoursPerWeek: Math.round(1250 / 36),
       isCustom: false,
-      modules: []
+      // ── Acta de Inicio ─────────────────────────────────────────────────────
+      school: 'Madrid',
+      projectType: 'Bootcamp',
+      totalHours: '1.250 horas',
+      modality: 'Híbrido (Presencial + Online)',
+      materials: 'No son necesarios recursos adicionales.',
+      internships: false,
+      funders: 'SAGE.\nJP Morgan.\nEn colaboración con Microsoft y Somos F5.',
+      funderDeadlines: '',
+      okrKpis: 'PIPO3.R1 Satisfacción 4,2/5 de coders sobre la excelencia del equipo formativo de la formación\nISEC2.R1 Jornadas de selección con un 40% de personas participantes con el proceso 100% finalizado.\nISEC3.R2 Resultado 78% salida positiva.\nISECR2 Finalizar cada programa con un máximo de bajas de 10%.',
+      funderKpis: 'SAGE.: 50% mujeres\n30% jóvenes menores de 30 años\n15% inmigrantes o refugiados\n5% personas con discapacidad.',
+      projectMeetings: 'Ver el calendario de reuniones en Asana.',
+      teamMeetings: 'Semanal - jueves (14:30-15:00)',
+      trainerDayOff: '',
+      cotrainerDayOff: '',
+      // ── Schedule ───────────────────────────────────────────────────────────
+      schedule: {
+        online: {
+          entry: '08:15',
+          start: '08:25',
+          break: '11:00',
+          lunch: 'No tomamos almuerzo',
+          finish: '15:45'
+        },
+        presential: {
+          entry: '09:59',
+          start: '09:25',
+          break: '11:00',
+          lunch: '13:30',
+          finish: '16:30'
+        },
+        notes: ''
+      },
+      // ── Evaluation ─────────────────────────────────────────────────────────
+      evaluation: `Evaluación del Proyecto\n\nSe brindará retroalimentación oral el mismo día de la presentación del proyecto, mientras que la autoevaluación (en proyectos individuales) y evaluación grupal (en proyectos grupales) se realizará al día siguiente y posteriormente, el equipo formativo compartirá las impresiones finales. Todo ello deberá almacenarse en Google Classroom.\n\nSe tendrán en cuenta los siguientes aspectos:\n\n• Análisis de los commits realizados por los coders, valorando tanto la cantidad como la calidad\n• Participación individual en la presentación del proyecto\n• Capacidad de responder preguntas específicas de manera clara y fundamentada\n• Desarrollo y demostración de las competencias adquiridas durante el proyecto\n\nEvaluación de las Píldoras\n\nLas píldoras se asignarán la primera semana, se apuntarán en el calendario y se valorarán los siguientes aspectos:\n• Que tenga un poco de inglés (hablado, no solo en la presentación)\n• Que tenga parte teórica y parte práctica. Énfasis en la práctica\n• Tiempo mínimo 1 hora\n• Crear un repositorio en Github y/o publicar un artículo en Medium\n\nEvaluación Global al Final del Bootcamp\n\n• Valoración de los proyectos entregados\n• Valoración de los cursos realizados\n• Valoración de las píldoras realizadas\n• Valoración de competencias transversales`,
+      // ── Resources ──────────────────────────────────────────────────────────
+      resources: [
+        { title: 'CodigoMaquina', category: 'Youtube', url: 'https://www.youtube.com/@CodigoMaquina' },
+        { title: '3blue1brown', category: 'Youtube', url: 'https://www.youtube.com/c/3blue1brown' },
+        { title: 'Practical AI', category: 'Podcast', url: 'https://practicalai.fm/' },
+        { title: '180 proyectos de data science y machine learning con python', category: 'Technical', url: 'https://noeliagorod.com/2022/02/09/180-proyectos-de-data-science-y-machine-learning-con-python-2/' },
+        { title: 'Khan Academy', category: 'Technical', url: 'https://www.khanacademy.org/' }
+      ],
+      // ── Employability ──────────────────────────────────────────────────────
+      employability: [
+        { name: 'Sesión 1: Introducción a la búsqueda de trabajo', url: '', startMonth: 2, duration: 1 },
+        { name: 'Sesión 2: Introducción a LinkedIn', url: '', startMonth: 3, duration: 1 },
+        { name: 'Sesión 3: Autoconocimiento (DAFO/Elevator/Objetivo profesional)', url: '', startMonth: 4, duration: 1 },
+        { name: 'Sesión 4: Autoconocimiento (Perfil profesional)', url: '', startMonth: 5, duration: 1 }
+      ],
+      // ── Modules (Roadmap) ──────────────────────────────────────────────────
+      modules: [
+        {
+          name: 'Bases del desarrollo web',
+          duration: 7,
+          courses: [
+            { name: 'Python Essentials - Cisco', url: 'https://www.netacad.com/courses/python-essentials-1?courseLang=en-US', duration: 7, startOffset: 0 }
+          ],
+          projects: [
+            { name: 'App con Python', url: '', duration: 2, startOffset: 0 },
+            { name: 'CRUD con Python', url: '', duration: 3, startOffset: 2 },
+            { name: 'Web Scraping', url: '', duration: 2, startOffset: 5 }
+          ]
+        },
+        {
+          name: 'Machine Learning',
+          duration: 8,
+          courses: [
+            { name: 'Data Science Fundamentals - Saturdays AI', url: 'https://ti.to/saturdaysai/data-science-fundamentals/', duration: 8, startOffset: 0 }
+          ],
+          projects: [
+            { name: 'Exploratory Data Analisys', url: '', duration: 1, startOffset: 0 },
+            { name: 'Problema de Regresión', url: '', duration: 2, startOffset: 1 },
+            { name: 'Problema de clasificación', url: '', duration: 2, startOffset: 3 },
+            { name: 'Problema de clasificación multiclase con Modelos Ensemble', url: '', duration: 2, startOffset: 5 },
+            { name: 'Aprendizaje no supervizado', url: '', duration: 1, startOffset: 7 }
+          ]
+        },
+        {
+          name: 'Deep Learning',
+          duration: 17,
+          courses: [
+            { name: 'Ingeniero Asociado de IA de Azure', url: 'https://learn.microsoft.com/es-es/credentials/certifications/azure-ai-engineer/?practice-assessment-type=certification', duration: 13, startOffset: 0 }
+          ],
+          projects: [
+            { name: 'Tiempo Flexible', url: '', duration: 4, startOffset: 0 },
+            { name: 'Tracks: Data Engineer (Spark, Redis, Kafka, etc.), Data Analyst (Power BI, Tableau, Dash, etc.), AI Developer (Keras, MLops, etc.)', url: '', duration: 4, startOffset: 4 },
+            { name: 'Natural Language Procesing', url: '', duration: 3, startOffset: 8 },
+            { name: 'LLM (Rag + agentes)', url: '', duration: 3, startOffset: 11 },
+            { name: 'Computer Vision', url: '', duration: 3, startOffset: 14 }
+          ]
+        },
+        {
+          name: 'Proyectos finales',
+          duration: 4,
+          courses: [],
+          projects: []
+        }
+      ],
+      // ── Competences ────────────────────────────────────────────────────────
+      competences: [
+        {
+          id: '1',
+          area: 'web',
+          name: 'DEMO: Configurar el entorno de trabajo',
+          description: 'Montar y mantener un entorno de desarrollo completo, incluyendo herramientas, frameworks y sistemas de control de versiones.',
+          levels: [
+            {
+              level: 1,
+              description: 'initial',
+              indicators: [
+                'Organiza directorios de proyecto',
+                'Busca información técnica',
+                'Consulta documentación en inglés',
+                'Instala aplicaciones y extensiones'
+              ]
+            },
+            {
+              level: 2,
+              description: 'medio',
+              indicators: [
+                'Usa líneas de comandos básicas',
+                'Declara funciones y variables en el entorno',
+                'Integra control de versiones'
+              ]
+            },
+            {
+              level: 3,
+              description: 'advance',
+              indicators: [
+                'Establece un flujo de trabajo profesional',
+                'Utiliza herramientas de contenización',
+                'Automatiza el entorno con scripts'
+              ]
+            }
+          ],
+          allTools: ['Docker', 'Git', 'GitHub', 'IDE', 'Terminal (CLI)', 'devcontainer'],
+          selectedTools: ['Docker', 'Git', 'GitHub', 'IDE', 'Terminal (CLI)'],
+          startModule: { id: '', name: 'Bases del desarrollo web' }
+        }
+      ],
+      // ── Píldoras por módulo ────────────────────────────────────────────────
+      modulesPildoras: [
+        {
+          moduleName: 'Bases del desarrollo web',
+          pildoras: [
+            { title: 'Píldora: Clean code', mode: 'Virtual' },
+            { title: 'Píldora: Streamlit', mode: 'Presencial' },
+            { title: 'Píldora: Hilos en python', mode: 'Presencial' },
+            { title: 'Píldora: Protocolos de comunicación (http, IP)', mode: 'Virtual' },
+            { title: 'Píldora: API Rest y CRUD', mode: 'Virtual' },
+            { title: 'Píldora: Fastapi', mode: 'Virtual' },
+            { title: 'Píldora: Django', mode: 'Presencial' },
+            { title: 'Píldora: Bases de datos relacionales', mode: 'Presencial' },
+            { title: 'Píldora: Bases de datos no relacionales', mode: 'Virtual' },
+            { title: 'Píldora: Test de unitarios y de integración', mode: 'Virtual' },
+            { title: 'Píldora: TDD con Python', mode: 'Virtual' },
+            { title: 'Píldora: Versionado de APIs y gestión de endpoints', mode: 'Virtual' },
+            { title: 'Píldora: Docker (Contenedores, imágenes y volúmenes)', mode: 'Presencial' },
+            { title: 'Píldora: SOLID', mode: 'Presencial' },
+            { title: 'Píldora: Docker compose y microservicios', mode: 'Virtual' },
+            { title: 'Píldora: HTML & JS', mode: 'Virtual' },
+            { title: 'Píldora: Beautifulsoup', mode: 'Virtual' },
+            { title: 'Píldora: Scrapy', mode: 'Presencial' },
+            { title: 'Píldora: Selenium', mode: 'Presencial' },
+            { title: 'Píldora: Cronjob', mode: 'Virtual' },
+            { title: 'Píldora: Creación de Macros para la documentación de un proyecto', mode: 'Virtual' },
+            { title: 'Píldora Crea una documentación atractiva en github', mode: 'Virtual' },
+            { title: 'Píldora: Temas legales y seguridad IT', mode: 'Presencial' }
+          ]
+        },
+        {
+          moduleName: 'Machine Learning',
+          pildoras: [
+            { title: 'Gestores de paquetes (uv, pipenv, poetry)', mode: 'Virtual' },
+            { title: 'Data cleaning con Python', mode: 'Virtual' },
+            { title: 'Story telling con Datos', mode: 'Virtual' },
+            { title: 'Etapas de Un proyecto de Machine Learning', mode: 'Presencial' },
+            { title: 'ML Supervisado: Algoritmos de Regresión', mode: 'Presencial' },
+            { title: 'Evaluación de modelos y métricas de rendimiento', mode: 'Presencial' },
+            { title: 'División de datos: entrenamiento, validación y prueba', mode: 'Virtual' },
+            { title: 'Overfitting, Underfitting y técnicas de regularización', mode: 'Virtual' },
+            { title: 'Pipeline básico de Machine Learning y uso de pickle (conexión de un  modelo de ML con tu aplicación web)', mode: 'Presencial' },
+            { title: 'ML Supervisado: Algoritmos de Clasificación', mode: 'Virtual' },
+            { title: 'Ingenieria de Caracteristicas', mode: 'Virtual' },
+            { title: 'Manejo de datos desbalanceados en clasificación', mode: 'Presencial' },
+            { title: 'Modelos Ensemble', mode: 'Virtual' },
+            { title: 'Selección de modelos y comparación de algoritmos', mode: 'Presencial' },
+            { title: 'Reducción de la Dimensionalidad', mode: 'Presencial' },
+            { title: 'ML No Supervisado: Algoritmos Clustering', mode: 'Presencial' },
+            { title: 'Detección de data leakage en proyectos de Machine Learning', mode: 'Virtual' },
+            { title: 'Herramientas de Business Intelligence (Power BI, Tableau, etc.)', mode: 'Virtual' },
+            { title: 'ETLs, Extracción, transformación y carga de datos para procesos de ML', mode: 'Presencial' },
+            { title: 'Analisis de Series temporales', mode: 'Virtual' }
+          ]
+        },
+        {
+          moduleName: 'Deep Learning',
+          pildoras: []
+        },
+        {
+          moduleName: 'Proyectos finales',
+          pildoras: []
+        }
+      ]
     },
     {
       id: 'fullstack-bootcamp',
@@ -526,10 +730,12 @@ async function initializeDefaultTemplates() {
   ];
 
   for (const template of defaultTemplates) {
-    const exists = await BootcampTemplate.findOne({ id: template.id });
-    if (!exists) {
-      await BootcampTemplate.create(template);
-    }
+    const result = await BootcampTemplate.findOneAndUpdate(
+      { id: template.id },
+      { $set: template },
+      { upsert: true, strict: false, runValidators: false, returnDocument: 'after' }
+    );
+    console.log(`[initTemplates] ${template.id}: modules=${result?.modules?.length || 0}, competences=${result?.competences?.length || 0}`);
   }
 }
 
@@ -604,6 +810,43 @@ app.delete('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) 
 
     await BootcampTemplate.deleteOne({ id: req.params.templateId });
     res.json({ message: 'Template deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update custom template
+app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => {
+  try {
+    const template = await BootcampTemplate.findOne({ id: req.params.templateId });
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (!template.isCustom) {
+      return res.status(403).json({ error: 'Cannot edit system templates' });
+    }
+
+    if (template.createdBy !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { name, description, weeks, hours, hoursPerWeek, modules, evaluation, schedule,
+            resources, employability, competences, school, projectType, totalHours, modality,
+            materials, internships, funders, funderDeadlines, okrKpis, funderKpis,
+            projectMeetings, teamMeetings, trainerDayOff, cotrainerDayOff } = req.body;
+
+    const updated = await BootcampTemplate.findOneAndUpdate(
+      { id: req.params.templateId },
+      { $set: { name, description, weeks, hours, hoursPerWeek, modules, evaluation, schedule,
+                resources, employability, competences, school, projectType, totalHours, modality,
+                materials, internships, funders, funderDeadlines, okrKpis, funderKpis,
+                projectMeetings, teamMeetings, trainerDayOff, cotrainerDayOff } },
+      { returnDocument: 'after' }
+    );
+
+    res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2320,8 +2563,28 @@ app.get('/api/promotions/:id', async (req, res) => {
 
 app.post('/api/promotions', verifyToken, async (req, res) => {
   try {
-    const { name, description, startDate, endDate, weeks, modules } = req.body;
+    const { name, description, startDate, endDate, weeks, modules, templateId } = req.body;
     if (!name || !weeks) return res.status(400).json({ error: 'Name and weeks are required' });
+
+    // Build modules list: from body or from template
+    let promotionModules = modules || [];
+    let template = null;
+
+    if (templateId) {
+      // Use lean() to get plain JS objects — no Mongoose _id complications
+      template = await BootcampTemplate.findOne({ id: templateId }).lean();
+      console.log(`[POST /promotions] template found: ${template?.id}, modules: ${template?.modules?.length || 0}, competences: ${template?.competences?.length || 0}`);
+      if (template && template.modules && template.modules.length > 0 && promotionModules.length === 0) {
+        promotionModules = template.modules.map(m => ({
+          id: uuidv4(),
+          name: m.name,
+          duration: m.duration,
+          courses: (m.courses || []).map(({ name, url, duration, startOffset }) => ({ name, url, duration: duration || 1, startOffset: startOffset || 0 })),
+          projects: (m.projects || []).map(({ name, url, duration, startOffset }) => ({ name, url, duration: duration || 1, startOffset: startOffset || 0 })),
+          pildoras: []
+        }));
+      }
+    }
 
     const promotion = await Promotion.create({
       id: uuidv4(),
@@ -2330,12 +2593,90 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
       startDate,
       endDate,
       weeks,
-      modules: modules || [],
+      modules: promotionModules,
+      employability: template ? (template.employability || []).map(({ name, url, startMonth, duration }) => ({ name, url, startMonth, duration })) : [],
       teacherId: req.user.id,
       collaborators: []
     });
+
+    // If a template was selected, pre-populate ExtendedInfo from it
+    if (template) {
+      // Map module names → fresh IDs so competence startModule.id resolves correctly
+      const moduleNameToId = {};
+      promotionModules.forEach(m => { moduleNameToId[m.name] = m.id; });
+
+      const mappedCompetences = (template.competences || []).map(c => ({
+        id: c.id,
+        area: c.area,
+        name: c.name,
+        description: c.description,
+        levels: (c.levels || []).map(l => ({
+          level: l.level,
+          description: l.description,
+          indicators: l.indicators || []
+        })),
+        allTools: c.allTools || [],
+        selectedTools: c.selectedTools || [],
+        startModule: c.startModule ? {
+          id: moduleNameToId[c.startModule.name] || '',
+          name: c.startModule.name || ''
+        } : { id: '', name: '' }
+      }));
+
+      const mappedResources = (template.resources || []).map(({ title, category, url }) => ({ title, category, url }));
+
+      const schedule = template.schedule || {};
+
+      // Map template modulesPildoras: replace moduleName with fresh module IDs
+      const mappedModulesPildoras = (template.modulesPildoras || []).map(mp => {
+        const freshModuleId = moduleNameToId[mp.moduleName] || '';
+        return {
+          moduleId: freshModuleId,
+          moduleName: mp.moduleName,
+          pildoras: (mp.pildoras || []).map(p => ({
+            title: p.title,
+            mode: p.mode || 'Virtual',
+            date: '',
+            students: [],
+            status: ''
+          }))
+        };
+      });
+
+      await ExtendedInfo.findOneAndUpdate(
+        { promotionId: promotion.id },
+        {
+          $set: {
+            schedule,
+            evaluation: template.evaluation || '',
+            resources: mappedResources,
+            competences: mappedCompetences,
+            school: template.school || '',
+            projectType: template.projectType || '',
+            totalHours: template.totalHours || '',
+            modality: template.modality || '',
+            materials: template.materials || '',
+            internships: template.internships !== undefined && template.internships !== null ? template.internships : null,
+            funders: template.funders || '',
+            funderDeadlines: template.funderDeadlines || '',
+            okrKpis: template.okrKpis || '',
+            funderKpis: template.funderKpis || '',
+            projectMeetings: template.projectMeetings || '',
+            teamMeetings: template.teamMeetings || '',
+            trainerDayOff: template.trainerDayOff || '',
+            cotrainerDayOff: template.cotrainerDayOff || '',
+            team: [],
+            pildoras: [],
+            modulesPildoras: mappedModulesPildoras.length > 0 ? mappedModulesPildoras : []
+          }
+        },
+        { upsert: true, strict: false }
+      );
+    }
+
     res.status(201).json(promotion);
   } catch (error) {
+    console.error('[POST /api/promotions] error:', error);
     res.status(500).json({ error: error.message });
   }
 });
