@@ -4673,10 +4673,12 @@ async function loadAttendance() {
 
 function renderAttendanceTable() {
     const headerRow = document.getElementById('attendance-header-row');
+    const weekdayRow = document.getElementById('attendance-weekday-row');
     const body = document.getElementById('attendance-body');
 
     // Clear previous
     headerRow.innerHTML = '<th class="sticky-column bg-light" style="min-width: 250px; z-index: 10;">Student</th>';
+    if (weekdayRow) weekdayRow.innerHTML = '<th class="sticky-column bg-light" style="min-width: 250px; z-index: 10;"></th>';
     body.innerHTML = '';
 
     if (studentsForAttendance.length === 0) {
@@ -4688,10 +4690,20 @@ function renderAttendanceTable() {
     const [year, month] = currentAttendanceMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // Generate headers
+    // Weekday abbreviations (0=Sun, 1=Mon, ..., 6=Sat)
+    const WEEKDAY_ABBR = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
+
+    // Generate headers (weekday row + day number row)
     for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${day < 10 ? '0' : ''}${day}`;
-        headerRow.innerHTML += `<th class="text-center">${dateStr}</th>`;
+        const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0=Sun, 6=Sat
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const weekendStyle = isWeekend ? ' background-color:#e5e5e5; color:#888;' : '';
+
+        if (weekdayRow) {
+            weekdayRow.innerHTML += `<th class="text-center" style="font-size:0.7rem; font-weight:500; padding:2px 4px;${weekendStyle}">${WEEKDAY_ABBR[dayOfWeek]}</th>`;
+        }
+        headerRow.innerHTML += `<th class="text-center" style="${weekendStyle}">${dateStr}</th>`;
     }
 
     // Generate rows
@@ -4712,6 +4724,9 @@ function renderAttendanceTable() {
             const status = record ? record.status : '';
             const note = (record && record.note) ? record.note : '';
 
+            const dayOfWeek = new Date(year, month - 1, day).getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
             let statusClass = '';
             if (status === 'Presente') statusClass = 'attendance-present';
             else if (status === 'Ausente') statusClass = 'attendance-absent';
@@ -4720,7 +4735,7 @@ function renderAttendanceTable() {
             else if (status === 'Sale antes') statusClass = 'attendance-early-leave';
 
             const td = document.createElement('td');
-            td.className = `attendance-cell ${statusClass} ${note ? 'attendance-has-note' : ''}`;
+            td.className = `attendance-cell ${statusClass} ${note ? 'attendance-has-note' : ''} ${isWeekend && !statusClass ? 'attendance-weekend' : ''}`;
             td.dataset.studentId = student.id;
             td.dataset.date = dateKey;
             td.dataset.status = status;

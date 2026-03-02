@@ -492,6 +492,11 @@ border-color: #c1aee6;
     color: #5b21b6 !important;
 }
 
+.attendance-weekend {
+    background-color: #e5e5e5 !important;
+    color: #aaa !important;
+}
+
 .attendance-dot {
     display: inline-block;
     width: 12px;
