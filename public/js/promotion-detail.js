@@ -2918,10 +2918,16 @@ function setupForms() {
         const name = document.getElementById('student-name').value;
         const lastname = document.getElementById('student-lastname').value;
         const email = document.getElementById('student-email').value;
+        const phone = document.getElementById('student-phone').value;
         const age = document.getElementById('student-age').value;
+        const administrativeSituation = document.getElementById('student-admin-situation').value;
         const nationality = document.getElementById('student-nationality').value;
+        const identificationDocument = document.getElementById('student-document').value;
+        const gender = document.getElementById('student-gender').value;
+        const englishLevel = document.getElementById('student-english-level').value;
+        const educationLevel = document.getElementById('student-education-level').value;
         const profession = document.getElementById('student-profession').value;
-        const address = document.getElementById('student-address').value;
+        const community = document.getElementById('student-community').value;
 
         // Check if we're editing an existing student
         const editingStudentId = document.getElementById('student-form').dataset.editingStudentId;
@@ -2932,10 +2938,16 @@ function setupForms() {
             name,
             lastname,
             email,
+            phone,
             age: age ? parseInt(age) : null,
+            administrativeSituation,
             nationality,
+            identificationDocument,
+            gender,
+            englishLevel,
+            educationLevel,
             profession,
-            address
+            community
         };
 
         console.log('Sending student data:', studentData);
@@ -3192,9 +3204,6 @@ function displayStudents(students) {
             <td>${student.profession || 'N/A'}</td>
             <td class="text-end">
                 <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="editStudent('${student.id}')" title="Edit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
                     <button class="btn btn-sm btn-outline-success" onclick="window.StudentTracking?.openFicha('${student.id}')" title="Ficha de Seguimiento">
                         <i class="bi bi-person-lines-fill"></i>
                     </button>
@@ -3203,9 +3212,6 @@ function displayStudents(students) {
                     </button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTransversal('${student.id}', promotionId)" title="PDF Seguimiento Transversal">
                         <i class="bi bi-file-earmark-person"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-info" onclick="trackStudentProgress('${student.id}', '${student.name} ${student.lastname || ''}')" title="Track Progress">
-                        <i class="bi bi-graph-up"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}', '${student.email}')" title="Delete">
                         <i class="bi bi-trash"></i>
@@ -3253,10 +3259,16 @@ function editStudent(studentId) {
     document.getElementById('student-name').value = student.name || '';
     document.getElementById('student-lastname').value = student.lastname || '';
     document.getElementById('student-email').value = student.email || '';
+    document.getElementById('student-phone').value = student.phone || '';
     document.getElementById('student-age').value = student.age || '';
+    document.getElementById('student-admin-situation').value = student.administrativeSituation || '';
     document.getElementById('student-nationality').value = student.nationality || '';
+    document.getElementById('student-document').value = student.identificationDocument || '';
+    document.getElementById('student-gender').value = student.gender || '';
+    document.getElementById('student-english-level').value = student.englishLevel || '';
+    document.getElementById('student-education-level').value = student.educationLevel || '';
     document.getElementById('student-profession').value = student.profession || '';
-    document.getElementById('student-address').value = student.address || '';
+    document.getElementById('student-community').value = student.community || '';
 
     // Store the student ID for updating
     document.getElementById('student-form').dataset.editingStudentId = studentId;
@@ -3272,26 +3284,25 @@ function editStudent(studentId) {
 // Export all students as CSV
 function exportStudentsToCSV(students, filename) {
     const rows = [];
-    // Header - removed Entry Type and Last Accessed
-    rows.push(['Name', 'Last Name', 'Email', 'Age', 'Nationality', 'Profession', 'Address'].join(','));
+    rows.push(['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Edad', 'Situación Administrativa',
+        'Nacionalidad', 'Documento', 'Sexo', 'Nivel Inglés', 'Nivel Educativo', 'Profesión', 'Comunidad'].join(','));
 
     students.forEach(student => {
-        const name = (student.name || '').replace(/"/g, '""');
-        const lastname = (student.lastname || '').replace(/"/g, '""');
-        const email = (student.email || '').replace(/"/g, '""');
-        const age = student.age || '';
-        const nationality = (student.nationality || '').replace(/"/g, '""');
-        const profession = (student.profession || '').replace(/"/g, '""');
-        const address = (student.address || '').replace(/"/g, '""');
-
+        const escape = v => `"${(v || '').toString().replace(/"/g, '""')}"`;
         rows.push([
-            `"${name}"`,
-            `"${lastname}"`,
-            `"${email}"`,
-            `"${age}"`,
-            `"${nationality}"`,
-            `"${profession}"`,
-            `"${address}"`
+            escape(student.name),
+            escape(student.lastname),
+            escape(student.email),
+            escape(student.phone),
+            student.age || '',
+            escape(student.administrativeSituation),
+            escape(student.nationality),
+            escape(student.identificationDocument),
+            escape(student.gender),
+            escape(student.englishLevel),
+            escape(student.educationLevel),
+            escape(student.profession),
+            escape(student.community)
         ].join(','));
     });
 

@@ -1003,52 +1003,125 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add Student</h5>
+                    <h5 class="modal-title">Añadir Estudiante</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <form id="student-form">
                     <div class="modal-body">
+                        <!-- Datos obligatorios -->
+                        <h6 class="text-primary border-bottom pb-1 mb-3">Datos Obligatorios</h6>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="student-name" class="form-label">Name *</label>
+                                <label for="student-name" class="form-label fw-semibold">Nombre(s) <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" id="student-name" required />
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="student-lastname" class="form-label">Last Name *</label>
+                                <label for="student-lastname" class="form-label fw-semibold">Apellido(s) <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" id="student-lastname" required />
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="student-email" class="form-label">Email *</label>
+                                <label for="student-email" class="form-label fw-semibold">Email <span class="text-danger">*</span></label>
                                 <input type="email" class="form-control" id="student-email" required />
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="student-age" class="form-label">Age</label>
-                                <input type="number" class="form-control" id="student-age" min="16" max="99" />
+                            <div class="col-md-3 mb-3">
+                                <label for="student-phone" class="form-label fw-semibold">Teléfono <span class="text-danger">*</span></label>
+                                <input type="tel" class="form-control" id="student-phone" required />
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="student-age" class="form-label fw-semibold">Edad <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="student-age" min="16" max="99" required />
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="student-nationality" class="form-label">Nationality</label>
-                                <input type="text" class="form-control" id="student-nationality"
-                                    placeholder="e.g., Spanish, French, etc." />
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="student-profession" class="form-label">Current Profession</label>
-                                <input type="text" class="form-control" id="student-profession"
-                                    placeholder="e.g., Engineer, Designer, etc." />
+                                <label for="student-admin-situation" class="form-label fw-semibold">Situación Administrativa <span class="text-danger">*</span></label>
+                                <select class="form-select" id="student-admin-situation" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="nacional">Nacional</option>
+                                    <option value="solicitante_asilo">Solicitante de asilo</option>
+                                    <option value="ciudadano_europeo">Ciudadano/a europeo/a</option>
+                                    <option value="permiso_trabajo">Con permiso de trabajo</option>
+                                    <option value="no_permiso_trabajo">Sin permiso de trabajo</option>
+                                    <option value="otro">Otro</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="student-address" class="form-label">Address</label>
-                            <textarea class="form-control" id="student-address" rows="2"
-                                placeholder="Street, City, Country"></textarea>
+
+                        <!-- Datos opcionales -->
+                        <h6 class="text-secondary border-bottom pb-1 mb-3 mt-2">Datos Opcionales</h6>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="student-nationality" class="form-label">Nacionalidad</label>
+                                <input type="text" class="form-control" id="student-nationality" placeholder="Ej: Española, Colombiana..." />
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="student-document" class="form-label">Documento Identificativo</label>
+                                <input type="text" class="form-control" id="student-document" placeholder="DNI / NIE / Pasaporte" />
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="student-gender" class="form-label">Sexo</label>
+                                <select class="form-select" id="student-gender">
+                                    <option value="">—</option>
+                                    <option value="mujer">Mujer</option>
+                                    <option value="hombre">Hombre</option>
+                                    <option value="no_binario">No binario / Otro</option>
+                                    <option value="no_especifica">Prefiero no especificar</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="student-english-level" class="form-label">Nivel de inglés</label>
+                                <select class="form-select" id="student-english-level">
+                                    <option value="">—</option>
+                                    <option value="A1">A1 - Principiante</option>
+                                    <option value="A2">A2 - Elemental</option>
+                                    <option value="B1">B1 - Intermedio</option>
+                                    <option value="B2">B2 - Intermedio alto</option>
+                                    <option value="C1">C1 - Avanzado</option>
+                                    <option value="C2">C2 - Maestría</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="student-education-level" class="form-label">Nivel Educativo</label>
+                                <select class="form-select" id="student-education-level">
+                                    <option value="">—</option>
+                                    <option value="sin_estudios">Sin estudios formales</option>
+                                    <option value="eso">ESO</option>
+                                    <option value="bachillerato">Bachillerato / FP Básica</option>
+                                    <option value="fp_medio">FP Grado Medio</option>
+                                    <option value="fp_superior">FP Grado Superior</option>
+                                    <option value="grado">Grado Universitario</option>
+                                    <option value="postgrado">Postgrado / Máster</option>
+                                    <option value="doctorado">Doctorado</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="student-profession" class="form-label">Profesión</label>
+                                <input type="text" class="form-control" id="student-profession" placeholder="Ej: Diseñadora, Economista..." />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="student-community" class="form-label">Comunidad de Residencia</label>
+                                <select class="form-select" id="student-community">
+                                    <option value="">—</option>
+                                    <option>Andalucía</option><option>Aragón</option><option>Asturias</option>
+                                    <option>Baleares</option><option>Canarias</option><option>Cantabria</option>
+                                    <option>Castilla-La Mancha</option><option>Castilla y León</option>
+                                    <option>Cataluña</option><option>Ceuta</option><option>Comunidad de Madrid</option>
+                                    <option>Comunidad Valenciana</option><option>Extremadura</option>
+                                    <option>Galicia</option><option>La Rioja</option><option>Melilla</option>
+                                    <option>Murcia</option><option>Navarra</option><option>País Vasco</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Add Student</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar Estudiante</button>
                     </div>
                 </form>
             </div>
