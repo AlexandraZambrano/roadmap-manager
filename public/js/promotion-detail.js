@@ -1902,345 +1902,344 @@ function generateGanttChart(promotion) {
     const employability = promotion.employability || [];
 
     if (modules.length === 0) {
-        table.innerHTML = '<tr><td class="text-muted">No modules configured</td></tr>';
+        table.innerHTML = '<tbody><tr><td class="text-muted">No modules configured</td></tr></tbody>';
         return;
     }
 
-    // Add wrapper styles for better readability
-    const wrapper = table.parentElement;
-    wrapper.style.overflowX = 'auto';
+    // Compact table — override the generous default padding from style.css
+    table.className = 'table table-sm table-bordered gantt-table';
+    table.style.fontSize = '0.65rem';
+    table.style.borderCollapse = 'collapse';
+    table.style.tableLayout = 'auto';
 
-    // Add CSS classes for better styling
-    table.classList.add('gantt-table');
-
-    // Helper function to get month for a week (1-indexed)
-    function getMonthForWeek(weekNum) {
-        return Math.ceil(weekNum / 4);
+    // Inject a scoped style block once to force tight cell sizing
+    if (!document.getElementById('gantt-compact-style')) {
+        const s = document.createElement('style');
+        s.id = 'gantt-compact-style';
+        s.textContent = `
+            #gantt-table th, #gantt-table td {
+                padding: 1px 2px !important;
+                min-width: 18px;
+                max-width: 24px;
+                font-size: 0.6rem;
+                border: 1px solid #dee2e6 !important;
+                box-sizing: border-box;
+            }
+            #gantt-table .gantt-label-cell {
+                min-width: 160px !important;
+                max-width: 200px !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                position: sticky;
+                left: 0;
+                background: white;
+                z-index: 2;
+            }
+            #gantt-table .gantt-week-cell {
+                writing-mode: vertical-rl;
+                text-orientation: mixed;
+                padding: 3px 1px !important;
+            }
+        `;
+        document.head.appendChild(s);
     }
 
-    // 1. Month Row (Top)
+    const tableContainer = table.closest('.table-responsive') || table.parentElement;
+    if (tableContainer) {
+        tableContainer.style.overflowX = 'auto';
+        tableContainer.style.maxWidth = '100%';
+    }
+
+    function getMonthForWeek(w) { return Math.ceil(w / 4); }
+
+    // ── 1. Header: month + week rows go in <thead> ────────────────────────────
+    const thead = document.createElement('thead');
+
     const monthRow = document.createElement('tr');
-    monthRow.classList.add('gantt-header-row', 'gantt-month-row');
     const monthHeaderCell = document.createElement('th');
-    monthHeaderCell.innerHTML = '<strong>Months</strong>';
-    monthHeaderCell.classList.add('gantt-label-cell', 'gantt-sticky-header');
+    monthHeaderCell.innerHTML = '<strong>Meses</strong>';
+    monthHeaderCell.className = 'gantt-label-cell';
     monthRow.appendChild(monthHeaderCell);
 
-    let currentMonth = 0;
-    let monthSpan = 0;
-    let monthCell = null;
-
+    let currentMonth = 0, monthSpan = 0, monthCell = null;
     for (let i = 1; i <= weeks; i++) {
-        const month = getMonthForWeek(i);
-
-        if (month !== currentMonth) {
-            if (monthCell) {
-                monthCell.colSpan = monthSpan;
-            }
-            currentMonth = month;
+        const m = getMonthForWeek(i);
+        if (m !== currentMonth) {
+            if (monthCell) monthCell.colSpan = monthSpan;
+            currentMonth = m;
             monthCell = document.createElement('th');
-            monthCell.innerHTML = `<strong>M${month}</strong>`;
-            monthCell.classList.add('gantt-month-cell');
+            monthCell.innerHTML = `<strong>M${m}</strong>`;
+            monthCell.style.textAlign = 'center';
             monthRow.appendChild(monthCell);
             monthSpan = 1;
-        } else {
-            monthSpan++;
-        }
+        } else { monthSpan++; }
     }
-    if (monthCell) {
-        monthCell.colSpan = monthSpan;
-    }
-    table.appendChild(monthRow);
+    if (monthCell) monthCell.colSpan = monthSpan;
+    thead.appendChild(monthRow);
 
-    // 2. Weeks Row (Below Months)
     const weekRow = document.createElement('tr');
-    weekRow.classList.add('gantt-header-row', 'gantt-week-row');
     const weekHeaderCell = document.createElement('th');
-    weekHeaderCell.innerHTML = '<strong>Weeks</strong>';
-    weekHeaderCell.classList.add('gantt-label-cell', 'gantt-sticky-header');
+    weekHeaderCell.innerHTML = '<strong>Sem.</strong>';
+    weekHeaderCell.className = 'gantt-label-cell';
     weekRow.appendChild(weekHeaderCell);
-
     for (let i = 1; i <= weeks; i++) {
         const th = document.createElement('th');
-        th.textContent = i;
+        th.textContent = `${i}`;
         th.className = 'gantt-week-cell text-center';
         weekRow.appendChild(th);
     }
-    table.appendChild(weekRow);
+    thead.appendChild(weekRow);
+    table.appendChild(thead);
 
-    // Add CSS for the table
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-
-    // 3. Sesiones Empleabilidad Section (Collapsible)
-    const separatorRow = document.createElement('tr');
-    separatorRow.style.height = '10px';
-    const separatorCell = document.createElement('td');
-    separatorCell.colSpan = weeks + 1;
-    separatorCell.style.backgroundColor = '#fff';
-    separatorRow.appendChild(separatorCell);
-    table.appendChild(separatorRow);
-
+    // ── 2. Employability section — one <tbody> for header + sessions ──────────
     const employabilityId = 'employability-section';
-    const isEmployabilityExpanded = localStorage.getItem(`gantt-expanded-${employabilityId}`) !== 'false';
+    const isEmpExpanded = localStorage.getItem(`gantt-expanded-${employabilityId}`) !== 'false';
 
-    const headerRow = document.createElement('tr');
-    headerRow.classList.add('gantt-employability-header');
-    const headerCell = document.createElement('td');
-    
-    const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'btn btn-sm btn-link gantt-toggle-btn';
-    toggleBtn.innerHTML = `<i class="bi ${isEmployabilityExpanded ? 'bi-chevron-down' : 'bi-chevron-right'}"></i>`;
-    toggleBtn.style.marginRight = '8px';
-    toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleEmployabilityExpansion();
-    });
+    const empTbody = document.createElement('tbody');
+    empTbody.id = `tbody-${employabilityId}`;
 
-    const titleSpan = document.createElement('span');
-    titleSpan.innerHTML = '<strong style="color: #2c3e50;">💼 Sesiones Empleabilidad</strong>';
-    titleSpan.style.flex = '1';
+    // Compute overall span for the header bar
+    const empStarts = employability.map(e => (e.startMonth - 1) * 4);
+    const empEnds   = employability.map(e => (e.startMonth - 1) * 4 + e.duration * 4);
+    const empMin = empStarts.length ? Math.min(...empStarts) : -1;
+    const empMax = empEnds.length   ? Math.min(Math.max(...empEnds), weeks) : -1;
 
-    headerCell.style.display = 'flex';
-    headerCell.style.alignItems = 'center';
-    headerCell.style.gap = '8px';
-    headerCell.style.backgroundColor = '#fef3e2';
-    headerCell.style.padding = '12px';
-    headerCell.style.position = 'sticky';
-    headerCell.style.left = '0';
-    headerCell.style.zIndex = '5';
-    headerCell.colSpan = weeks + 1;
-    
-    headerCell.appendChild(toggleBtn);
-    headerCell.appendChild(titleSpan);
-    headerRow.appendChild(headerCell);
-    table.appendChild(headerRow);
+    // Header row (always visible — lives in empTbody)
+    const empHeaderRow = document.createElement('tr');
+    empHeaderRow.className = 'gantt-employability-header';
+    empHeaderRow.style.cursor = 'pointer';
+    empHeaderRow.title = 'Click para expandir/colapsar';
 
-    // Employability sessions (Collapsible content)
-    if (employability && employability.length > 0) {
-        employability.forEach((item, index) => {
-            const itemRow = document.createElement('tr');
-            itemRow.classList.add('gantt-content-row', 'gantt-employability-row', `gantt-content-${employabilityId}`);
-            itemRow.style.display = isEmployabilityExpanded ? '' : 'none';
-            
-            const itemCell = document.createElement('td');
-            const editBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-warning ms-2" onclick="editEmployabilityItem(${index})"><i class="bi bi-pencil"></i></button>` : '';
-            const delBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-danger" onclick="deleteEmployabilityItem(${index})"><i class="bi bi-trash"></i></button>` : '';
-            const itemUrl = item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" class="text-decoration-none">${escapeHtml(item.name)} <i class="bi bi-box-arrow-up-right"></i></a>` : escapeHtml(item.name);
+    const empLabelCell = document.createElement('td');
+    empLabelCell.className = 'gantt-label-cell';
+    empLabelCell.colSpan = weeks + 1;
+    empLabelCell.style.backgroundColor = '#fff8e1';
+    empLabelCell.style.position = 'sticky';
+    empLabelCell.style.left = '0';
 
-            itemCell.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                    <small style="color: #666;">${itemUrl}</small>
-                    <div>${editBtn} ${delBtn}</div>
-                </div>
-            `;
-            itemCell.classList.add('gantt-label-cell', 'gantt-sub-item-label', 'gantt-sticky-cell');
-            itemRow.appendChild(itemCell);
-
-            // Convert months to weeks: startMonth is 1-indexed, week index is 0-based
-            const startWeek = (item.startMonth - 1) * 4;
-            const endWeek = startWeek + (item.duration * 4);
-
-            for (let i = 0; i < weeks; i++) {
-                const cell = document.createElement('td');
-                cell.style.textAlign = 'center';
-                cell.style.height = '30px';
-                cell.style.padding = '2px';
-                cell.style.borderRight = '1px solid #dee2e6';
-                cell.style.minWidth = '50px';
-
-                if (i >= startWeek && i < endWeek) {
-                    cell.style.backgroundColor = '#fff3cd';
-                    cell.style.borderRadius = '2px';
-                }
-                itemRow.appendChild(cell);
-            }
-            table.appendChild(itemRow);
-        });
+    // Build inline span bar: a thin colored strip showing the overall range
+    let spanBarHtml = '';
+    if (empMin >= 0 && empMax > empMin) {
+        const leftPct  = ((empMin / weeks) * 100).toFixed(1);
+        const widthPct = (((empMax - empMin) / weeks) * 100).toFixed(1);
+        spanBarHtml = `
+            <div style="position:relative;height:4px;background:#f3e5ab;border-radius:2px;margin-top:2px;overflow:hidden;">
+                <div style="position:absolute;left:${leftPct}%;width:${widthPct}%;height:100%;background:#f59e0b;border-radius:2px;"></div>
+            </div>`;
     }
 
-    // 4. Modules Row (below Sesiones Empleabilidad)
-    let weekCounter = 0;
-    const moduleColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#feca57', '#48dbfb'];
+    empLabelCell.innerHTML = `
+        <div class="d-flex align-items-center gap-1">
+            <i class="bi ${isEmpExpanded ? 'bi-chevron-down' : 'bi-chevron-right'} gantt-emp-chevron" style="font-size:0.6rem;"></i>
+            <strong>Empleabilidad</strong>
+            <span class="badge bg-warning text-dark" style="font-size:0.55rem;">${employability.length}</span>
+        </div>
+        ${spanBarHtml}`;
+    empHeaderRow.appendChild(empLabelCell);
+    empHeaderRow.addEventListener('click', () => toggleEmployabilityExpansion());
+    empTbody.appendChild(empHeaderRow);
 
+    // Session rows — in a separate <tbody> that gets hidden/shown as a unit
+    const empContentTbody = document.createElement('tbody');
+    empContentTbody.id = `tbody-content-${employabilityId}`;
+    empContentTbody.style.display = isEmpExpanded ? '' : 'none';
+
+    employability.forEach((item, index) => {
+        const itemRow = document.createElement('tr');
+
+        const itemCell = document.createElement('td');
+        itemCell.className = 'gantt-label-cell';
+        itemCell.style.backgroundColor = '#fffff8';
+
+        const itemUrl = item.url
+            ? `<a href="${escapeHtml(item.url)}" target="_blank" class="text-decoration-none">${escapeHtml(item.name)}</a>`
+            : escapeHtml(item.name);
+        const editBtn = userRole === 'teacher'
+            ? `<button class="btn btn-xs btn-outline-warning py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();editEmployabilityItem(${index})"><i class="bi bi-pencil"></i></button>` : '';
+        const delBtn = userRole === 'teacher'
+            ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteEmployabilityItem(${index})"><i class="bi bi-trash"></i></button>` : '';
+
+        itemCell.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between gap-1" style="padding-left:14px;">
+                <small style="font-size:0.58rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;">${itemUrl}</small>
+                <div class="d-flex gap-1">${editBtn}${delBtn}</div>
+            </div>`;
+        itemRow.appendChild(itemCell);
+
+        const sw = (item.startMonth - 1) * 4;
+        const ew = sw + item.duration * 4;
+        for (let i = 0; i < weeks; i++) {
+            const cell = document.createElement('td');
+            cell.style.height = '18px';
+            if (i >= sw && i < ew) cell.style.backgroundColor = '#fff3cd';
+            itemRow.appendChild(cell);
+        }
+        empContentTbody.appendChild(itemRow);
+    });
+
+    table.appendChild(empTbody);
+    table.appendChild(empContentTbody);
+
+    // ── 3. Module rows — one <tbody> per module (header + sub-rows) ───────────
+    let weekCounter = 0;
     modules.forEach((module, index) => {
-        const moduleColor = moduleColors[index % moduleColors.length];
         const moduleId = `module-${index}`;
         const isExpanded = localStorage.getItem(`gantt-expanded-${moduleId}`) !== 'false';
 
-        // Module row (Header - Collapsible)
+        // Module header gets its own single-row <tbody>
+        const modHeaderTbody = document.createElement('tbody');
+        modHeaderTbody.id = `tbody-header-${moduleId}`;
+
         const moduleRow = document.createElement('tr');
-        moduleRow.classList.add('gantt-module-row', 'gantt-module-header');
+        moduleRow.className = 'gantt-module-header';
         moduleRow.dataset.moduleIndex = index;
-        
+        moduleRow.style.cursor = 'pointer';
+        moduleRow.title = 'Click para expandir/colapsar';
+
         const moduleCell = document.createElement('td');
-        moduleCell.classList.add('gantt-label-cell', 'gantt-module-label', 'gantt-sticky-cell');
-        
-        const toggleBtn = document.createElement('button');
-        toggleBtn.className = 'btn btn-sm btn-link gantt-toggle-btn';
-        toggleBtn.innerHTML = `<i class="bi ${isExpanded ? 'bi-chevron-down' : 'bi-chevron-right'}"></i>`;
-        toggleBtn.style.marginRight = '8px';
-        toggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleModuleExpansion(moduleId, index);
-        });
+        moduleCell.className = 'gantt-label-cell';
 
-        const moduleTitle = document.createElement('span');
-        moduleTitle.innerHTML = `<strong style="color: ${moduleColor};">Module ${index + 1}: ${escapeHtml(module.name)}</strong>`;
-        moduleTitle.style.flex = '1';
+        const editBtn   = userRole === 'teacher'
+            ? `<button class="btn btn-xs btn-outline-warning py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();editModule('${escapeHtml(module.id)}')"><i class="bi bi-pencil"></i></button>` : '';
+        const deleteBtn = userRole === 'teacher'
+            ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteModule('${escapeHtml(module.id)}')"><i class="bi bi-trash"></i></button>` : '';
 
-        const actionsBtnGroup = document.createElement('div');
-        const editBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-warning ms-2" onclick="editModule('${escapeHtml(module.id)}')"><i class="bi bi-pencil"></i></button>` : '';
-        const deleteBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-danger" onclick="deleteModule('${escapeHtml(module.id)}')"><i class="bi bi-trash"></i></button>` : '';
-        actionsBtnGroup.innerHTML = editBtn + deleteBtn;
-
-        moduleCell.appendChild(toggleBtn);
-        moduleCell.appendChild(moduleTitle);
-        moduleCell.appendChild(actionsBtnGroup);
-        
+        moduleCell.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between gap-1">
+                <div class="d-flex align-items-center gap-1">
+                    <i class="bi ${isExpanded ? 'bi-chevron-down' : 'bi-chevron-right'} gantt-mod-chevron" style="font-size:0.6rem;"></i>
+                    <strong>M${index + 1}: ${escapeHtml(module.name)}</strong>
+                </div>
+                <div class="d-flex gap-1">${editBtn}${deleteBtn}</div>
+            </div>`;
         moduleRow.appendChild(moduleCell);
 
-        // Module bars
         for (let i = 0; i < weeks; i++) {
             const cell = document.createElement('td');
-            cell.classList.add('gantt-cell', 'gantt-module-bar');
-            
+            cell.style.height = '22px';
             if (i >= weekCounter && i < weekCounter + module.duration) {
-                cell.style.backgroundColor = moduleColor;
-                cell.style.opacity = '0.85';
+                cell.style.backgroundColor = '#667eea';
             }
             moduleRow.appendChild(cell);
         }
-        table.appendChild(moduleRow);
+        moduleRow.addEventListener('click', () => toggleModuleExpansion(moduleId, index));
+        modHeaderTbody.appendChild(moduleRow);
+        table.appendChild(modHeaderTbody);
 
-        // Courses rows (Collapsible content)
-        if (module.courses && module.courses.length > 0) {
-            module.courses.forEach((courseObj, courseIndex) => {
-                const courseName = typeof courseObj === 'string' ? courseObj : (courseObj.name || 'Unnamed');
-                const courseUrl = typeof courseObj === 'object' ? courseObj.url : '';
-                const courseDur = typeof courseObj === 'object' ? (courseObj.duration || 1) : 1;
-                const courseOff = typeof courseObj === 'object' ? (courseObj.startOffset || 0) : 0;
+        // Sub-rows (courses + projects) go in a single collapsible <tbody>
+        const modContentTbody = document.createElement('tbody');
+        modContentTbody.id = `tbody-content-${moduleId}`;
+        modContentTbody.style.display = isExpanded ? '' : 'none';
 
-                const courseRow = document.createElement('tr');
-                courseRow.classList.add('gantt-content-row', 'gantt-course-row', `gantt-content-${moduleId}`);
-                courseRow.style.display = isExpanded ? '' : 'none';
-                
-                const courseCell = document.createElement('td');
-                courseCell.classList.add('gantt-label-cell', 'gantt-sub-item-label', 'gantt-sticky-cell');
-                
-                const courseLink = courseUrl ? `<a href="${escapeHtml(courseUrl)}" target="_blank" class="text-decoration-none">📖 ${escapeHtml(courseName)} <i class="bi bi-box-arrow-up-right"></i></a>` : `📖 ${escapeHtml(courseName)}`;
-                const deleteCourseBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-danger ms-2" onclick="deleteCourseFromModule('${escapeHtml(module.id)}', ${courseIndex})"><i class="bi bi-trash"></i></button>` : '';
+        // Course rows
+        (module.courses || []).forEach((courseObj, courseIndex) => {
+            const courseName = typeof courseObj === 'string' ? courseObj : (courseObj.name || 'Unnamed');
+            const courseUrl  = typeof courseObj === 'object' ? (courseObj.url || '') : '';
+            const courseDur  = typeof courseObj === 'object' ? (Number(courseObj.duration) || 1) : 1;
+            const courseOff  = typeof courseObj === 'object' ? (Number(courseObj.startOffset) || 0) : 0;
 
-                courseCell.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                        <small style="color: #666;">${courseLink}</small>
-                        <div>${deleteCourseBtn}</div>
-                    </div>
-                `;
-                courseRow.appendChild(courseCell);
+            const courseRow = document.createElement('tr');
+            const courseCell = document.createElement('td');
+            courseCell.className = 'gantt-label-cell';
+            courseCell.style.backgroundColor = '#f8fffc';
 
-                // Use weekCounter as the base for the module's timeline
-                const absoluteStart = weekCounter + courseOff;
-                const absoluteEnd = absoluteStart + courseDur;
+            const link = courseUrl
+                ? `<a href="${escapeHtml(courseUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(courseName)}</a>`
+                : escapeHtml(courseName);
+            const delBtn = userRole === 'teacher'
+                ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteCourseFromModule('${escapeHtml(module.id)}',${courseIndex})"><i class="bi bi-trash"></i></button>` : '';
 
-                for (let i = 0; i < weeks; i++) {
-                    const cell = document.createElement('td');
-                    cell.classList.add('gantt-cell', 'gantt-course-bar');
+            courseCell.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between gap-1" style="padding-left:14px;">
+                    <small style="font-size:0.58rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:115px;">${link}</small>
+                    <div>${delBtn}</div>
+                </div>`;
+            courseRow.appendChild(courseCell);
 
-                    if (i >= absoluteStart && i < absoluteEnd) {
-                        cell.style.backgroundColor = '#d1e7dd';
-                        cell.style.borderRadius = '2px';
-                    }
-                    courseRow.appendChild(cell);
-                }
-                table.appendChild(courseRow);
-            });
-        }
+            const as = weekCounter + courseOff, ae = as + courseDur;
+            for (let i = 0; i < weeks; i++) {
+                const cell = document.createElement('td');
+                cell.style.height = '18px';
+                if (i >= as && i < ae) cell.style.backgroundColor = '#d1e7dd';
+                courseRow.appendChild(cell);
+            }
+            modContentTbody.appendChild(courseRow);
+        });
 
-        // Projects rows (Collapsible content)
-        if (module.projects && module.projects.length > 0) {
-            module.projects.forEach((projectObj, projectIndex) => {
-                const projectName = typeof projectObj === 'string' ? projectObj : (projectObj.name || 'Unnamed');
-                const projectUrl = typeof projectObj === 'object' ? projectObj.url : '';
-                const projectDur = typeof projectObj === 'object' ? (projectObj.duration || 1) : 1;
-                const projectOff = typeof projectObj === 'object' ? (projectObj.startOffset || 0) : 0;
+        // Project rows
+        (module.projects || []).forEach((projectObj, projectIndex) => {
+            const projectName = typeof projectObj === 'string' ? projectObj : (projectObj.name || 'Unnamed');
+            const projectUrl  = typeof projectObj === 'object' ? (projectObj.url || '') : '';
+            const projectDur  = typeof projectObj === 'object' ? (Number(projectObj.duration) || 1) : 1;
+            const projectOff  = typeof projectObj === 'object' ? (Number(projectObj.startOffset) || 0) : 0;
 
-                const projectRow = document.createElement('tr');
-                projectRow.classList.add('gantt-content-row', 'gantt-project-row', `gantt-content-${moduleId}`);
-                projectRow.style.display = isExpanded ? '' : 'none';
-                
-                const projectCell = document.createElement('td');
-                projectCell.classList.add('gantt-label-cell', 'gantt-sub-item-label', 'gantt-sticky-cell');
-                
-                const projectLink = projectUrl ? `<a href="${escapeHtml(projectUrl)}" target="_blank" class="text-decoration-none">📙 ${escapeHtml(projectName)} <i class="bi bi-box-arrow-up-right"></i></a>` : `📙 ${escapeHtml(projectName)}`;
-                const deleteProjectBtn = userRole === 'teacher' ? `<button class="btn btn-xs btn-sm btn-outline-danger ms-2" onclick="deleteProjectFromModule('${escapeHtml(module.id)}', ${projectIndex})"><i class="bi bi-trash"></i></button>` : '';
+            const projectRow = document.createElement('tr');
+            const projectCell = document.createElement('td');
+            projectCell.className = 'gantt-label-cell';
+            projectCell.style.backgroundColor = '#fff8f8';
 
-                projectCell.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                        <small style="color: #666;">${projectLink}</small>
-                        <div>${deleteProjectBtn}</div>
-                    </div>
-                `;
-                projectRow.appendChild(projectCell);
+            const link = projectUrl
+                ? `<a href="${escapeHtml(projectUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(projectName)}</a>`
+                : escapeHtml(projectName);
+            const delBtn = userRole === 'teacher'
+                ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteProjectFromModule('${escapeHtml(module.id)}',${projectIndex})"><i class="bi bi-trash"></i></button>` : '';
 
-                const absoluteStart = weekCounter + projectOff;
-                const absoluteEnd = absoluteStart + projectDur;
+            projectCell.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between gap-1" style="padding-left:14px;">
+                    <small style="font-size:0.58rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:115px;">${link}</small>
+                    <div>${delBtn}</div>
+                </div>`;
+            projectRow.appendChild(projectCell);
 
-                for (let i = 0; i < weeks; i++) {
-                    const cell = document.createElement('td');
-                    cell.classList.add('gantt-cell', 'gantt-project-bar');
+            const as = weekCounter + projectOff, ae = as + projectDur;
+            for (let i = 0; i < weeks; i++) {
+                const cell = document.createElement('td');
+                cell.style.height = '18px';
+                if (i >= as && i < ae) cell.style.backgroundColor = '#fce4e4';
+                projectRow.appendChild(cell);
+            }
+            modContentTbody.appendChild(projectRow);
+        });
 
-                    if (i >= absoluteStart && i < absoluteEnd) {
-                        cell.style.backgroundColor = '#fce4e4';
-                        cell.style.borderRadius = '2px';
-                    }
-                    projectRow.appendChild(cell);
-                }
-                table.appendChild(projectRow);
-            });
-        }
-
+        table.appendChild(modContentTbody);
         weekCounter += module.duration;
     });
 }
 
 // Toggle module expansion
 function toggleModuleExpansion(moduleId, index) {
-    const contentRows = document.querySelectorAll(`.gantt-content-${moduleId}`);
-    const toggleBtn = document.querySelector(`[data-module-index="${index}"] .gantt-toggle-btn`);
-    const isCurrentlyExpanded = contentRows[0]?.style.display !== 'none';
-    
-    contentRows.forEach(row => {
-        row.style.display = isCurrentlyExpanded ? 'none' : '';
-    });
-    
-    if (toggleBtn) {
-        toggleBtn.innerHTML = isCurrentlyExpanded ? 
-            '<i class="bi bi-chevron-right"></i>' : 
-            '<i class="bi bi-chevron-down"></i>';
+    const contentTbody = document.getElementById(`tbody-content-${moduleId}`);
+    const chevron = document.querySelector(`[data-module-index="${index}"] .gantt-mod-chevron`);
+    const isCurrentlyExpanded = contentTbody?.style.display !== 'none';
+
+    if (contentTbody) contentTbody.style.display = isCurrentlyExpanded ? 'none' : '';
+
+    if (chevron) {
+        chevron.className = isCurrentlyExpanded
+            ? 'bi bi-chevron-right gantt-mod-chevron'
+            : 'bi bi-chevron-down gantt-mod-chevron';
     }
-    
+
     localStorage.setItem(`gantt-expanded-${moduleId}`, !isCurrentlyExpanded);
 }
 
 // Toggle employability expansion
 function toggleEmployabilityExpansion() {
     const employabilityId = 'employability-section';
-    const contentRows = document.querySelectorAll(`.gantt-content-${employabilityId}`);
+    const contentTbody = document.getElementById(`tbody-content-${employabilityId}`);
     const headerRow = document.querySelector('.gantt-employability-header');
-    const toggleBtn = headerRow?.querySelector('.gantt-toggle-btn');
-    const isCurrentlyExpanded = contentRows[0]?.style.display !== 'none';
-    
-    contentRows.forEach(row => {
-        row.style.display = isCurrentlyExpanded ? 'none' : '';
-    });
-    
-    if (toggleBtn) {
-        toggleBtn.innerHTML = isCurrentlyExpanded ? 
-            '<i class="bi bi-chevron-right"></i>' : 
-            '<i class="bi bi-chevron-down"></i>';
+    const chevron = headerRow?.querySelector('.gantt-emp-chevron');
+    const isCurrentlyExpanded = contentTbody?.style.display !== 'none';
+
+    if (contentTbody) contentTbody.style.display = isCurrentlyExpanded ? 'none' : '';
+
+    if (chevron) {
+        chevron.className = isCurrentlyExpanded
+            ? 'bi bi-chevron-right gantt-emp-chevron'
+            : 'bi bi-chevron-down gantt-emp-chevron';
     }
-    
+
     localStorage.setItem(`gantt-expanded-${employabilityId}`, !isCurrentlyExpanded);
 }
 
