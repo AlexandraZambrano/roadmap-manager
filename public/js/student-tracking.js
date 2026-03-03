@@ -648,6 +648,41 @@
                     </div>
                   </div>`
                 : '';
+            const current = _currentStudent || {};
+            const fullName = `${current.name || ''} ${current.lastname || ''}`.trim() || (current.fullName || '');
+            const email = current.email || '';
+            const feedback = (t.teacherNote || '').trim();
+            const subject = encodeURIComponent(`Feedback proyecto - ${fullName || 'Coder'}`);
+
+            // Si no hay nota del profesor, no pre-rellenamos el cuerpo del email
+            let body = '';
+            if (feedback) {
+                const compLines = (t.competences || []).map(c => {
+                    const lvlColor = PROJ_LEVEL_COLORS[c.level] ?? 'secondary';
+                    const lvlLabel = PROJ_LEVEL_LABELS[c.level] ?? c.level;
+                    const levelText = c.level != null ? `Nivel ${c.level} - ${lvlLabel}` : `${lvlLabel}`;
+                    return `- ${c.competenceName || 'Competencia'}: ${levelText}`;
+                });
+
+                const bodyLines = [
+                    fullName ? `Hola ${fullName},` : 'Hola,',
+                    '',
+                    `Te comparto el feedback del proyecto "${t.teamName || 'Proyecto'}".`,
+                    '',
+                    feedback,
+                    ...(compLines.length ? ['', 'Competencias trabajadas:', ...compLines] : []),
+                    '',
+                    'Un abrazo,',
+                    'Equipo formador Factoria F5'
+                ];
+                body = encodeURIComponent(bodyLines.join('\n'));
+            }
+
+            // Usar Gmail web compose en lugar de mailto para evitar restricciones del navegador
+            const gmailComposeUrl = email
+                ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${subject}&body=${body}`
+                : '';
+
             return `
             <div class="card mb-2 border-start border-4 border-success">
                 <div class="card-body py-2 px-3">
@@ -663,6 +698,12 @@
                             ${competencesList}
                         </div>
                         <div class="d-flex flex-column gap-1 ms-2">
+                            ${gmailComposeUrl ? `
+                            <a class="btn btn-sm btn-outline-success py-0 px-1"
+                                title="Enviar feedback por email (Gmail)"
+                                href="${gmailComposeUrl}" target="_blank" rel="noopener noreferrer">
+                                <i class="bi bi-envelope-fill" style="font-size:.85rem;"></i>
+                            </a>` : ''}
                             <button class="btn btn-sm btn-outline-secondary py-0 px-1"
                                 title="Exportar PDF de este proyecto"
                                 onclick="window.Reports?.printProjectReport(${i}, window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId())">
