@@ -5100,36 +5100,6 @@ async function exportStudentAttendancePdf(mode) {
     const globalPct     = totalRecords > 0 ? Math.round((totalAttended / totalRecords) * 100) : 0;
     const absentPct     = totalRecords > 0 ? Math.round((totalAbsent   / totalRecords) * 100) : 0;
 
-    // ── Header summary strip (days attended / absent + %) ────────────────────
-    doc.setFillColor(...LIGHT_BG);
-    doc.roundedRect(MARGIN, y, COL_W, 16, 2, 2, 'F');
-
-    // Left: attended
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(40, 140, 80);
-    doc.text(String(totalAttended), MARGIN + 10, y + 9, { align: 'center' });
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`días asistidos (${globalPct}%)`, MARGIN + 10, y + 14, { align: 'center' });
-
-    // Center divider
-    doc.setDrawColor(200, 200, 200);
-    doc.line(MARGIN + COL_W / 2, y + 2, MARGIN + COL_W / 2, y + 14);
-
-    // Right: absent
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(200, 50, 10);
-    doc.text(String(totalAbsent), MARGIN + COL_W - 10, y + 9, { align: 'center' });
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`días faltados (${absentPct}%)`, MARGIN + COL_W - 10, y + 14, { align: 'center' });
-
-    y += 22;
-
     // ── Table — group by month ───────────────────────────────────────────────
     const byMonth = {};
     records.forEach(r => {
@@ -5217,7 +5187,7 @@ async function exportStudentAttendancePdf(mode) {
 
     // ── Global summary at the end ────────────────────────────────────────────
     if (mode === 'all' || Object.keys(byMonth).length >= 1) {
-        ensureSpace(38);
+        ensureSpace(58);
         y += 4;
 
         // Section title
@@ -5229,7 +5199,7 @@ async function exportStudentAttendancePdf(mode) {
         doc.text('Resumen Global', MARGIN + 2, y + 5.5);
         y += 8;
 
-        // Big numbers row
+        // Big numbers row: attended / % attendance | absent / % absence
         doc.setFillColor(...LIGHT_BG);
         doc.rect(MARGIN, y, COL_W, 22, 'F');
 
@@ -5283,32 +5253,50 @@ async function exportStudentAttendancePdf(mode) {
 
         y += 22;
 
-        // Detail row: retraso / justificado / sale antes
-        doc.setFillColor(255, 255, 255);
-        doc.rect(MARGIN, y, COL_W, 10, 'F');
-        doc.setDrawColor(220, 220, 220);
-        doc.rect(MARGIN, y, COL_W, 10);
-
-        const detailItems = [
-            { label: 'Con retraso',  count: globalCounts['Con retraso'], color: [220, 100, 20] },
-            { label: 'Justificado',  count: globalCounts['Justificado'],  color: [20, 120, 160] },
-            { label: 'Sale antes',   count: globalCounts['Sale antes'],   color: [100, 50, 180] },
-            { label: 'Total registros', count: totalRecords,             color: [80, 80, 80]   }
+        // ── Detail row: one cell per status with count + % ───────────────────
+        const allStatuses = [
+            { label: 'Presente',     count: globalCounts['Presente'],     color: [40, 140, 80]   },
+            { label: 'Con retraso',  count: globalCounts['Con retraso'],  color: [220, 100, 20]  },
+            { label: 'Justificado',  count: globalCounts['Justificado'],  color: [20, 120, 160]  },
+            { label: 'Sale antes',   count: globalCounts['Sale antes'],   color: [100, 50, 180]  },
+            { label: 'Ausente',      count: globalCounts['Ausente'],      color: [200, 50, 10]   }
         ];
-        const dW = COL_W / detailItems.length;
-        detailItems.forEach((item, i) => {
+        const detailRowH = 13;
+        doc.setFillColor(255, 255, 255);
+        doc.rect(MARGIN, y, COL_W, detailRowH, 'F');
+        doc.setDrawColor(220, 220, 220);
+        doc.rect(MARGIN, y, COL_W, detailRowH);
+        const dW = COL_W / allStatuses.length;
+        allStatuses.forEach((item, i) => {
             const dx = MARGIN + i * dW + dW / 2;
+            const pct = totalRecords > 0 ? Math.round((item.count / totalRecords) * 100) : 0;
+            // Vertical separator between cells
+            if (i > 0) {
+                doc.setDrawColor(220, 220, 220);
+                doc.line(MARGIN + i * dW, y + 1, MARGIN + i * dW, y + detailRowH - 1);
+            }
             doc.setFontSize(9);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...item.color);
             doc.text(String(item.count), dx, y + 5.5, { align: 'center' });
             doc.setFontSize(5.5);
             doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...item.color);
+            doc.text(`${pct}%`, dx, y + 9, { align: 'center' });
+            doc.setFontSize(5);
             doc.setTextColor(100, 100, 100);
-            doc.text(item.label, dx, y + 9, { align: 'center' });
+            doc.text(item.label, dx, y + 12, { align: 'center' });
         });
 
-        y += 10;
+        y += detailRowH;
+
+        // ── Total records footnote ────────────────────────────────────────────
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(140, 140, 140);
+        doc.text(`Total de registros: ${totalRecords}`, MARGIN + COL_W, y + 4, { align: 'right' });
+
+        y += 6;
     }
     const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
