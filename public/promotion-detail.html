@@ -102,6 +102,11 @@
                                 <i class="bi bi-person-plus me-2"></i>Collaboradores
                             </a>
                         </li>
+                        <li class="nav-item mt-4 teacher-only">
+                            <button type="button" class="nav-link text-start text-danger fw-semibold" onclick="openDeletePromotionModal()">
+                                <i class="bi bi-trash me-2"></i>Eliminar promoción
+                            </button>
+                        </li>
                     </ul>
                 </div>
             </nav>
@@ -889,6 +894,34 @@
                     </div>
                 </div>
             </main>
+        </div>
+    </div>
+
+    <!-- Delete Promotion Confirmation Modal -->
+    <div class="modal fade" id="deletePromotionModal" tabindex="-1" aria-labelledby="deletePromotionModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header border-danger">
+                    <h5 class="modal-title text-danger" id="deletePromotionModalLabel">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Eliminar promoción
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Esta acción <strong>no se puede deshacer</strong>. Se eliminarán los datos asociados a esta promoción
+                        (roadmap, módulos, estudiantes, etc.).
+                    </p>
+                    <p class="mb-2">Escribe <strong>ELIMINAR</strong> para confirmar:</p>
+                    <input type="text" id="delete-promotion-confirm-input" class="form-control" placeholder="ELIMINAR">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDeletePromotion()">
+                        Sí, eliminar la promoción
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 

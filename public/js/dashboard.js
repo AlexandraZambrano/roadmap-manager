@@ -72,9 +72,6 @@ function displayPromotions(promotions, userId) {
         const card = document.createElement('div');
         card.className = 'col-md-6 col-lg-4';
         const isOwner = promotion.teacherId === userId;
-        const deleteBtn = isOwner
-            ? `<button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePromotion('${promotion.id}', event)" title="Delete promotion"><i class="bi bi-trash"></i></button>`
-            : '';
         const ownerBadge = !isOwner ? '<span class="badge bg-info">Collaborator</span>' : '';
 
         card.innerHTML = `
@@ -87,9 +84,6 @@ function displayPromotions(promotions, userId) {
                     <p class="promotion-card-meta">${promotion.description || 'No description'}</p>
                     <div class="d-flex justify-content-between align-items-center mt-3">
                         <span class="badge-weeks">${promotion.weeks} weeks</span>
-                        <div class="btn-group" role="group">
-                            ${deleteBtn}
-                        </div>
                     </div>
                 </div>
             </div>

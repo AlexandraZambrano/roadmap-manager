@@ -208,6 +208,8 @@ let currentUser = {};
 let promotionModules = []; // Store promotion modules
 window.promotionModules = promotionModules; // Expose for program-competences.js
 let currentModuleIndex = 0; // Track current module for píldoras navigation
+
+let deletePromotionModal;
 try {
     const userJson = localStorage.getItem('user');
     currentUser = userJson && userJson !== 'undefined' ? JSON.parse(userJson) : {};
@@ -376,6 +378,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const resourceModalEl = document.getElementById('resourceModal');
     if (resourceModalEl) resourceModal = new bootstrap.Modal(resourceModalEl);
+
+    const deletePromotionModalEl = document.getElementById('deletePromotionModal');
+    if (deletePromotionModalEl) deletePromotionModal = new bootstrap.Modal(deletePromotionModalEl);
 
     const collaboratorModalEl = document.getElementById('collaboratorModal');
     if (collaboratorModalEl) collaboratorModal = new bootstrap.Modal(collaboratorModalEl);
@@ -3644,6 +3649,48 @@ async function deleteQuickLink(linkId) {
         loadQuickLinks();
     } catch (error) {
         console.error('Error deleting link:', error);
+    }
+}
+
+function openDeletePromotionModal() {
+    if (!deletePromotionModal) {
+        const el = document.getElementById('deletePromotionModal');
+        if (!el) return;
+        deletePromotionModal = new bootstrap.Modal(el);
+    }
+    const input = document.getElementById('delete-promotion-confirm-input');
+    if (input) {
+        input.value = '';
+        input.focus();
+    }
+    deletePromotionModal.show();
+}
+
+async function confirmDeletePromotion() {
+    const input = document.getElementById('delete-promotion-confirm-input');
+    if (!input || input.value.trim().toUpperCase() !== 'ELIMINAR') {
+        alert('Para confirmar, escribe exactamente "ELIMINAR".');
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            if (deletePromotionModal) {
+                deletePromotionModal.hide();
+            }
+            window.location.href = 'dashboard.html';
+        } else {
+            alert('Error al eliminar la promoción');
+        }
+    } catch (error) {
+        console.error('Error deleting promotion:', error);
+        alert('Error al eliminar la promoción');
     }
 }
 
