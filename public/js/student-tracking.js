@@ -911,8 +911,7 @@
         const sel = document.getElementById('proj-comp-select');
         const opt = sel?.options[sel.selectedIndex];
         if (!opt || !opt.value) {
-            // No competence selected — still show the add-tool input so user can add custom tools
-            _renderProjectCompToolPills([]);
+            document.getElementById('proj-comp-tools-preview').innerHTML = '';
             return;
         }
         let tools = [];
@@ -924,65 +923,17 @@
     function _renderProjectCompToolPills(tools) {
         const container = document.getElementById('proj-comp-tools-preview');
         if (!container) return;
-        const pills = tools.map(t => `
+        if (!tools.length) {
+            container.innerHTML = '<span class="small text-muted fst-italic">Sin herramientas definidas para esta competencia.</span>';
+            return;
+        }
+        container.innerHTML = tools.map(t => `
             <span class="badge bg-secondary d-inline-flex align-items-center gap-1 proj-tool-pill" data-tool="${_esc(t)}" style="font-size:.78rem;">
                 ${_esc(t)}
                 <button type="button" class="btn-close btn-close-white" style="font-size:.55rem;"
                     onmousedown="event.preventDefault(); this.closest('.proj-tool-pill').remove();">
                 </button>
             </span>`).join('');
-        container.innerHTML = `
-            <div class="d-flex flex-wrap gap-1 align-items-center mb-1" id="proj-tool-pills-row">
-                ${pills || '<span class="small text-muted">Sin herramientas predefinidas</span>'}
-            </div>
-            <div class="d-flex gap-1 align-items-center mt-1">
-                <input type="text" id="proj-custom-tool-input" class="form-control form-control-sm"
-                    placeholder="Añadir herramienta personalizada..."
-                    style="max-width:220px; font-size:.8rem;"
-                    onkeydown="if(event.key==='Enter'){event.preventDefault(); window.StudentTracking._addCustomTool();}"
-                >
-                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
-                    style="font-size:.78rem; white-space:nowrap;"
-                    onmousedown="event.preventDefault(); window.StudentTracking._addCustomTool();">
-                    <i class="bi bi-plus-lg me-1"></i>Añadir
-                </button>
-            </div>`;
-    }
-
-    // Add a custom tool pill typed by the user
-    function _addCustomTool() {
-        const input = document.getElementById('proj-custom-tool-input');
-        if (!input) return;
-        const name = input.value.trim();
-        if (!name) return;
-
-        // Check for duplicates among existing pills
-        const existing = Array.from(document.querySelectorAll('#proj-comp-tools-preview .proj-tool-pill'))
-            .map(el => el.dataset.tool.toLowerCase());
-        if (existing.includes(name.toLowerCase())) {
-            _showToast('Esta herramienta ya está añadida', 'warning');
-            return;
-        }
-
-        // Insert pill before the input row
-        const pillsRow = document.getElementById('proj-tool-pills-row');
-        if (pillsRow) {
-            // Remove "sin herramientas" placeholder if present
-            const placeholder = pillsRow.querySelector('span.text-muted');
-            if (placeholder) placeholder.remove();
-
-            const pill = document.createElement('span');
-            pill.className = 'badge bg-primary d-inline-flex align-items-center gap-1 proj-tool-pill';
-            pill.dataset.tool = name;
-            pill.style.fontSize = '.78rem';
-            pill.innerHTML = `${_esc(name)}
-                <button type="button" class="btn-close btn-close-white" style="font-size:.55rem;"
-                    onmousedown="event.preventDefault(); this.closest('.proj-tool-pill').remove();">
-                </button>`;
-            pillsRow.appendChild(pill);
-        }
-        input.value = '';
-        input.focus();
     }
 
     // Add the currently selected competence + level + remaining tools to the pending list
@@ -1404,11 +1355,22 @@
             byArea[area].push(c);
         });
 
-        // Build tools JSON from promotionCompetences or catalog
+        // Build tools JSON — prefer program-level data (includes custom tools added in Program Details)
+        // selectedTools = curated subset; allTools = full list including custom ones
+        // Only fall back to raw catalog if not found in promotion competences at all
         const getTools = (c) => {
+            // First priority: use selectedTools from the program competence (may include custom tools)
+            if (c.selectedTools && c.selectedTools.length) {
+                return JSON.stringify(c.selectedTools);
+            }
+            // Second priority: use allTools from the program competence
+            if (c.allTools && c.allTools.length) {
+                return JSON.stringify(c.allTools);
+            }
+            // Last resort: raw catalog tools (no custom additions)
             const fromCatalog = _catalogCompetences.find(cc => String(cc.id) === String(c.id));
             if (fromCatalog) return JSON.stringify((fromCatalog.tools || []).map(t => t.name));
-            return JSON.stringify(c.tools || c.selectedTools || []);
+            return JSON.stringify([]);
         };
 
         if (Object.keys(byArea).length === 1) {
@@ -2205,7 +2167,7 @@
         _openNoteForm, _saveNote, _removeNote,
         _openTeamForm, _saveTeam, _removeTeam, _openTeamEdit, _saveTeamEdit,
         _filterTeamMemberDropdown, _updateTeamMemberPills, _toggleTeamMembersSection,
-        _onProjectSelectChange, _onProjectCompetenceChange, _addProjectCompetence, _removePendingCompetence, _addCustomTool,
+        _onProjectSelectChange, _onProjectCompetenceChange, _addProjectCompetence, _removePendingCompetence,
         _openCompetenceForm, _saveCompetence, _removeCompetence,
         _openModuleForm, _saveModule, _removeModule,
         _openEmpSessionForm, _saveEmpSession, _removeEmpSession,

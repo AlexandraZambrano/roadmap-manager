@@ -402,30 +402,65 @@
             document.body.appendChild(modal);
         }
 
+        // Store current editing index on the modal element for use by _addCustomToolToEditor
+        modal._editingIdx = idx;
+
         const checkboxes = (comp.allTools || []).map(tool => {
             const checked = (comp.selectedTools || []).includes(tool) ? 'checked' : '';
+            const isCustom = !(COMPETENCES_CATALOG.find(c => c.id === comp.id)?.allTools || []).includes(tool);
             return `
-            <div class="form-check">
-                <input class="form-check-input tools-checkbox" type="checkbox" value="${_esc(tool)}" id="tool-${_esc(tool.replace(/\s/g, '-'))}" ${checked}>
-                <label class="form-check-label" for="tool-${_esc(tool.replace(/\s/g, '-'))}">${_esc(tool)}</label>
+            <div class="form-check d-flex align-items-center gap-2" id="tool-row-${_esc(tool.replace(/[\s/]/g, '-'))}">
+                <input class="form-check-input tools-checkbox" type="checkbox"
+                    value="${_esc(tool)}" id="tool-${_esc(tool.replace(/[\s/]/g, '-'))}" ${checked}>
+                <label class="form-check-label flex-grow-1" for="tool-${_esc(tool.replace(/[\s/]/g, '-'))}">
+                    ${_esc(tool)}
+                    ${isCustom ? '<span class="badge bg-primary ms-1" style="font-size:.65rem;">personalizada</span>' : ''}
+                </label>
+                ${isCustom ? `<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-auto"
+                    title="Eliminar herramienta personalizada"
+                    onclick="window.ProgramCompetences._removeCustomToolFromEditor('${_esc(tool)}', ${idx})">
+                    <i class="bi bi-x-circle" style="font-size:.9rem;"></i>
+                </button>` : ''}
             </div>`;
         }).join('');
 
         modal.innerHTML = `
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-tools me-2"></i>Herramientas para "${_esc(comp.name)}"</h5>
+                    <h5 class="modal-title"><i class="bi bi-tools me-2"></i>Herramientas — ${_esc(comp.name)}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small">Selecciona las herramientas que se utilizarán en este programa.</p>
-                    ${checkboxes || '<span class="text-muted">No hay herramientas en el catálogo para esta competencia.</span>'}
+                    <p class="text-muted small mb-3">
+                        Selecciona las herramientas del catálogo y/o añade herramientas personalizadas.
+                    </p>
+
+                    <!-- Tool checklist -->
+                    <div id="tools-checklist" class="mb-3">
+                        ${checkboxes || '<span class="text-muted small fst-italic">No hay herramientas en el catálogo para esta competencia.</span>'}
+                    </div>
+
+                    <!-- Add custom tool -->
+                    <div class="border-top pt-3 mt-2">
+                        <label class="form-label small fw-semibold">
+                            <i class="bi bi-plus-circle me-1 text-primary"></i>Añadir herramienta personalizada
+                        </label>
+                        <div class="d-flex gap-2">
+                            <input type="text" id="custom-tool-editor-input" class="form-control form-control-sm"
+                                placeholder="Ej: Figma, Storybook, Postman..."
+                                onkeydown="if(event.key==='Enter'){event.preventDefault(); window.ProgramCompetences._addCustomToolToEditor(${idx});}">
+                            <button type="button" class="btn btn-sm btn-outline-primary px-3" style="white-space:nowrap;"
+                                onclick="window.ProgramCompetences._addCustomToolToEditor(${idx})">
+                                <i class="bi bi-plus-lg me-1"></i>Añadir
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn btn-primary" onclick="window.ProgramCompetences._saveToolsSelection(${idx})">
-                        <i class="bi bi-save me-1"></i>Guardar selección
+                        <i class="bi bi-floppy me-1"></i>Guardar
                     </button>
                 </div>
             </div>
@@ -433,6 +468,79 @@
 
         bootstrap.Modal.getInstance(modal)?.hide();
         _getOrCreateModalInstance(modal).show();
+    }
+
+    // Add a custom tool to the checklist inside the modal (does NOT save yet)
+    function _addCustomToolToEditor(idx) {
+        const input = document.getElementById('custom-tool-editor-input');
+        if (!input) return;
+        const name = input.value.trim();
+        if (!name) return;
+
+        const comp = _programCompetences[idx];
+        if (!comp) return;
+
+        // Check for duplicate (case-insensitive)
+        const allLower = (comp.allTools || []).map(t => t.toLowerCase());
+        if (allLower.includes(name.toLowerCase())) {
+            // Just check the existing checkbox if unchecked
+            const existingCb = document.getElementById(`tool-${name.replace(/[\s/]/g, '-')}`);
+            if (existingCb && !existingCb.checked) existingCb.checked = true;
+            input.value = '';
+            return;
+        }
+
+        // Add to allTools immediately so it persists when saved
+        if (!comp.allTools) comp.allTools = [];
+        comp.allTools.push(name);
+
+        // Build and insert a new checkbox row into the checklist
+        const checklist = document.getElementById('tools-checklist');
+        if (checklist) {
+            // Remove "no tools" placeholder if present
+            const placeholder = checklist.querySelector('span.text-muted');
+            if (placeholder) placeholder.remove();
+
+            const row = document.createElement('div');
+            row.className = 'form-check d-flex align-items-center gap-2';
+            row.id = `tool-row-${name.replace(/[\s/]/g, '-')}`;
+            row.innerHTML = `
+                <input class="form-check-input tools-checkbox" type="checkbox"
+                    value="${_esc(name)}" id="tool-${_esc(name.replace(/[\s/]/g, '-'))}" checked>
+                <label class="form-check-label flex-grow-1" for="tool-${_esc(name.replace(/[\s/]/g, '-'))}">
+                    ${_esc(name)}
+                    <span class="badge bg-primary ms-1" style="font-size:.65rem;">personalizada</span>
+                </label>
+                <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-auto"
+                    title="Eliminar herramienta personalizada"
+                    onclick="window.ProgramCompetences._removeCustomToolFromEditor('${_esc(name)}', ${idx})">
+                    <i class="bi bi-x-circle" style="font-size:.9rem;"></i>
+                </button>`;
+            checklist.appendChild(row);
+        }
+
+        input.value = '';
+        input.focus();
+    }
+
+    // Remove a custom tool row from the modal checklist AND from allTools
+    function _removeCustomToolFromEditor(toolName, idx) {
+        const comp = _programCompetences[idx];
+        if (!comp) return;
+
+        // Remove from allTools and selectedTools arrays
+        comp.allTools = (comp.allTools || []).filter(t => t !== toolName);
+        comp.selectedTools = (comp.selectedTools || []).filter(t => t !== toolName);
+
+        // Remove the DOM row
+        const rowId = `tool-row-${toolName.replace(/[\s/]/g, '-')}`;
+        document.getElementById(rowId)?.remove();
+
+        // Show placeholder if no tools left
+        const checklist = document.getElementById('tools-checklist');
+        if (checklist && !checklist.querySelector('.form-check')) {
+            checklist.innerHTML = '<span class="text-muted small fst-italic">No hay herramientas en el catálogo para esta competencia.</span>';
+        }
     }
 
     function _saveToolsSelection(idx) {
@@ -494,6 +602,8 @@
         _filterCatalog,
         _removeCompetence,
         _openToolsEditor,
+        _addCustomToolToEditor,
+        _removeCustomToolFromEditor,
         _saveToolsSelection,
         _setStartModule
     };
