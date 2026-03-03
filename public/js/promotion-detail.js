@@ -1,5 +1,16 @@
 const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
 
+/** Capitaliza la primera letra de cada palabra y deja el resto en minúsculas */
+function toTitleCase(str) {
+    if (!str) return '';
+    return str.trim().replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/** Devuelve el nombre completo de un estudiante en Title Case */
+function studentFullName(student) {
+    return toTitleCase(`${student.name || ''} ${student.lastname || ''}`).trim();
+}
+
 
 // ==================== PROFILE MANAGEMENT ====================
 
@@ -1001,7 +1012,7 @@ function updatePildoraStudentSelection(pildoraIndex, studentId, isChecked) {
             button.textContent = 'Seleccionar estudiantes';
         } else if (selectedStudents.length === 1) {
             const student = selectedStudents[0];
-            button.textContent = `${student.name} ${student.lastname || ''}`.trim();
+            button.textContent = studentFullName(student);
         } else {
             button.textContent = `${selectedStudents.length} estudiantes seleccionados`;
         }
@@ -3429,7 +3440,7 @@ function displayStudents(students) {
                        onchange="updateSelectionState()">
             </td>
             <td>
-                <div class="fw-bold">${student.name || 'N/A'} ${student.lastname || ''}</div>
+                <div class="fw-bold">${student.name || student.lastname ? studentFullName(student) : 'N/A'}</div>
             </td>
             <td>${student.email || 'N/A'}</td>
             <td>${student.nationality || 'N/A'}</td>
@@ -4713,7 +4724,7 @@ function renderAttendanceTable() {
         // Name column
         const nameTd = document.createElement('td');
         nameTd.className = 'sticky-column bg-white student-name-cell';
-        nameTd.textContent = `${student.name || ''} ${student.lastname || ''}`;
+        nameTd.textContent = studentFullName(student);
         nameTd.onclick = () => openAttendanceModal(student.id, null); // Open first day or just general stats
         tr.appendChild(nameTd);
 
@@ -4891,7 +4902,7 @@ function openAttendanceModal(studentId, date) {
     currentModalAttendance = { studentId, date };
     const record = attendanceData.find(a => a.studentId === studentId && a.date === date);
 
-    document.getElementById('attendance-modal-student-name').textContent = `${student.name} ${student.lastname}`;
+    document.getElementById('attendance-modal-student-name').textContent = studentFullName(student);
     document.getElementById('attendance-modal-date').textContent = date;
     document.getElementById('attendance-modal-status').value = (record && record.status) ? record.status : '';
     document.getElementById('attendance-modal-note').value = (record && record.note) ? record.note : '';
@@ -4932,7 +4943,7 @@ function openStudentSummary(studentId) {
     const student = studentsForAttendance.find(s => s.id === studentId);
     if (!student) return;
 
-    document.getElementById('summary-student-name').textContent = `${student.name} ${student.lastname}`;
+    document.getElementById('summary-student-name').textContent = studentFullName(student);
 
     const [year, month] = currentAttendanceMonth.split('-');
     const monthNames = ["January", "February", "March", "April", "May", "June",
