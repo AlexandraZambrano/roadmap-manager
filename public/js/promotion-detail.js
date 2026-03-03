@@ -2111,18 +2111,13 @@ function generateGanttChart(promotion) {
         s.textContent = `
             #gantt-table th, #gantt-table td {
                 padding: 1px 2px !important;
-                min-width: 18px;
-                max-width: 24px;
                 font-size: 0.6rem;
                 border: 1px solid #dee2e6 !important;
                 box-sizing: border-box;
             }
             #gantt-table .gantt-label-cell {
-                min-width: 160px !important;
-                max-width: 200px !important;
                 white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                overflow: visible;
                 position: sticky;
                 left: 0;
                 background: white;
