@@ -4980,15 +4980,39 @@ function renderAttendanceTable() {
         headerRow.appendChild(thDay);
     }
 
-    // Generate rows
-    studentsForAttendance.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(student => {
+    // Generate rows — active first, withdrawn at bottom
+    const sortedStudents = [...studentsForAttendance].sort((a, b) => {
+        if (!!a.isWithdrawn === !!b.isWithdrawn) return (a.name || '').localeCompare(b.name || '');
+        return a.isWithdrawn ? 1 : -1;
+    });
+    const activeAttCount = sortedStudents.filter(s => !s.isWithdrawn).length;
+    let withdrawnSeparatorInserted = false;
+
+    sortedStudents.forEach((student, idx) => {
+        // Insert a separator row before the first withdrawn student
+        if (student.isWithdrawn && !withdrawnSeparatorInserted) {
+            withdrawnSeparatorInserted = true;
+            const sepTr = document.createElement('tr');
+            sepTr.className = 'table-danger';
+            sepTr.innerHTML = `<td colspan="100" class="py-1 px-3 small fw-semibold text-danger" style="position:sticky;left:0;"><i class="bi bi-person-x me-1"></i>Bajas oficiales</td>`;
+            body.appendChild(sepTr);
+        }
+
         const tr = document.createElement('tr');
+        if (student.isWithdrawn) tr.classList.add('table-secondary', 'opacity-75');
 
         // Name column
         const nameTd = document.createElement('td');
-        nameTd.className = 'sticky-column bg-white student-name-cell';
-        nameTd.textContent = studentFullName(student);
-        nameTd.onclick = () => openAttendanceModal(student.id, null); // Open first day or just general stats
+        nameTd.className = `sticky-column student-name-cell ${student.isWithdrawn ? 'bg-light' : 'bg-white'}`;
+        if (student.isWithdrawn) {
+            const withdrawalDateStr = student.withdrawal?.date
+                ? new Date(student.withdrawal.date).toLocaleDateString('es-ES')
+                : '';
+            nameTd.innerHTML = `${escapeHtml(studentFullName(student))}&nbsp;<span class="badge bg-danger" style="font-size:.6rem;vertical-align:middle;" title="Baja${withdrawalDateStr ? ' desde ' + withdrawalDateStr : ''}">BAJA</span>`;
+        } else {
+            nameTd.textContent = studentFullName(student);
+        }
+        nameTd.onclick = () => openAttendanceModal(student.id, null);
         tr.appendChild(nameTd);
 
         // Day columns
@@ -5233,12 +5257,38 @@ function openAttendanceModal(studentId, date) {
     document.getElementById('student-stat-late').textContent = sLate;
     document.getElementById('student-stat-justified').textContent = sJust;
 
+    // Determine if this date is blocked due to withdrawal
+    const withdrawalDate = student.isWithdrawn && student.withdrawal?.date
+        ? student.withdrawal.date.split('T')[0]
+        : null;
+    const isWithdrawnDay = withdrawalDate && date >= withdrawalDate;
+
+    // Lock / unlock editing controls based on withdrawal status
+    const statusSelect = document.getElementById('attendance-modal-status');
+    const noteField = document.getElementById('attendance-modal-note');
+    const saveBtn = document.getElementById('attendance-modal-save-btn');
+    const withdrawalBanner = document.getElementById('attendance-modal-withdrawal-banner');
+
+    if (statusSelect) statusSelect.disabled = !!isWithdrawnDay;
+    if (noteField) noteField.disabled = !!isWithdrawnDay;
+    if (saveBtn) saveBtn.disabled = !!isWithdrawnDay;
+
+    // Show/hide withdrawal warning banner
+    if (withdrawalBanner) {
+        if (isWithdrawnDay) {
+            withdrawalBanner.classList.remove('d-none');
+            withdrawalBanner.textContent = `Alumno/a dado de baja el ${new Date(withdrawalDate).toLocaleDateString('es-ES')} — no se puede registrar asistencia desde esta fecha.`;
+        } else {
+            withdrawalBanner.classList.add('d-none');
+        }
+    }
+
     const modalEl = document.getElementById('attendanceModal');
     const modal = new bootstrap.Modal(modalEl);
 
-    // Focus note field when modal is shown
+    // Focus note field when modal is shown (only if not locked)
     modalEl.addEventListener('shown.bs.modal', () => {
-        document.getElementById('attendance-modal-note').focus();
+        if (!isWithdrawnDay) document.getElementById('attendance-modal-note').focus();
     }, { once: true });
 
     // Wire up summary button
@@ -5634,10 +5684,19 @@ async function exportStudentAttendancePdf(mode) {
 }
 
 function saveAttendanceFromModal() {
+    const { studentId, date } = currentModalAttendance;
+
+    // Guard: do not allow saving attendance on/after the student's withdrawal date
+    const student = studentsForAttendance.find(s => s.id === studentId);
+    if (student?.isWithdrawn && student.withdrawal?.date) {
+        const withdrawalDate = student.withdrawal.date.split('T')[0];
+        if (date >= withdrawalDate) return; // silently blocked — button should already be disabled
+    }
+
     const status = document.getElementById('attendance-modal-status').value;
     const note = document.getElementById('attendance-modal-note').value;
 
-    updateAttendance(currentModalAttendance.studentId, currentModalAttendance.date, status, note, null);
+    updateAttendance(studentId, date, status, note, null);
     bootstrap.Modal.getInstance(document.getElementById('attendanceModal')).hide();
 }
 

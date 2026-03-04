@@ -1756,6 +1756,10 @@
                         <p><strong>Student:</strong> <span id="attendance-modal-student-name">-</span></p>
                         <p><strong>Date:</strong> <span id="attendance-modal-date">-</span></p>
                     </div>
+                    <!-- Withdrawal warning — shown only when date is on/after withdrawal date -->
+                    <div id="attendance-modal-withdrawal-banner" class="alert alert-danger d-none py-2 small mb-3" role="alert">
+                        <i class="bi bi-person-x me-1"></i>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Status</label>
                         <select class="form-select" id="attendance-modal-status">
@@ -1799,7 +1803,7 @@
                         <i class="bi bi-list-check me-1"></i> Full Month Summary
                     </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveAttendanceFromModal()">Save
+                    <button type="button" class="btn btn-primary" id="attendance-modal-save-btn" onclick="saveAttendanceFromModal()">Save
                         Changes</button>
                 </div>
             </div>
