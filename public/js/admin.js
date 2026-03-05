@@ -110,10 +110,10 @@ function displayTeachers(teachers) {
                             data-name="${escapeHtml(teacher.name)}"
                             data-email="${escapeHtml(teacher.email)}"
                             data-userrole="${escapeHtml(userRole)}">
-                            <i class="bi bi-pencil me-1"></i> Edit
+                            <i class="bi bi-pencil me-1"></i> Editar
                         </button>
                         <button class="btn btn-sm btn-outline-danger w-100" onclick="deleteTeacher('${teacher.id}')">
-                            <i class="bi bi-trash me-1"></i> Delete
+                            <i class="bi bi-trash me-1"></i> Eliminar
                         </button>
                     </div>
                 </div>
@@ -138,6 +138,10 @@ async function handleCreateTeacher(e) {
     const email = document.getElementById('teacher-email').value;
     const userRole = document.getElementById('teacher-userrole').value;
 
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating…';
+
     try {
         const response = await fetch(`${API_URL}/api/admin/teachers`, {
             method: 'POST',
@@ -152,14 +156,35 @@ async function handleCreateTeacher(e) {
 
         if (response.ok) {
             createModal.hide();
-            // Show success message
-            alert(`User created successfully! A welcome email with login credentials has been sent to ${email}`);
+            e.target.reset();
+
+            // Show success modal with password and status
+            document.getElementById('success-email').textContent = email;
+            document.getElementById('provisional-password').textContent = data.provisionalPassword || '—';
+
+            const statusEl = document.getElementById('success-external-status');
+            if (statusEl) {
+                if (data.externalRegistered) {
+                    statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Registrado en el sistema de autenticación externo.</span>';
+                } else {
+                    statusEl.innerHTML = `<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>${data.warning || 'No se pudo registrar en el sistema externo.'}</span>`;
+                }
+            }
+            if (data.emailWarning) {
+                const emailWarnEl = document.getElementById('success-email-warning');
+                if (emailWarnEl) emailWarnEl.textContent = data.emailWarning;
+            }
+
+            successModal.show();
             loadTeachers();
         } else {
             alert(data.error || data.message || 'Failed to create user');
         }
     } catch (error) {
         alert('Error creating user');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Create Account';
     }
 }
 

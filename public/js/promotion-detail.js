@@ -680,16 +680,50 @@ function displayTeam() {
 
 function displayResources() {
     const tbody = document.getElementById('resources-list-body');
+    const emptyEl = document.getElementById('resources-empty');
+    const tableEl = document.getElementById('resources-table');
     if (!tbody) return;
     tbody.innerHTML = '';
-    (extendedInfoData.resources || []).forEach((res, index) => {
+
+    const list = extendedInfoData.resources || [];
+    if (emptyEl) emptyEl.classList.toggle('d-none', list.length > 0);
+    if (tableEl) tableEl.classList.toggle('d-none', list.length === 0);
+
+    list.forEach((res, index) => {
+        // Areas: array of strings or objects
+        const areas = (res.areas || []);
+        const areaHtml = areas.length
+            ? areas.map(a => {
+                const name = typeof a === 'string' ? a : a.name;
+                return `<span class="badge bg-secondary me-1">${escapeHtml(name)}</span>`;
+              }).join('')
+            : `<span class="badge bg-light text-muted">${escapeHtml(res.category || '—')}</span>`;
+
+        // Type badge
+        const typeName = res.type || res.category || '—';
+        const typeColor = typeName === 'Certificación' ? 'warning text-dark'
+            : typeName === 'Curso' ? 'info text-dark'
+            : typeName === 'Youtube' ? 'danger'
+            : typeName === 'Podcast' ? 'success'
+            : 'light text-dark border';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${escapeHtml(res.title)}</td>
-            <td><span class="badge bg-info text-dark">${escapeHtml(res.category)}</span></td>
-            <td><a href="${escapeHtml(res.url)}" target="_blank" class="text-truncate d-inline-block" style="max-width: 150px;">${escapeHtml(res.url)}</a></td>
             <td>
-                <button class="btn btn-sm btn-danger" onclick="deleteResource(${index})"><i class="bi bi-trash"></i></button>
+                <div class="fw-semibold">${escapeHtml(res.title || res.label || '')}</div>
+                ${res.comments ? `<div class="text-muted small" style="max-width:280px;white-space:normal;">${escapeHtml(res.comments.substring(0, 120))}${res.comments.length > 120 ? '…' : ''}</div>` : ''}
+            </td>
+            <td><span class="badge bg-${typeColor}">${escapeHtml(typeName)}</span></td>
+            <td>${areaHtml}</td>
+            <td>
+                ${res.url ? `<a href="${escapeHtml(res.url)}" target="_blank" class="btn btn-sm btn-outline-primary py-0">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Abrir
+                </a>` : '<span class="text-muted small">—</span>'}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteResource(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -1446,25 +1480,278 @@ function deleteTeamMember(index) {
     }
 }
 
-function openResourceModal() {
-    document.getElementById('resource-form').reset();
-    resourceModal.show();
+// ==================== RESOURCE CATALOG (from evaluation API) ====================
+
+let _resCatalog = [];          // full list loaded from API
+let _resCatalogLoaded = false; // avoid re-fetching every time the modal opens
+
+function switchResourceTab(tab) {
+    const catalogPanel = document.getElementById('resource-panel-catalog');
+    const manualPanel  = document.getElementById('resource-panel-manual');
+    const tabCatalog   = document.getElementById('res-tab-catalog');
+    const tabManual    = document.getElementById('res-tab-manual');
+    if (!catalogPanel || !manualPanel) return;
+
+    if (tab === 'catalog') {
+        catalogPanel.classList.remove('d-none');
+        manualPanel.classList.add('d-none');
+        tabCatalog.classList.add('active');
+        tabCatalog.style.background = 'rgba(255,255,255,0.2)';
+        tabManual.classList.remove('active');
+        tabManual.style.background = '';
+    } else {
+        manualPanel.classList.remove('d-none');
+        catalogPanel.classList.add('d-none');
+        tabManual.classList.add('active');
+        tabManual.style.background = 'rgba(255,255,255,0.2)';
+        tabCatalog.classList.remove('active');
+        tabCatalog.style.background = '';
+    }
 }
 
-function addResource() {
-    const title = document.getElementById('resource-title').value;
-    const category = document.getElementById('resource-category').value;
-    const url = document.getElementById('resource-url').value;
+async function openResourceModal() {
+    // Reset manual form
+    const form = document.getElementById('resource-form');
+    if (form) form.reset();
 
-    if (!title || !url) return;
+    // Always open on catalog tab
+    switchResourceTab('catalog');
 
-    extendedInfoData.resources.push({ title, category, url });
+    resourceModal.show();
+
+    // Load catalog only once
+    if (!_resCatalogLoaded) {
+        await loadResourceCatalog();
+    }
+}
+
+async function loadResourceCatalog() {
+    const loadingEl = document.getElementById('res-catalog-loading');
+    const errorEl   = document.getElementById('res-catalog-error');
+    const gridEl    = document.getElementById('res-catalog-grid');
+    const countEl   = document.getElementById('res-catalog-count');
+
+    if (loadingEl) loadingEl.classList.remove('d-none');
+    if (errorEl)   errorEl.classList.add('d-none');
+    if (gridEl)    gridEl.style.display = 'none';
+    if (countEl)   countEl.classList.add('d-none');
+
+    try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/api/eval/resources/?page_size=500`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const items = Array.isArray(json) ? json : (json.results || []);
+
+        _resCatalog = items;
+        _resCatalogLoaded = true;
+
+        // Populate area filter
+        const areaSelect = document.getElementById('res-filter-area');
+        if (areaSelect) {
+            const allAreas = new Map();
+            items.forEach(r => {
+                (r.areas || []).forEach(a => {
+                    if (a && a.id) allAreas.set(a.id, a.name);
+                });
+            });
+            areaSelect.innerHTML = '<option value="">Todas las áreas</option>';
+            [...allAreas.entries()].sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = name;
+                areaSelect.appendChild(opt);
+            });
+        }
+
+        // Populate type filter
+        const typeSelect = document.getElementById('res-filter-type');
+        if (typeSelect) {
+            const allTypes = new Map();
+            items.forEach(r => {
+                (r.types || []).forEach(t => {
+                    if (t && t.id) allTypes.set(t.id, t.name);
+                });
+            });
+            typeSelect.innerHTML = '<option value="">Todos los tipos</option>';
+            [...allTypes.entries()].sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = name;
+                typeSelect.appendChild(opt);
+            });
+        }
+
+        renderResourceCatalogGrid(items);
+    } catch (err) {
+        console.error('[loadResourceCatalog] Error:', err);
+        if (loadingEl) loadingEl.classList.add('d-none');
+        if (errorEl) {
+            errorEl.classList.remove('d-none');
+            const msgEl = document.getElementById('res-catalog-error-msg');
+            if (msgEl) msgEl.textContent = `No se pudieron cargar los recursos: ${err.message}`;
+        }
+    }
+}
+
+function renderResourceCatalogGrid(items) {
+    const loadingEl = document.getElementById('res-catalog-loading');
+    const gridEl    = document.getElementById('res-catalog-grid');
+    const countEl   = document.getElementById('res-catalog-count');
+
+    if (loadingEl) loadingEl.classList.add('d-none');
+    if (!gridEl) return;
+
+    gridEl.innerHTML = '';
+    gridEl.style.removeProperty('display'); // remove the d-none via style
+
+    if (countEl) {
+        countEl.classList.remove('d-none');
+        countEl.textContent = `${items.length} recurso${items.length !== 1 ? 's' : ''} encontrado${items.length !== 1 ? 's' : ''}`;
+    }
+
+    if (items.length === 0) {
+        gridEl.innerHTML = `<div class="col-12 text-center text-muted py-4">
+            <i class="bi bi-search fs-3 opacity-50 d-block mb-2"></i>No se encontraron recursos con esos filtros.
+        </div>`;
+        return;
+    }
+
+    items.forEach(r => {
+        const areas  = (r.areas  || []).map(a => a.name).slice(0, 3);
+        const types  = (r.types  || []).map(t => t.name);
+        const typeName = types[0] || '—';
+        const typeColor = typeName === 'Certificación' ? '#f59e0b'
+            : typeName === 'Curso' ? '#3b82f6'
+            : typeName === 'Youtube' ? '#ef4444'
+            : '#6b7280';
+
+        const alreadyAdded = (extendedInfoData.resources || []).some(
+            x => x.id === r.id || (x.url && x.url === r.url)
+        );
+
+        const col = document.createElement('div');
+        col.className = 'col-12 col-md-6 col-lg-4';
+        col.dataset.resourceId = r.id;
+        col.innerHTML = `
+            <div class="card h-100 border resource-catalog-card" style="cursor:default;">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-start mb-1 gap-1">
+                        <h6 class="fw-semibold mb-0 lh-sm" style="font-size:.85rem;">${escapeHtml(r.label || r.name || '')}</h6>
+                        <span class="badge flex-shrink-0" style="background:${typeColor};font-size:.7rem;">${escapeHtml(typeName)}</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                        ${areas.map(a => `<span class="badge bg-light text-dark border" style="font-size:.65rem;">${escapeHtml(a)}</span>`).join('')}
+                    </div>
+                    ${r.comments ? `<p class="text-muted mb-2" style="font-size:.75rem;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(r.comments)}</p>` : ''}
+                    <div class="d-flex gap-1 mt-auto pt-1">
+                        ${r.url ? `<a href="${escapeHtml(r.url)}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 flex-grow-1" style="font-size:.75rem;">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Ver
+                        </a>` : ''}
+                        <button class="btn btn-sm py-0 flex-grow-1 ${alreadyAdded ? 'btn-success' : 'btn-primary'}"
+                            style="font-size:.75rem;"
+                            onclick="addResourceFromCatalog(${r.id})"
+                            id="res-add-btn-${r.id}"
+                            ${alreadyAdded ? 'disabled' : ''}>
+                            <i class="bi bi-${alreadyAdded ? 'check' : 'plus'}-lg me-1"></i>${alreadyAdded ? 'Añadido' : 'Añadir'}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        gridEl.appendChild(col);
+    });
+}
+
+function filterResourceCatalog() {
+    const nameVal = (document.getElementById('res-filter-name')?.value || '').toLowerCase();
+    const areaVal = document.getElementById('res-filter-area')?.value || '';
+    const typeVal = document.getElementById('res-filter-type')?.value || '';
+
+    const filtered = _resCatalog.filter(r => {
+        const label = (r.label || r.name || '').toLowerCase();
+        if (nameVal && !label.includes(nameVal)) return false;
+        if (areaVal && !(r.areas || []).some(a => String(a.id) === String(areaVal))) return false;
+        if (typeVal && !(r.types || []).some(t => String(t.id) === String(typeVal))) return false;
+        return true;
+    });
+
+    renderResourceCatalogGrid(filtered);
+}
+
+function clearResourceFilters() {
+    const nameEl = document.getElementById('res-filter-name');
+    const areaEl = document.getElementById('res-filter-area');
+    const typeEl = document.getElementById('res-filter-type');
+    if (nameEl) nameEl.value = '';
+    if (areaEl) areaEl.value = '';
+    if (typeEl) typeEl.value = '';
+    filterResourceCatalog();
+}
+
+function addResourceFromCatalog(resourceId) {
+    const r = _resCatalog.find(x => x.id === resourceId);
+    if (!r) return;
+
+    if (!extendedInfoData.resources) extendedInfoData.resources = [];
+
+    // Avoid duplicates
+    if (extendedInfoData.resources.some(x => x.id === r.id || (x.url && x.url === r.url))) return;
+
+    extendedInfoData.resources.push({
+        id: r.id,
+        title: r.label || r.name || '',
+        label: r.label || r.name || '',
+        url: r.url || '',
+        category: (r.types && r.types[0]?.name) || 'Technical',
+        type: (r.types && r.types[0]?.name) || '—',
+        areas: (r.areas || []).map(a => ({ id: a.id, name: a.name })),
+        comments: r.comments || '',
+        fromApi: true
+    });
+
+    displayResources();
+
+    // Mark button as added in the grid
+    const btn = document.getElementById(`res-add-btn-${resourceId}`);
+    if (btn) {
+        btn.classList.replace('btn-primary', 'btn-success');
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Añadido';
+        btn.disabled = true;
+    }
+
+    // Show a small toast-like feedback
+    const countEl = document.getElementById('res-catalog-count');
+    if (countEl) {
+        const prev = countEl.textContent;
+        countEl.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Recurso añadido</span>`;
+        setTimeout(() => { if (countEl) countEl.textContent = prev; }, 2000);
+    }
+}
+
+function addResourceManual() {
+    const title    = document.getElementById('resource-title')?.value?.trim();
+    const category = document.getElementById('resource-category')?.value;
+    const url      = document.getElementById('resource-url')?.value?.trim();
+
+    if (!title || !url) {
+        alert('El título y la URL son obligatorios.');
+        return;
+    }
+
+    if (!extendedInfoData.resources) extendedInfoData.resources = [];
+    extendedInfoData.resources.push({ title, category, url, areas: [], type: category });
     displayResources();
     resourceModal.hide();
 }
 
+// Legacy alias — keep backward compat
+function addResource() { addResourceManual(); }
+
 function deleteResource(index) {
-    if (confirm('Delete this resource?')) {
+    if (confirm('¿Eliminar este recurso?')) {
         extendedInfoData.resources.splice(index, 1);
         displayResources();
     }

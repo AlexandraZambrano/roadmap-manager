@@ -2,7 +2,8 @@
  * program-competences.js
  * Módulo de Competencias para Program Info
  * Gestiona el catálogo de competencias del programa por área.
- * El catálogo se carga dinámicamente desde /api/competences (MongoDB Atlas).
+ * El catálogo se carga dinámicamente desde /api/competences, /api/areas y /api/tools
+ * (evaluation.coderf5.es v1 API con fallback a MongoDB local).
  *
  * Expone: window.ProgramCompetences
  */
@@ -14,6 +15,7 @@
     // ─── Catálogo cargado desde la BD (reemplaza el hardcoded) ────────────────
     let COMPETENCES_CATALOG = [];
     let AREAS = [];
+    let ALL_TOOLS_CATALOG = []; // catálogo completo de herramientas desde /api/tools
 
     // ─── Estado interno ────────────────────────────────────────────────────────
     let _programCompetences = []; // competencias seleccionadas para este programa (con selectedTools)
@@ -23,41 +25,59 @@
     async function _loadCatalog() {
         if (_catalogLoaded) return;
         const token = localStorage.getItem('token');
-        console.log('[ProgramCompetences] Cargando desde /api/competences y /api/areas...');
+        console.log('[ProgramCompetences] Cargando desde /api/competences, /api/areas y /api/tools (evaluation.coderf5.es)...');
         try {
-            // Fetch competences AND all areas in parallel
-            const [resComp, resAreas] = await Promise.all([
+            // Fetch competences, areas AND tools in parallel
+            const [resComp, resAreas, resTools] = await Promise.all([
                 fetch(`${API_URL}/api/competences`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/areas`,       { headers: { 'Authorization': `Bearer ${token}` } })
+                fetch(`${API_URL}/api/areas`,        { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/tools`,        { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
 
-            if (!resComp.ok) {
-                console.error('[ProgramCompetences] Error HTTP /api/competences:', resComp.status, resComp.statusText);
-            }
-            if (!resAreas.ok) {
-                console.error('[ProgramCompetences] Error HTTP /api/areas:', resAreas.status, resAreas.statusText);
-            }
+            if (!resComp.ok)  console.error('[ProgramCompetences] Error HTTP /api/competences:', resComp.status, resComp.statusText);
+            if (!resAreas.ok) console.error('[ProgramCompetences] Error HTTP /api/areas:', resAreas.status, resAreas.statusText);
+            if (!resTools.ok) console.warn('[ProgramCompetences] Error HTTP /api/tools:', resTools.status, resTools.statusText);
 
-            const [data, allAreasFromDB] = await Promise.all([resComp.json(), resAreas.json()]);
+            const [data, allAreasFromDB, allToolsFromDB] = await Promise.all([
+                resComp.ok  ? resComp.json()  : [],
+                resAreas.ok ? resAreas.json() : [],
+                resTools.ok ? resTools.json() : []
+            ]);
 
-            console.log('[ProgramCompetences] /api/competences → recibidas:', data.length, 'competencias');
+            console.log('[ProgramCompetences] /api/competences → recibidas:', Array.isArray(data) ? data.length : 'NO ES ARRAY → ' + JSON.stringify(data).substring(0, 200), 'competencias');
+            if (Array.isArray(data) && data.length > 0) {
+                console.log('[ProgramCompetences] Primera competencia recibida:', JSON.stringify(data[0]).substring(0, 300));
+            } else if (!Array.isArray(data)) {
+                console.warn('[ProgramCompetences] ⚠ /api/competences no devolvió array. Keys:', Object.keys(data));
+            }
             console.log('[ProgramCompetences] /api/areas → recibidas:', allAreasFromDB.length, 'áreas:', allAreasFromDB.map(a => `${a.id}:${a.name}`));
-            console.log('[ProgramCompetences] Detalle primera competencia:', data[0]);
+            console.log('[ProgramCompetences] /api/tools → recibidas:', allToolsFromDB.length, 'herramientas');
 
-            // Normalize DB shape → internal shape
+            // Build global tools list (names) from /api/tools
+            ALL_TOOLS_CATALOG = (Array.isArray(allToolsFromDB) ? allToolsFromDB : (allToolsFromDB.results || []))
+                .map(t => t.name).filter(Boolean);
+
+            // Normalize server shape → internal shape used by the UI
+            // Server's normaliseEvalCompetence already returns:
+            //   { id, name, description, areas:[{id,name,icon}], areaNames:['Fullstack',...], tools:[{id,name}], levels:[...] }
             COMPETENCES_CATALOG = data.map(comp => {
-                const areaName = (comp.areas && comp.areas[0]) ? comp.areas[0].name : 'Sin área';
-                const areaNames = (comp.areas || []).map(a => a.name);
+                // areaNames is the array of strings from the real API (area field)
+                // areas is the array of objects built by normaliseEvalCompetence
+                const areaStrings = comp.areaNames || (comp.areas || []).map(a => a.name);
+                const areaName = areaStrings[0] || 'Sin área';  // primary area for filter
+
                 const levels = (comp.levels || []).map(l => ({
                     level: l.levelId,
                     description: l.levelName || `Nivel ${l.levelId}`,
-                    indicators: (l.indicators || []).map(i => i.name)
+                    indicators: (l.indicators || []).map(i => i.name || i)
                 }));
-                const allTools = (comp.tools || []).map(t => t.name);
+                // tools linked to this competence + fill with any extra from global catalog
+                const linkedTools = (comp.tools || []).map(t => t.name || t);
+                const allTools = [...new Set([...linkedTools, ...ALL_TOOLS_CATALOG])];
                 return {
                     id: comp.id,
-                    area: areaName,       // primary area (first)
-                    areas: areaNames,     // ALL areas for this competence
+                    area: areaName,         // primary area (first) — used for filter tabs
+                    areas: areaStrings,     // ALL area strings — used for multi-area filter
                     name: comp.name,
                     description: comp.description || '',
                     levels,
@@ -66,12 +86,18 @@
             });
 
             console.log('[ProgramCompetences] Catálogo normalizado:', COMPETENCES_CATALOG.length, 'competencias');
-            console.log('[ProgramCompetences] Áreas únicas en competencias:', [...new Set(COMPETENCES_CATALOG.map(c => c.area))]);
+            console.log('[ProgramCompetences] Áreas únicas en competencias:', [...new Set(COMPETENCES_CATALOG.flatMap(c => c.areas))]);
 
-            // Use ALL areas from DB for the filter (not just ones assigned to competences)
-            AREAS = allAreasFromDB.length > 0
-                ? allAreasFromDB.map(a => a.name)
-                : [...new Set(COMPETENCES_CATALOG.map(c => c.area))];
+            // Build areas list for the filter tabs.
+            // Priority: 1) from /api/areas (objects with .name), 2) from competences' areaNames
+            const areasFromApi = Array.isArray(allAreasFromDB) ? allAreasFromDB : (allAreasFromDB.results || []);
+            if (areasFromApi.length > 0) {
+                // /api/areas may return objects {id,name} or plain strings
+                AREAS = areasFromApi.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean);
+            } else {
+                // Derive unique area names from competences themselves
+                AREAS = [...new Set(COMPETENCES_CATALOG.flatMap(c => c.areas))];
+            }
 
             console.log('[ProgramCompetences] Filtro de área rellenado con:', AREAS);
             _catalogLoaded = true;
@@ -276,8 +302,9 @@
 
         const catalogCards = COMPETENCES_CATALOG.map((comp, i) => {
             const alreadyAdded = _programCompetences.some(pc => pc.id === comp.id);
+            const allAreaStr = (comp.areas || [comp.area]).join('|'); // pipe-separated for multi-area filtering
             return `
-            <div class="catalog-card col-12 mb-2" data-area="${_esc(comp.area)}" data-catalog-idx="${i}">
+            <div class="catalog-card col-12 mb-2" data-area="${_esc(allAreaStr)}" data-catalog-idx="${i}">
                 <div class="card ${alreadyAdded ? 'border-success' : ''}">
                     <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center">
                         <div>
@@ -323,8 +350,10 @@
     function _filterCatalog() {
         const filterVal = document.getElementById('catalog-area-filter')?.value || '';
         document.querySelectorAll('#catalog-cards-container .catalog-card').forEach(el => {
-            const area = el.dataset.area;
-            el.style.display = (!filterVal || area === filterVal) ? '' : 'none';
+            // data-area contains all areas pipe-separated (e.g. "Fullstack|IA|Cloud")
+            const areaData = el.dataset.area || '';
+            const areas = areaData.split('|');
+            el.style.display = (!filterVal || areas.includes(filterVal)) ? '' : 'none';
         });
     }
 
@@ -349,7 +378,9 @@
         const filterVal = document.getElementById('catalog-area-filter')?.value || '';
         if (filterVal) {
             document.querySelectorAll('#catalog-cards-container .catalog-card').forEach(el => {
-                el.style.display = el.dataset.area === filterVal ? '' : 'none';
+                const areaData = el.dataset.area || '';
+                const areas = areaData.split('|');
+                el.style.display = areas.includes(filterVal) ? '' : 'none';
             });
         }
 
@@ -419,7 +450,10 @@
 
         const checkboxes = (comp.allTools || []).map(tool => {
             const checked = (comp.selectedTools || []).includes(tool) ? 'checked' : '';
-            const isCustom = !(COMPETENCES_CATALOG.find(c => c.id === comp.id)?.allTools || []).includes(tool);
+            // A tool is "custom" if it's not in the original catalog linked tools AND not in the global catalog
+            const catalogComp = COMPETENCES_CATALOG.find(c => c.id === comp.id);
+            const catalogTools = catalogComp?.allTools || [];
+            const isCustom = !catalogTools.includes(tool) && !ALL_TOOLS_CATALOG.includes(tool);
             return `
             <div class="form-check d-flex align-items-center gap-2" id="tool-row-${_esc(tool.replace(/[\s/]/g, '-'))}">
                 <input class="form-check-input tools-checkbox" type="checkbox"

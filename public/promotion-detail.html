@@ -738,24 +738,28 @@
                         <div class="tab-pane fade" id="program-details-resources" role="tabpanel" aria-labelledby="program-details-resources-tab">
                             <div class="card">
                                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                    <h6 class="mb-0"><i class="bi bi-tools me-2"></i>Resources</h6>
-                                    <button class="btn btn-sm btn-outline-primary" onclick="openResourceModal()">
-                                        <i class="bi bi-plus"></i> Add Resource
+                                    <h6 class="mb-0"><i class="bi bi-book me-2"></i>Recursos</h6>
+                                    <button class="btn btn-sm btn-primary" onclick="openResourceModal()">
+                                        <i class="bi bi-plus-lg me-1"></i>Añadir recurso
                                     </button>
                                 </div>
                                 <div class="card-body p-0">
+                                    <div id="resources-empty" class="text-center text-muted py-5 d-none">
+                                        <i class="bi bi-book fs-2 mb-2 d-block opacity-50"></i>
+                                        <p class="mb-0">No hay recursos añadidos. Haz clic en "Añadir recurso" para empezar.</p>
+                                    </div>
                                     <div class="table-responsive">
-                                        <table class="table table-hover mb-0">
-                                            <thead>
+                                        <table class="table table-hover mb-0" id="resources-table">
+                                            <thead class="table-light">
                                                 <tr>
-                                                    <th>Title</th>
-                                                    <th>Category (Type)</th>
+                                                    <th>Título</th>
+                                                    <th>Tipo</th>
+                                                    <th>Áreas</th>
                                                     <th>URL</th>
-                                                    <th>Action</th>
+                                                    <th></th>
                                                 </tr>
                                             </thead>
                                             <tbody id="resources-list-body">
-                                                <!-- Dynamic Content -->
                                             </tbody>
                                         </table>
                                     </div>
@@ -1606,41 +1610,106 @@
         </div>
     </div>
 
-    <!-- Resource Modal -->
+    <!-- Resource Modal — Catálogo de la API de evaluación -->
     <div class="modal fade" id="resourceModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Add Resource</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-header border-0 pb-0" style="background: linear-gradient(135deg,#ff4700,#ff7043);">
+                    <h5 class="modal-title text-white"><i class="bi bi-book me-2"></i>Añadir Recurso</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <form id="resource-form">
-                        <div class="mb-3">
-                            <label class="form-label">Title</label>
-                            <input type="text" class="form-control" id="resource-title" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Category</label>
-                            <select class="form-select" id="resource-category">
-                                <option value="Technical">Technical</option>
-                                <option value="Youtube">Youtube Channel</option>
-                                <option value="Book">Book</option>
-                                <option value="Podcast">Podcast</option>
-                                <option value="Tool">Tool</option>
-                                <option value="Math">Mathematics</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">URL</label>
-                            <input type="url" class="form-control" id="resource-url" required>
-                        </div>
-                    </form>
+
+                <!-- Tabs: Catálogo API / Manual -->
+                <div class="px-3 pt-2" style="background:linear-gradient(135deg,#ff4700,#ff7043);">
+                    <ul class="nav nav-tabs border-0" id="resource-modal-tabs">
+                        <li class="nav-item">
+                            <button class="nav-link active text-white fw-semibold border-0" id="res-tab-catalog" onclick="switchResourceTab('catalog')"
+                                style="background:rgba(255,255,255,0.2); border-radius:8px 8px 0 0;">
+                                <i class="bi bi-grid me-1"></i>Catálogo API
+                            </button>
+                        </li>
+                        <li class="nav-item ms-1">
+                            <button class="nav-link text-white border-0" id="res-tab-manual" onclick="switchResourceTab('manual')"
+                                style="border-radius:8px 8px 0 0;">
+                                <i class="bi bi-plus-circle me-1"></i>Manual
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="addResource()">Add Resource</button>
+
+                <div class="modal-body p-0">
+                    <!-- ── Catálogo API ── -->
+                    <div id="resource-panel-catalog" class="p-3">
+                        <!-- Filtros -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-12 col-md-4">
+                                <input type="text" class="form-control form-control-sm" id="res-filter-name"
+                                    placeholder="🔍 Buscar por nombre..." oninput="filterResourceCatalog()">
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <select class="form-select form-select-sm" id="res-filter-area" onchange="filterResourceCatalog()">
+                                    <option value="">Todas las áreas</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <select class="form-select form-select-sm" id="res-filter-type" onchange="filterResourceCatalog()">
+                                    <option value="">Todos los tipos</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-2">
+                                <button class="btn btn-sm btn-outline-secondary w-100" onclick="clearResourceFilters()">
+                                    <i class="bi bi-x-circle me-1"></i>Limpiar
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Estado de carga -->
+                        <div id="res-catalog-loading" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">Cargando recursos…</p>
+                        </div>
+                        <div id="res-catalog-error" class="alert alert-warning d-none">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <span id="res-catalog-error-msg">No se pudieron cargar los recursos de la API.</span>
+                        </div>
+
+                        <!-- Contador -->
+                        <div id="res-catalog-count" class="text-muted small mb-2 d-none"></div>
+
+                        <!-- Grid de tarjetas -->
+                        <div id="res-catalog-grid" class="row g-2" style="max-height:420px; overflow-y:auto; display:none!important;">
+                        </div>
+                    </div>
+
+                    <!-- ── Manual ── -->
+                    <div id="resource-panel-manual" class="p-3 d-none">
+                        <form id="resource-form">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Título <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="resource-title" required placeholder="Nombre del recurso">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Categoría</label>
+                                <select class="form-select" id="resource-category">
+                                    <option value="Technical">Technical</option>
+                                    <option value="Youtube">Youtube Channel</option>
+                                    <option value="Certificación">Certificación</option>
+                                    <option value="Curso">Curso</option>
+                                    <option value="Book">Book</option>
+                                    <option value="Podcast">Podcast</option>
+                                    <option value="Tool">Tool</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">URL <span class="text-danger">*</span></label>
+                                <input type="url" class="form-control" id="resource-url" required placeholder="https://…">
+                            </div>
+                            <button type="button" class="btn btn-primary w-100" onclick="addResourceManual()">
+                                <i class="bi bi-plus-lg me-1"></i>Añadir recurso
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2135,6 +2204,9 @@ ISECR2 Finalizar cada programa con un máximo de bajas de 10%.</textarea>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/shared.js"></script>
+    <!-- Inline fallback: garantiza que logout() esté disponible aunque shared.js falle -->
+    <script>if (typeof logout === 'undefined') { window.logout = function() { localStorage.removeItem('token'); localStorage.removeItem('user'); localStorage.removeItem('role'); window.location.href = 'login.html'; }; }</script>
     <script src="js/reports.js"></script>
     <script src="js/program-competences.js"></script>
     <script src="js/student-tracking.js"></script>

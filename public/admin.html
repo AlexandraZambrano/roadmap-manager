@@ -259,20 +259,24 @@
         <div class="modal-dialog">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header border-0 bg-primary text-white">
-                    <h5 class="modal-title">Create New User</h5>
+                    <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>Crear nuevo usuario</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <form id="create-teacher-form">
                     <div class="modal-body p-4">
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Full Name</label>
-                            <input type="text" class="form-control" id="teacher-name" required placeholder="John Doe">
+                        <div class="alert alert-light border small mb-3 py-2">
+                            <i class="bi bi-info-circle me-1 text-primary"></i>
+                            Se generará una contraseña provisional y se registrará automáticamente en <strong>users.coderf5.es</strong>.
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Email Address</label>
+                            <label class="form-label fw-semibold">Nombre completo</label>
+                            <input type="text" class="form-control" id="teacher-name" required placeholder="Ej: Ana García">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Correo electrónico</label>
                             <input type="email" class="form-control" id="teacher-email" required
-                                placeholder="john@example.com">
-                            <div class="form-text">An email with a provisional password will be generated.</div>
+                                placeholder="ana@factoriaf5.org">
+                            <div class="form-text">Se enviará la contraseña provisional a este correo.</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Rol</label>
@@ -284,8 +288,10 @@
                         </div>
                     </div>
                     <div class="modal-footer border-0">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary px-4">Create Account</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="bi bi-person-plus me-1"></i>Crear cuenta
+                        </button>
                     </div>
                 </form>
             </div>
@@ -297,18 +303,18 @@
         <div class="modal-dialog">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header border-0 bg-warning text-dark">
-                    <h5 class="modal-title">Edit User Info</h5>
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Editar usuario</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <form id="edit-teacher-form">
                     <input type="hidden" id="edit-teacher-id">
                     <div class="modal-body p-4">
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Full Name</label>
+                            <label class="form-label fw-semibold">Nombre completo</label>
                             <input type="text" class="form-control" id="edit-teacher-name" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Email Address</label>
+                            <label class="form-label fw-semibold">Correo electrónico</label>
                             <input type="email" class="form-control" id="edit-teacher-email" required>
                         </div>
                         <div class="mb-3">
@@ -321,8 +327,8 @@
                         </div>
                     </div>
                     <div class="modal-footer border-0">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-warning px-4">Update Account</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-warning px-4">Guardar cambios</button>
                     </div>
                 </form>
             </div>
@@ -334,22 +340,36 @@
         <div class="modal-dialog">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header border-0 bg-success text-white">
-                    <h5 class="modal-title">Account Created</h5>
+                    <h5 class="modal-title"><i class="bi bi-check-circle me-2"></i>Cuenta creada</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body p-4 text-center">
-                    <div class="mb-3"><i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i></div>
-                    <h4>Success!</h4>
-                    <p>The user account for <strong id="success-email"></strong> has been created.</p>
-                    <div class="alert alert-info py-3 shadow-sm border-0">
-                        <p class="mb-2">Provisional Password:</p>
-                        <h2 class="mb-0 user-select-all font-monospace" id="provisional-password"></h2>
+                <div class="modal-body p-4">
+                    <div class="text-center mb-3"><i class="bi bi-person-check text-success" style="font-size: 3rem;"></i></div>
+                    <p class="text-center">La cuenta para <strong id="success-email"></strong> ha sido creada.</p>
+
+                    <div class="alert alert-info py-3 shadow-sm border-0 mb-3">
+                        <p class="mb-1 fw-semibold small text-muted">Contraseña provisional:</p>
+                        <div class="d-flex align-items-center gap-2">
+                            <h3 class="mb-0 user-select-all font-monospace flex-grow-1" id="provisional-password"></h3>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('provisional-password').textContent)" title="Copiar">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
                     </div>
-                    <p class="small text-muted">Please share this password with the user. They should change it upon
-                        login.</p>
+
+                    <div id="success-external-status" class="mb-2 small"></div>
+                    <div id="success-email-warning" class="small text-warning mb-2"></div>
+
+                    <div class="alert alert-light border py-2 small mb-0">
+                        <i class="bi bi-info-circle me-1 text-primary"></i>
+                        El usuario debe iniciar sesión en <strong>esta aplicación</strong> con estas credenciales.<br>
+                        La contraseña ha sido registrada en el sistema de autenticación externo (<code>users.coderf5.es</code>).
+                    </div>
                 </div>
                 <div class="modal-footer border-0">
-                    <button type="button" class="btn btn-success w-100" data-bs-dismiss="modal">Got it!</button>
+                    <button type="button" class="btn btn-success w-100" data-bs-dismiss="modal">
+                        <i class="bi bi-check-lg me-1"></i>Entendido
+                    </button>
                 </div>
             </div>
         </div>
@@ -357,6 +377,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/shared.js"></script>
     <script src="js/admin.js"></script>
 </body>
 

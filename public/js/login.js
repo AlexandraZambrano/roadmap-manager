@@ -64,7 +64,6 @@ window.handleLogin = async function () {
     hideAlerts();
     setLoading(true);
 
-    // ── 1. Try the external auth API via our server proxy ────────────────────
     try {
         const extRes = await fetch(`${API_URL}/api/auth/external-login`, {
             method: 'POST',
@@ -84,70 +83,22 @@ window.handleLogin = async function () {
 
             showAlert('¡Acceso correcto! Redirigiendo...', 'success');
             setTimeout(() => {
-                if (role === 'superadmin') window.location.href = 'dashboard.html';
-                else if (role === 'teacher') window.location.href = 'dashboard.html';
-                else if (role === 'student') window.location.href = 'student-dashboard.html';
+                if (role === 'student') window.location.href = 'student-dashboard.html';
                 else window.location.href = 'dashboard.html';
             }, 800);
-            setLoading(false);
             return;
         }
 
-        // External API returned explicit failure — decide whether to try local login
-        if (extRes.status === 401) {
-            // Wrong password for an external user — try local (admin/student accounts)
-            await tryLocalLogin(email, password, extData.message || null);
-            return;
-        }
-
-        if (extRes.status === 404) {
-            // User not found in external system at all — try local login (may be a local admin/student)
-            await tryLocalLogin(email, password, null);
-            return;
-        }
-
-        // Any other error from external API (500, etc.) — fall back to local silently
+        // External API returned a failure — show the message
+        const errorMsg = extData.message || extData.error || 'Email o contraseña incorrectos';
+        showAlert(errorMsg, 'danger');
     } catch (networkErr) {
-        console.warn('External auth proxy error, falling back to local login:', networkErr.message);
-    }
-
-    // ── 2. Fall back to our own API (admin / student local accounts) ─────────
-    await tryLocalLogin(email, password, null);
-};
-
-async function tryLocalLogin(email, password, externalErrorMsg) {
-    try {
-        const response = await fetch(`${API_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
-            localStorage.setItem('role', data.user.role);
-            showAlert('¡Acceso correcto! Redirigiendo...', 'success');
-
-            setTimeout(() => {
-                const role = data.user.role;
-                if (role === 'admin') window.location.href = 'admin.html';
-                else if (role === 'teacher') window.location.href = 'dashboard.html';
-                else window.location.href = 'student-dashboard.html';
-            }, 800);
-        } else {
-            // Show the external error if there was one, otherwise local error
-            showAlert(externalErrorMsg || data.error || 'Email o contraseña incorrectos', 'danger');
-        }
-    } catch (error) {
-        console.error('Local login error:', error);
+        console.error('Login error:', networkErr.message);
         showAlert('Error de conexión. Inténtalo de nuevo.', 'danger');
     } finally {
         setLoading(false);
     }
-}
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     // Add enter key listener
