@@ -32,7 +32,7 @@ function checkAuth() {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
 
-    if (!token || role !== 'admin') {
+    if (!token || (role !== 'admin' && role !== 'superadmin')) {
         window.location.href = 'login.html';
         return;
     }
@@ -41,7 +41,8 @@ function checkAuth() {
         const userJson = localStorage.getItem('user');
         if (userJson && userJson !== 'undefined') {
             const user = JSON.parse(userJson);
-            // Optionally update UI with admin name
+            const nameEl = document.getElementById('admin-name');
+            if (nameEl && user?.name) nameEl.textContent = user.name;
         }
     } catch (e) {
         console.error('Error parsing admin data', e);

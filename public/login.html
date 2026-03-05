@@ -253,9 +253,12 @@
         });
 
         function updateLangButtons() {
+            const enBtn = document.getElementById('lang-en');
+            const esBtn = document.getElementById('lang-es');
+            if (!enBtn || !esBtn) return;
             const currentLang = getCurrentLanguage();
-            document.getElementById('lang-en').style.background = currentLang === 'en' ? '#ff4700' : 'transparent';
-            document.getElementById('lang-es').style.background = currentLang === 'es' ? '#ff4700' : 'transparent';
+            enBtn.style.background = currentLang === 'en' ? '#ff4700' : 'transparent';
+            esBtn.style.background = currentLang === 'es' ? '#ff4700' : 'transparent';
         }
 
         // Override setLanguage to update buttons

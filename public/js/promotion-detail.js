@@ -46,6 +46,13 @@ window.openProfileModal = async function () {
             document.getElementById('new-password').value = '';
             document.getElementById('confirm-password').value = '';
 
+            // Adapt password tab UI based on user type
+            const isExternalUser = (localStorage.getItem('role') === 'teacher' || localStorage.getItem('role') === 'superadmin');
+            const extBanner = document.getElementById('ext-password-info');
+            const localFields = document.getElementById('local-password-fields');
+            if (extBanner) extBanner.classList.toggle('d-none', !isExternalUser);
+            if (localFields) localFields.style.display = isExternalUser ? 'none' : '';
+
             // Update save button handler
             const saveBtn = document.getElementById('profile-save-btn');
             saveBtn.onclick = function () {
@@ -117,30 +124,93 @@ window.saveProfileInfo = async function () {
 };
 
 window.changePassword = async function () {
+    const alertEl = document.getElementById('password-alert');
+
+    // ── Detect if the user authenticated via the external API (RS256 token) ──
+    // External users must use the external reset-password flow (link sent to email)
+    const role = localStorage.getItem('role');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const isExternalUser = role === 'teacher' || role === 'superadmin'; // teachers and superadmins use external auth
+
+    if (isExternalUser) {
+        // Verify current password first via /infouser before redirecting
+        const currentPassword = document.getElementById('current-password').value;
+        const newPassword = document.getElementById('new-password').value;
+        const confirmPassword = document.getElementById('confirm-password').value;
+
+        if (!currentPassword) {
+            alertEl.className = 'alert alert-warning';
+            alertEl.textContent = 'Introduce tu contraseña actual para continuar';
+            alertEl.classList.remove('hidden');
+            return;
+        }
+
+        if (!newPassword || !confirmPassword) {
+            alertEl.className = 'alert alert-warning';
+            alertEl.textContent = 'El cambio de contraseña se realiza desde el correo. Haz clic en "Enviar enlace" para recibir el email.';
+            alertEl.classList.remove('hidden');
+        }
+
+        // Verify current credentials are valid
+        alertEl.className = 'alert alert-info';
+        alertEl.textContent = 'Verificando credenciales...';
+        alertEl.classList.remove('hidden');
+
+        try {
+            const verifyRes = await fetch(`${API_URL}/api/auth/external-verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: user.email, password: currentPassword })
+            });
+            const verifyData = await verifyRes.json();
+
+            if (!verifyRes.ok || !verifyData.success) {
+                alertEl.className = 'alert alert-danger';
+                alertEl.textContent = 'Contraseña actual incorrecta.';
+                alertEl.classList.remove('hidden');
+                return;
+            }
+
+            // Credentials OK — open the external reset page in a new tab
+            alertEl.className = 'alert alert-success';
+            alertEl.innerHTML = `Contraseña verificada. Se abrirá la página de cambio de contraseña de Factoría F5.<br>
+                <strong>Introduce tu email (${escapeHtml(user.email)}) y recibirás un enlace.</strong>`;
+            alertEl.classList.remove('hidden');
+
+            setTimeout(() => {
+                window.open('https://users.coderf5.es/reset-password', '_blank');
+            }, 1200);
+        } catch (err) {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = 'Error al conectar con el servidor de autenticación.';
+            alertEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    // ── Local accounts (admin / student) — use our own API ───────────────────
     const token = localStorage.getItem('token');
     const currentPassword = document.getElementById('current-password').value;
     const newPassword = document.getElementById('new-password').value;
     const confirmPassword = document.getElementById('confirm-password').value;
 
-    const alertEl = document.getElementById('password-alert');
-
     if (!currentPassword || !newPassword || !confirmPassword) {
         alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'All fields are required';
+        alertEl.textContent = 'Todos los campos son obligatorios';
         alertEl.classList.remove('hidden');
         return;
     }
 
     if (newPassword !== confirmPassword) {
         alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'New passwords do not match';
+        alertEl.textContent = 'Las contraseñas nuevas no coinciden';
         alertEl.classList.remove('hidden');
         return;
     }
 
     if (newPassword.length < 8) {
         alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'Password must be at least 8 characters';
+        alertEl.textContent = 'La contraseña debe tener al menos 8 caracteres';
         alertEl.classList.remove('hidden');
         return;
     }
@@ -157,22 +227,19 @@ window.changePassword = async function () {
 
         if (response.ok) {
             alertEl.className = 'alert alert-success';
-            alertEl.textContent = 'Password changed successfully! Please log in again.';
+            alertEl.textContent = '¡Contraseña cambiada! Vuelve a iniciar sesión.';
             alertEl.classList.remove('hidden');
-
-            setTimeout(() => {
-                logout();
-            }, 2000);
+            setTimeout(() => { logout(); }, 2000);
         } else {
             const data = await response.json();
             alertEl.className = 'alert alert-danger';
-            alertEl.textContent = data.error || 'Error changing password';
+            alertEl.textContent = data.error || 'Error al cambiar la contraseña';
             alertEl.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Error changing password:', error);
         alertEl.className = 'alert alert-danger';
-        alertEl.textContent = 'Error changing password';
+        alertEl.textContent = 'Error de conexión';
         alertEl.classList.remove('hidden');
     }
 };
@@ -201,7 +268,9 @@ function togglePasswordVisibility(inputId) {
 
 let promotionId = null;
 let moduleModal, quickLinkModal, sectionModal, studentModal, studentProgressModal, teamModal, resourceModal, collaboratorModal, projectAssignmentDetailModal;
-const userRole = localStorage.getItem('role') || 'student';
+// superadmin is treated as teacher for the promotion-detail view
+const _rawRole = localStorage.getItem('role') || 'student';
+const userRole = _rawRole === 'superadmin' ? 'teacher' : _rawRole;
 let currentUser = {};
 let promotionModules = []; // Store promotion modules
 window.promotionModules = promotionModules; // Expose for program-competences.js
@@ -325,6 +394,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!promotionId) {
         window.location.href = 'dashboard.html';
         return;
+    }
+
+    // Show admin panel button for superadmin
+    if (_rawRole === 'superadmin') {
+        const adminNavItem = document.getElementById('admin-panel-nav-item');
+        if (adminNavItem) adminNavItem.classList.remove('d-none');
     }
 
     // Initialize mobile menu

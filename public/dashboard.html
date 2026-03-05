@@ -26,7 +26,13 @@
             </button>
             
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <!-- Only visible for superadmin -->
+                    <li class="nav-item d-none" id="admin-panel-nav-item">
+                        <a class="btn btn-sm btn-outline-warning me-3 fw-semibold" href="admin.html">
+                            <i class="bi bi-shield-lock me-1"></i>Panel Admin
+                        </a>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userMenu" role="button"
                             data-bs-toggle="dropdown" aria-expanded="false">
@@ -114,31 +120,40 @@
 
                         <!-- Change Password Tab -->
                         <div class="tab-pane fade" id="password-content" role="tabpanel">
+                            <!-- Info banner for external users (teachers) — shown by JS -->
+                            <div id="ext-password-info" class="alert alert-info d-none mb-3" role="alert">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Tu cuenta está gestionada por <strong>Factoría F5</strong>. Para cambiar la contraseña
+                                verificaremos tu identidad y recibirás un enlace en tu email.
+                            </div>
                             <div class="mb-3">
-                                <label for="current-password" class="form-label">Current Password</label>
+                                <label for="current-password" class="form-label">Contraseña actual</label>
                                 <div class="password-input-group">
-                                    <input type="password" class="form-control" id="current-password" placeholder="Enter your current password">
+                                    <input type="password" class="form-control" id="current-password" placeholder="Introduce tu contraseña actual">
                                     <button type="button" class="password-toggle" onclick="togglePasswordVisibility('current-password')">
                                         <i class="bi bi-eye"></i>
                                     </button>
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                <label for="new-password" class="form-label">New Password</label>
-                                <div class="password-input-group">
-                                    <input type="password" class="form-control" id="new-password" placeholder="Enter new password (min 8 characters)">
-                                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility('new-password')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
+                            <!-- New/Confirm fields — hidden for external users -->
+                            <div id="local-password-fields">
+                                <div class="mb-3">
+                                    <label for="new-password" class="form-label">Nueva contraseña</label>
+                                    <div class="password-input-group">
+                                        <input type="password" class="form-control" id="new-password" placeholder="Nueva contraseña (mín. 8 caracteres)">
+                                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('new-password')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="confirm-password" class="form-label">Confirm Password</label>
-                                <div class="password-input-group">
-                                    <input type="password" class="form-control" id="confirm-password" placeholder="Confirm new password">
-                                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility('confirm-password')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
+                                <div class="mb-3">
+                                    <label for="confirm-password" class="form-label">Confirmar contraseña</label>
+                                    <div class="password-input-group">
+                                        <input type="password" class="form-control" id="confirm-password" placeholder="Repite la nueva contraseña">
+                                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('confirm-password')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <div id="password-alert" class="alert hidden" role="alert"></div>

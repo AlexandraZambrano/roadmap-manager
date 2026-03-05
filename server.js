@@ -3,6 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { readFileSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -43,6 +44,15 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-manager';
+
+// Public key of the external auth server (https://users.coderf5.es) — used to verify RS256 tokens
+let EXTERNAL_JWT_PUBLIC_KEY = null;
+try {
+  EXTERNAL_JWT_PUBLIC_KEY = readFileSync(join(__dirname, 'backend', 'keys', 'public.pem'), 'utf8');
+  console.log('[auth] External JWT public key loaded OK');
+} catch (e) {
+  console.warn('[auth] Could not load backend/keys/public.pem — external tokens will be rejected:', e.message);
+}
 
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
@@ -174,10 +184,67 @@ initializeTestAccounts();
 
 // --- Auth Middleware ---
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
+  // 1. Try verifying with the external RS256 public key (tokens from users.coderf5.es)
+  if (EXTERNAL_JWT_PUBLIC_KEY) {
+    try {
+      const decoded = jwt.verify(token, EXTERNAL_JWT_PUBLIC_KEY, { algorithms: ['RS256'] });
+      // Map external payload to our internal user shape:
+      // External: { userId, email, roles: ['ROLE_USER'] }
+      // Internal: { id, email, role }
+      const roles = decoded.roles || [];
+      let role = 'teacher'; // default for external users
+      if (roles.includes('ROLE_SUPER_ADMIN') || roles.includes('ROLE_SUPERADMIN')) role = 'superadmin';
+      else if (roles.includes('ROLE_ADMIN') && roles.includes('ROLE_USER')) role = 'superadmin'; // ROLE_ADMIN+ROLE_USER → admin button
+      else if (roles.includes('ROLE_ADMIN')) role = 'teacher'; // ROLE_ADMIN alone → teacher only
+      else if (roles.includes('ROLE_STUDENT')) role = 'student';
+
+      // External token may store email under different field names
+      const externalEmail = decoded.email || decoded.sub || decoded.username || decoded.mail || null;
+      console.log(`[verifyToken] external token — decoded keys: ${JSON.stringify(Object.keys(decoded))}, email: ${externalEmail}, roles: ${JSON.stringify(roles)}, mapped role: ${role}`);
+
+      // Resolve local MongoDB teacher id by email so existing promotion references keep working.
+      // The external userId is different from the local UUID stored in Teacher.id / teacherId.
+      try {
+        if (!externalEmail) throw new Error(`No email field found in token. Token keys: ${JSON.stringify(Object.keys(decoded))}`);
+
+        let localTeacher = await Teacher.findOne({ email: externalEmail.toLowerCase() });
+        if (!localTeacher) {
+          // Auto-provision: create a minimal teacher record so the user can see/create promotions
+          const tempPw = await bcrypt.hash(uuidv4(), 10); // random unusable password
+          localTeacher = await Teacher.create({
+            id: uuidv4(),
+            name: decoded.name || decoded.username || externalEmail.split('@')[0],
+            email: externalEmail.toLowerCase(),
+            password: tempPw
+          });
+          console.log(`[verifyToken] Auto-provisioned teacher for ${externalEmail} with local id ${localTeacher.id}`);
+        }
+        req.user = {
+          id: localTeacher.id, // ← local UUID, matches teacherId / collaborators fields
+          email: externalEmail.toLowerCase(),
+          role,
+          _externalToken: true
+        };
+      } catch (dbErr) {
+        console.error('[verifyToken] DB lookup failed, using external id as fallback:', dbErr.message);
+        req.user = {
+          id: String(decoded.userId || decoded.sub || decoded.id),
+          email: externalEmail || '',
+          role,
+          _externalToken: true
+        };
+      }
+      return next();
+    } catch (_) {
+      // Not a valid external token — fall through to internal check
+    }
+  }
+
+  // 2. Try verifying with our internal HS256 secret (admin / student local accounts)
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
@@ -854,6 +921,64 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
 
 // ==================== AUTHENTICATION ====================
 
+// Proxy to external auth API — avoids CORS issues when called from the browser
+app.post('/api/auth/external-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+    const extRes = await fetch('https://users.coderf5.es/infouser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const extData = await extRes.json();
+    console.log('[external-login proxy] response status:', extRes.status, '| data keys:', Object.keys(extData));
+    if (extData.data?.token) {
+      // Decode without verify just to log the roles
+      const payload = JSON.parse(Buffer.from(extData.data.token.split('.')[1], 'base64').toString());
+      console.log('[external-login proxy] token roles:', payload.roles);
+    }
+
+    if (extRes.ok && extData.success && extData.data?.token) {
+      return res.json({ success: true, data: extData.data });
+    }
+
+    // External API returned a failure — pass status and message through so the client knows
+    // whether it was wrong credentials (401) or user not found (404) vs other errors
+    const statusToReturn = extRes.status === 404 ? 404 : 401;
+    const errorMsg = extData.message || extData.error || 'Credenciales incorrectas';
+    console.log(`[external-login proxy] external API rejected login — status: ${extRes.status}, message: ${errorMsg}`);
+    return res.status(statusToReturn).json({ success: false, status: extRes.status, message: errorMsg });
+  } catch (error) {
+    console.error('[external-login proxy] Error:', error.message);
+    res.status(502).json({ error: 'External auth server unreachable' });
+  }
+});
+
+// Proxy to external change-password verification
+app.post('/api/auth/external-verify', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+    const extRes = await fetch('https://users.coderf5.es/infouser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const extData = await extRes.json();
+    if (extRes.ok && extData.success) {
+      return res.json({ success: true });
+    }
+    return res.status(401).json({ success: false, message: extData.message || 'Contraseña incorrecta' });
+  } catch (error) {
+    res.status(502).json({ error: 'External auth server unreachable' });
+  }
+});
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -923,7 +1048,7 @@ app.get('/api/profile', verifyToken, async (req, res) => {
     let user = null;
     const { role } = req.user;
 
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'superadmin') {
       user = await Teacher.findOne({ id: req.user.id });
     } else if (role === 'admin') {
       user = await Admin.findOne({ id: req.user.id });
@@ -961,7 +1086,7 @@ app.put('/api/profile', verifyToken, async (req, res) => {
 
     let user = null;
 
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'superadmin') {
       user = await Teacher.findOneAndUpdate(
         { id: req.user.id },
         {
@@ -3333,7 +3458,7 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
 // ==================== ADMIN ====================
 
 const verifyAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') next();
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) next();
   else res.status(403).json({ error: 'Admin role required' });
 };
 
