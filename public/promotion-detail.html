@@ -797,17 +797,17 @@
                                             onclick="addPildoraRow()">
                                             <i class="bi bi-plus"></i> Add Píldora
                                         </button>
-                                        <input type="file" id="pildoras-csv-input" accept=".csv" class="d-none"
-                                            onchange="importPildorasFromCsv(this)">
                                         <button class="btn btn-sm btn-outline-secondary" type="button"
-                                            onclick="document.getElementById('pildoras-csv-input').click()">
-                                            <i class="bi bi-filetype-csv"></i> CSV
+                                            id="pildoras-excel-template-btn"
+                                            onclick="downloadPildorasExcelTemplate()">
+                                            <i class="bi bi-download"></i> Plantilla Excel
                                         </button>
                                         <input type="file" id="pildoras-excel-input" accept=".xlsx,.xls" class="d-none"
                                             onchange="importPildorasFromExcel(this)">
                                         <button class="btn btn-sm btn-outline-success" type="button"
+                                            id="pildoras-import-excel-btn"
                                             onclick="document.getElementById('pildoras-excel-input').click()">
-                                            <i class="bi bi-file-earmark-spreadsheet"></i> Excel
+                                            <i class="bi bi-file-earmark-spreadsheet"></i> Importar Excel
                                         </button>
                                     </div>
                                 </div>
