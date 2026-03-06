@@ -2689,6 +2689,17 @@ function updateOverviewQuickActionsFromQuickLinks(links) {
             zoomBtn.onclick = null;
         }
     }
+    //Discord from Quick Links
+    const discordBtn = document.getElementById('overview-discord-btn');
+    if (discordBtn) {
+        const discordLink = findLink('discord', /discord/i);    
+        if (discordLink) {
+            discordBtn.disabled = false;
+            discordBtn.onclick = () => window.open(discordLink.url, '_blank');
+        } else {            
+            discordBtn.disabled = true;
+            discordBtn.onclick = null;
+        }   
 
     // Calendar from Access Settings (Google Calendar ID)
     if (calendarBtn) {
@@ -2706,6 +2717,7 @@ function updateOverviewQuickActionsFromQuickLinks(links) {
         }
     }
 
+
     // Asana from Quick Links
     if (asanaBtn) {
         const asanaLink = findLink('asana', /asana/i);
@@ -2717,6 +2729,7 @@ function updateOverviewQuickActionsFromQuickLinks(links) {
             asanaBtn.onclick = null;
         }
     }
+}
 }
 
 async function loadSections() {
@@ -4625,6 +4638,136 @@ async function removeTeachingContent() {
         alert('Connection error. Please try again.');
     }
 }
+
+
+// ==================== ASANA CONTENT FUNCTIONS ====================
+async function loadAsanaContent() {
+    if (userRole !== 'teacher') return; 
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-content`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('asana-content-url');
+            const previewBtn = document.getElementById('asana-content-preview-btn');
+            const noContentMsg = document.getElementById('no-asana-content-message');
+
+            if (data.asanaContentUrl) {
+                if (urlInput) {
+                    urlInput.value = data.asanaContentUrl;
+                }   
+                if (previewBtn) {
+                    previewBtn.href = data.asanaContentUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'none';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'block';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading Asana content:', error);
+    }
+}
+
+async function updateAsanaContent() {   
+    if (userRole !== 'teacher') return;
+    const token = localStorage.getItem('token');
+    const urlInput = document.getElementById('asana-content-url');
+    const alertEl = document.getElementById('asana-content-alert');
+    const url = urlInput ? urlInput.value.trim() : '';
+    if (!url) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-warning';
+            alertEl.textContent = 'Please enter a URL for the Asana content';
+            alertEl.classList.remove('hidden');
+        }
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-content`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+
+
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ asanaContentUrl: url })
+        });
+        if (response.ok) {
+            if (alertEl) {
+                alertEl.className = 'alert alert-success';
+                alertEl.textContent = 'Asana content link saved successfully! The button will now appear in the Overview section.';
+                alertEl.classList.remove('hidden');
+                setTimeout(() => {
+                    alertEl.classList.add('hidden');
+                }, 5000);
+            }
+            loadAsanaContent();
+        } else {
+            const data = await response.json();
+            if (alertEl) {
+                alertEl.className = 'alert alert-danger';
+                alertEl.textContent = data.error || 'Error saving Asana content';
+                alertEl.classList.remove('hidden');
+            }
+        }
+    } catch (error) {
+        console.error('Error updating Asana content:', error);
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = 'Connection error. Please try again.';
+            alertEl.classList.remove('hidden');
+        }
+    }
+}
+
+async function removeAsanaContent() {   
+    if (userRole !== 'teacher') return;
+    if (!confirm('Are you sure you want to remove the Asana content link?')) {
+        return;
+    }
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-content`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const alertEl = document.getElementById('asana-content-alert');
+            if (alertEl) {
+                alertEl.className = 'alert alert-success';
+                alertEl.textContent = 'Asana content link removed successfully!';
+                alertEl.classList.remove('hidden');
+                setTimeout(() => {
+                    alertEl.classList.add('hidden');
+                }, 5000);
+            }
+            loadAsanaContent();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Error removing Asana content');
+        }
+    } catch (error) {
+        console.error('Error removing Asana content:', error);
+        alert('Connection error. Please try again.');
+
+    }
+}
+
 
 // ==================== STUDENT SELECTION FUNCTIONS ====================
 
