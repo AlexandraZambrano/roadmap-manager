@@ -1,5 +1,4 @@
-const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
-// External auth calls go via our own server proxy to avoid CORS issues
+const API_URL = "https://users.coderf5.es/v1/infouser" || window.location.origin;
 
 function showAlert(message, type = 'danger') {
     const alert = document.getElementById(`${type}-alert`);
@@ -35,66 +34,56 @@ function setLoading(isLoading) {
     }
 }
 
-// Map external roles array → internal role string
-// ROLE_SUPER_ADMIN              → superadmin (teacher view + admin button)
-// ROLE_ADMIN + ROLE_USER        → superadmin (teacher view + admin button)
-// ROLE_ADMIN (alone, no ROLE_USER) → teacher (teacher view only, no admin button)
-// ROLE_STUDENT                  → student
-// ROLE_USER (alone)             → teacher
-function mapExternalRole(roles = []) {
-    if (roles.includes('ROLE_SUPER_ADMIN') || roles.includes('ROLE_SUPERADMIN')) return 'superadmin';
-    if (roles.includes('ROLE_ADMIN') && roles.includes('ROLE_USER')) return 'superadmin';
-    if (roles.includes('ROLE_ADMIN')) return 'teacher'; // ROLE_ADMIN alone → teacher view only
-    if (roles.includes('ROLE_STUDENT')) return 'student';
-    return 'teacher'; // ROLE_USER alone → teacher by default
-}
-
 // Expose to window for direct onclick access
 window.handleLogin = async function () {
     console.log('handleLogin called');
 
-    const email = document.getElementById('email').value.trim();
+    const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
 
     if (!email || !password) {
-        showAlert('Por favor, introduce email y contraseña', 'danger');
+        showAlert('Please enter both email and password', 'danger');
         return;
     }
 
     hideAlerts();
     setLoading(true);
 
+    console.log(`Attempting login for: ${email}`);
+
     try {
-        const extRes = await fetch(`${API_URL}/api/auth/external-login`, {
+        const response = await fetch(`${API_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
         });
 
-        const extData = await extRes.json();
+        const data = await response.json();
+        console.log('Login response:', data);
 
-        if (extRes.ok && extData.success && extData.data?.token) {
-            const { token, userId, email: userEmail, name, roles } = extData.data;
-            const role = mapExternalRole(roles);
+        if (response.ok) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            localStorage.setItem('role', data.user.role);
+            showAlert('Login successful! Redirecting...', 'success');
 
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify({ id: String(userId), name: name || userEmail, email: userEmail, role }));
-            localStorage.setItem('role', role);
-
-            showAlert('¡Acceso correcto! Redirigiendo...', 'success');
+            // Redirect based on role returned from server
             setTimeout(() => {
-                if (role === 'student') window.location.href = 'student-dashboard.html';
-                else window.location.href = 'dashboard.html';
-            }, 800);
-            return;
+                const role = data.user.role;
+                if (role === 'admin') {
+                    window.location.href = 'admin.html';
+                } else if (role === 'teacher') {
+                    window.location.href = 'dashboard.html';
+                } else {
+                    window.location.href = 'student-dashboard.html';
+                }
+            }, 1000);
+        } else {
+            showAlert(data.error || 'Login failed', 'danger');
         }
-
-        // External API returned a failure — show the message
-        const errorMsg = extData.message || extData.error || 'Email o contraseña incorrectos';
-        showAlert(errorMsg, 'danger');
-    } catch (networkErr) {
-        console.error('Login error:', networkErr.message);
-        showAlert('Error de conexión. Inténtalo de nuevo.', 'danger');
+    } catch (error) {
+        console.error('Login error:', error);
+        showAlert('Connection error. Please try again.', 'danger');
     } finally {
         setLoading(false);
     }
