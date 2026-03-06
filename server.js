@@ -458,174 +458,75 @@ function normaliseEvalCompetence(comp) {
   };
 }
 
-// GET /api/areas — tries external evaluation API first, falls back to local DB
+// GET /api/areas — evaluation.coderf5.es ONLY
 app.get('/api/areas', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    try {
-      const rows = await evalApiGet('/areas/', token);
-      console.log(`[GET /api/areas] Eval API returned ${rows.length} areas`);
-      return res.json(rows);
-    } catch (evalErr) {
-      console.warn('[GET /api/areas] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-    const areas = await Area.find({}).sort({ id: 1 }).lean();
-    console.log(`[GET /api/areas] Local DB: ${areas.length} areas`);
-    res.json(areas);
+    const rows = await evalApiGet('/areas/', token);
+    res.json(rows);
   } catch (error) {
-    console.error('[GET /api/areas] Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/areas] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
-// GET /api/tools — tries external evaluation API first, falls back to local DB
+// GET /api/tools — evaluation.coderf5.es ONLY
 app.get('/api/tools', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    try {
-      const rows = await evalApiGet('/tools/', token);
-      console.log(`[GET /api/tools] Eval API returned ${rows.length} tools`);
-      return res.json(rows);
-    } catch (evalErr) {
-      console.warn('[GET /api/tools] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-    const tools = await Tool.find({}).sort({ id: 1 }).lean();
-    res.json(tools);
+    const rows = await evalApiGet('/tools/', token);
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/tools] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
-// GET /api/indicators — tries external evaluation API first, falls back to local DB
+// GET /api/indicators — evaluation.coderf5.es ONLY
 app.get('/api/indicators', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    try {
-      const rows = await evalApiGet('/indicators/', token);
-      console.log(`[GET /api/indicators] Eval API returned ${rows.length} indicators`);
-      return res.json(rows);
-    } catch (evalErr) {
-      console.warn('[GET /api/indicators] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-    const indicators = await Indicator.find({}).lean();
-    res.json(indicators);
+    const rows = await evalApiGet('/indicators/', token);
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/indicators] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
-// GET /api/levels — tries external evaluation API first, falls back to local DB
+// GET /api/levels — evaluation.coderf5.es ONLY
 app.get('/api/levels', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    try {
-      const rows = await evalApiGet('/levels/', token);
-      console.log(`[GET /api/levels] Eval API returned ${rows.length} levels`);
-      return res.json(rows);
-    } catch (evalErr) {
-      console.warn('[GET /api/levels] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-    const levels = await Level.find({}).lean();
-    res.json(levels);
+    const rows = await evalApiGet('/levels/', token);
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/levels] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
-// GET /api/resources — tries external evaluation API first, falls back to local DB
+// GET /api/resources — evaluation.coderf5.es ONLY
 app.get('/api/resources', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    try {
-      const rows = await evalApiGet('/resources/', token);
-      console.log(`[GET /api/resources] Eval API returned ${rows.length} resources`);
-      return res.json(rows);
-    } catch (evalErr) {
-      console.warn('[GET /api/resources] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-    const resources = await Resource.find({}).lean();
-    res.json(resources);
+    const rows = await evalApiGet('/resources/', token);
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/resources] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
-// GET /api/competences — tries external evaluation API first (normalised), falls back to local DB
+// GET /api/competences — evaluation.coderf5.es ONLY (normalised)
 app.get('/api/competences', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    console.log(`[GET /api/competences] token present: ${!!token}`);
-    try {
-      const rows = await evalApiGet('/competences/', token);
-      console.log(`\n====== EVAL API /competences/ RESPONSE ======`);
-      console.log(`Total competences received: ${rows.length}`);
-      console.log(`Full response:\n`, JSON.stringify(rows, null, 2));
-      console.log(`============================================\n`);
-      const normalised = rows.map(normaliseEvalCompetence);
-      return res.json(normalised);
-    } catch (evalErr) {
-      console.warn('[GET /api/competences] Eval API unavailable, falling back to local DB:', evalErr.message);
-    }
-
-    // ── Local DB fallback (full enrichment) ──────────────────────────────────
-    const [
-      competences, indicators, tools, areas, levels,
-      compIndicators, compTools, compAreas
-    ] = await Promise.all([
-      Competence.find({}).sort({ id: 1 }).lean(),
-      Indicator.find({}).lean(),
-      Tool.find({}).lean(),
-      Area.find({}).lean(),
-      Level.find({}).lean(),
-      CompetenceIndicator.find({}).lean(),
-      CompetenceTool.find({}).lean(),
-      CompetenceArea.find({}).lean()
-    ]);
-
-    console.log(`[GET /api/competences] Local DB — competences:${competences.length} indicators:${indicators.length} tools:${tools.length} areas:${areas.length}`);
-
-    const indicatorMap = Object.fromEntries(indicators.map(i => [i.id, i]));
-    const toolMap      = Object.fromEntries(tools.map(t => [t.id, t]));
-    const areaMap      = Object.fromEntries(areas.map(a => [a.id, a]));
-    const levelMap     = Object.fromEntries(levels.map(l => [l.id, l]));
-
-    const indsByComp  = {};
-    compIndicators.forEach(ci => { (indsByComp[ci.id_competence] ??= []).push(ci.id_indicator); });
-    const toolsByComp = {};
-    compTools.forEach(ct => { (toolsByComp[ct.id_competence] ??= []).push(ct.id_tool); });
-    const areasByComp = {};
-    compAreas.forEach(ca => { (areasByComp[ca.id_competence] ??= []).push(ca.id_area); });
-
-    const enriched = competences.map(comp => {
-      const compAreasList = (areasByComp[comp.id] || [])
-        .map(aId => areaMap[aId]).filter(Boolean)
-        .map(a => ({ id: a.id, name: a.name, icon: a.icon }));
-
-      const rawIndicators = (indsByComp[comp.id] || []).map(iId => indicatorMap[iId]).filter(Boolean);
-      const indicatorsByLevel = {};
-      rawIndicators.forEach(ind => {
-        const lvl = ind.levelId || 0;
-        if (!indicatorsByLevel[lvl]) {
-          indicatorsByLevel[lvl] = { levelId: lvl, levelName: levelMap[lvl]?.name || `Nivel ${lvl}`, levelDescription: levelMap[lvl]?.description || '', indicators: [] };
-        }
-        indicatorsByLevel[lvl].indicators.push({ id: ind.id, name: ind.name, description: ind.description });
-      });
-      const levels_grouped = Object.values(indicatorsByLevel).sort((a, b) => a.levelId - b.levelId);
-
-      const compToolsList = (toolsByComp[comp.id] || [])
-        .map(tId => toolMap[tId]).filter(Boolean)
-        .map(t => ({ id: t.id, name: t.name, description: t.description }));
-
-      return { id: comp.id, name: comp.name, description: comp.description, areas: compAreasList, levels: levels_grouped, tools: compToolsList };
-    });
-
-    res.json(enriched);
+    const rows = await evalApiGet('/competences/', token);
+    const normalised = rows.map(normaliseEvalCompetence);
+    console.log(`[GET /api/competences] OK: ${normalised.length} competencias. Tools por competencia:\n` +
+      normalised.map(c => `  - "${c.name}": ${(c.tools||[]).length} tools`).join('\n'));
+    res.json(normalised);
   } catch (error) {
-    console.error('[GET /api/competences] Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[GET /api/competences] Error:', error.message);
+    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
   }
 });
-
 // ==================== PROMOTION PASSWORD ACCESS ====================
 
 // Get promotion access password (teacher only)

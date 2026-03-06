@@ -73,7 +73,7 @@
                 }));
                 // tools linked to this competence + fill with any extra from global catalog
                 const linkedTools = (comp.tools || []).map(t => t.name || t);
-                const allTools = [...new Set([...linkedTools, ...ALL_TOOLS_CATALOG])];
+                const allTools = [...new Set(linkedTools)]; // ONLY this competence tools
                 return {
                     id: comp.id,
                     area: areaName,         // primary area (first) — used for filter tabs
@@ -85,6 +85,7 @@
                 };
             });
 
+            COMPETENCES_CATALOG.forEach(cc => console.log('[loadCatalog] "' + cc.name + '" -> ' + (cc.allTools||[]).length + ' tools:', cc.allTools));
             console.log('[ProgramCompetences] Catálogo normalizado:', COMPETENCES_CATALOG.length, 'competencias');
             console.log('[ProgramCompetences] Áreas únicas en competencias:', [...new Set(COMPETENCES_CATALOG.flatMap(c => c.areas))]);
 
@@ -109,7 +110,19 @@
     // ─── Inicialización ────────────────────────────────────────────────────────
     async function init(savedCompetences) {
         _programCompetences = Array.isArray(savedCompetences) ? savedCompetences : [];
+        _catalogLoaded = false;
         await _loadCatalog();
+        _programCompetences = _programCompetences.map(saved => {
+            const cat = COMPETENCES_CATALOG.find(
+                c => String(c.id) === String(saved.id) || c.name === saved.name
+            );
+            if (!cat) return { ...saved, allTools: [], selectedTools: [] };
+            const catalogTools = cat.allTools || [];
+            const customTools = (saved.allTools || []).filter(t => !catalogTools.includes(t));
+            const newAllTools = [...catalogTools, ...customTools];
+            const newSelectedTools = (saved.selectedTools || []).filter(t => newAllTools.includes(t));
+            return { ...saved, allTools: newAllTools, selectedTools: newSelectedTools, levels: cat.levels || saved.levels || [] };
+        });
         _populateAreaFilter();
         _render();
     }
@@ -435,6 +448,12 @@
     function _openToolsEditor(idx) {
         const comp = _programCompetences[idx];
         if (!comp) return;
+        const catalogEntry = COMPETENCES_CATALOG.find(c => String(c.id) === String(comp.id) || c.name === comp.name);
+        const catalogTools = catalogEntry ? (catalogEntry.allTools || []) : [];
+        const customTools = (comp.allTools || []).filter(t => !catalogTools.includes(t));
+        const displayTools = [...catalogTools, ...customTools];
+        comp.allTools = displayTools;
+        console.log('[ToolsEditor] ' + comp.name + ' -> catalogTools:', catalogTools.length, 'displayTools:', displayTools.length);
 
         let modal = document.getElementById('toolsEditorModal');
         if (!modal) {
@@ -448,12 +467,9 @@
         // Store current editing index on the modal element for use by _addCustomToolToEditor
         modal._editingIdx = idx;
 
-        const checkboxes = (comp.allTools || []).map(tool => {
+        const checkboxes = displayTools.map(tool => {
             const checked = (comp.selectedTools || []).includes(tool) ? 'checked' : '';
-            // A tool is "custom" if it's not in the original catalog linked tools AND not in the global catalog
-            const catalogComp = COMPETENCES_CATALOG.find(c => c.id === comp.id);
-            const catalogTools = catalogComp?.allTools || [];
-            const isCustom = !catalogTools.includes(tool) && !ALL_TOOLS_CATALOG.includes(tool);
+            const isCustom = !catalogTools.includes(tool);
             return `
             <div class="form-check d-flex align-items-center gap-2" id="tool-row-${_esc(tool.replace(/[\s/]/g, '-'))}">
                 <input class="form-check-input tools-checkbox" type="checkbox"
