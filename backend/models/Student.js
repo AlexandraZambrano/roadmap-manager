@@ -3,19 +3,12 @@ import mongoose from 'mongoose';
 const StudentSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    lastname: { type: String, required: false, default: '' },
+    lastname: { type: String, required: false, default: '' }, // Changed to not required for existing students
     email: { type: String, required: true },
-    phone: { type: String, default: '' },
     age: { type: Number, default: null },
-    administrativeSituation: { type: String, default: '' },
     nationality: { type: String, default: '' },
-    identificationDocument: { type: String, default: '' },
-    gender: { type: String, default: '' },
-    englishLevel: { type: String, default: '' },
-    educationLevel: { type: String, default: '' },
-    profession: { type: String, default: '' },
-    community: { type: String, default: '' },
-    address: { type: String, default: '' },
+    profession: { type: String, default: '' }, // Current profession/background
+    address: { type: String, default: '' }, // Full address
     promotionId: { type: String },
     notes: { type: String, default: '' }, // Teacher notes about the student
     progress: {
@@ -56,7 +49,6 @@ const StudentSchema = new mongoose.Schema({
             moduleId: String,
             assignedDate: String,
             teacherNote: String,
-            studentComment: { type: String, default: '' },
             members: [{ id: String, name: String }],
             competences: [{
                 competenceId: mongoose.Schema.Types.Mixed,
@@ -107,16 +99,7 @@ const StudentSchema = new mongoose.Schema({
             resolved: { type: Boolean, default: false }
         }]
     },
-    extendedInfo: { type: mongoose.Schema.Types.Mixed, default: {} },
-
-    // ── Baja / Withdrawal ─────────────────────────────────────────────────────
-    isWithdrawn: { type: Boolean, default: false },
-    withdrawal: {
-        date: { type: String, default: null },
-        reason: { type: String, default: '' },
-        representative: { type: String, default: '' },
-        processedAt: { type: String, default: null }
-    }
+    extendedInfo: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 
 export default mongoose.model('Student', StudentSchema);

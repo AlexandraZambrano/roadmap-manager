@@ -385,104 +385,13 @@
     // ════════════════════════════════════════════════════════════════════════
     // 1. FICHA SEGUIMIENTO TÉCNICO
     // ════════════════════════════════════════════════════════════════════════
-
-    /**
-     * Shows a modal dialog asking for the "Razón del informe" before generating the PDF.
-     * Returns a Promise that resolves with the entered text, or null if cancelled.
-     */
-    function _promptRazonInforme() {
-        return new Promise(resolve => {
-            document.getElementById('_razon-modal-overlay')?.remove();
-
-            // ── Bootstrap's modal has a focus-trap (enforceFocus) that steals focus
-            //    back to the modal on every focusin event on document.
-            //    The only reliable fix: hide the modal, show our prompt, then re-show.
-            const fichaModal = document.getElementById('fichaModal');
-            const bsModal = (fichaModal && window.bootstrap)
-                ? bootstrap.Modal.getInstance(fichaModal)
-                : null;
-
-            // Build and inject the overlay before hiding the modal,
-            // so we can re-show it in the 'hidden.bs.modal' callback.
-            const overlay = document.createElement('div');
-            overlay.id = '_razon-modal-overlay';
-            overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(26,26,46,.65);display:flex;align-items:center;justify-content:center;';
-            overlay.innerHTML = `
-                <div id="_razon-card" style="
-                    background:#fff; border-radius:12px; padding:28px 32px;
-                    width:480px; max-width:95vw; box-shadow:0 8px 40px rgba(0,0,0,.25);
-                    font-family:'Inter',Arial,sans-serif; position:relative;
-                ">
-                    <div style="font-size:13pt;font-weight:700;color:#1A1A2E;margin-bottom:6px;">
-                        <span style="color:#FF6B35;margin-right:6px;">✦</span>Razón del informe
-                    </div>
-                    <div style="font-size:9.5pt;color:#888;margin-bottom:16px;">
-                        Opcional — aparecerá en la cabecera del PDF, debajo de las fechas del bootcamp.
-                    </div>
-                    <textarea id="_razon-ta" rows="4"
-                        placeholder="Ej: Seguimiento trimestral, solicitud de empresa, revisión de competencias…"
-                        style="width:100%;border:1px solid #dee2e6;border-radius:6px;padding:10px 12px;
-                               font-family:inherit;font-size:10pt;resize:vertical;color:#222;
-                               line-height:1.5;display:block;box-sizing:border-box;"></textarea>
-                    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
-                        <button id="_razon-skip" type="button" style="
-                            background:transparent;border:1px solid #dee2e6;border-radius:6px;
-                            padding:8px 18px;font-size:10pt;cursor:pointer;color:#555;">Omitir</button>
-                        <button id="_razon-ok" type="button" style="
-                            background:#FF6B35;border:none;border-radius:6px;
-                            padding:8px 22px;font-size:10pt;font-weight:600;color:#fff;cursor:pointer;">Generar PDF</button>
-                    </div>
-                </div>`;
-
-            const ta   = overlay.querySelector('#_razon-ta');
-            const ok   = overlay.querySelector('#_razon-ok');
-            const skip = overlay.querySelector('#_razon-skip');
-            const card = overlay.querySelector('#_razon-card');
-
-            const done = (val) => {
-                overlay.remove();
-                if (bsModal) {
-                    // Re-show the ficha modal after the prompt closes
-                    bsModal.show();
-                }
-                resolve(val);
-            };
-
-            ok.addEventListener('click',   () => done(ta.value.trim()));
-            skip.addEventListener('click', () => done(''));
-            card.addEventListener('click',      e => e.stopPropagation());
-            card.addEventListener('mousedown',  e => e.stopPropagation());
-            overlay.addEventListener('click',   () => done(''));
-            ta.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) done(ta.value.trim()); });
-
-            if (bsModal) {
-                // Hide the Bootstrap modal first; append overlay + focus once it's fully hidden
-                fichaModal.addEventListener('hidden.bs.modal', function onHidden() {
-                    fichaModal.removeEventListener('hidden.bs.modal', onHidden);
-                    document.body.appendChild(overlay);
-                    setTimeout(() => ta.focus(), 50);
-                }, { once: true });
-                bsModal.hide();
-            } else {
-                // No Bootstrap modal open — just show immediately
-                document.body.appendChild(overlay);
-                setTimeout(() => ta.focus(), 50);
-            }
-        });
-    }
-
     async function printTechnical(studentId, promotionId) {
-        // Ask for the reason BEFORE showing the saving spinner
-        const razonInforme = await _promptRazonInforme();
-        // null means the user closed the dialog — we still generate (razonInforme will be '')
-
         const token = localStorage.getItem('token');
         try {
-            const [stuRes, promoRes, pildarasRes, extRes] = await Promise.all([
+            const [stuRes, promoRes, pildarasRes] = await Promise.all([
                 fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
                 fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/modules-pildoras`,      { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`)
+                fetch(`${API_URL}/api/promotions/${promotionId}/modules-pildoras`,      { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
             if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
             const s   = await stuRes.json();
@@ -490,65 +399,7 @@
             const pildarasData = pildarasRes.ok ? await pildarasRes.json() : {};
             const modulesPildarasExtended = pildarasData.modulesPildoras || [];
             const tt  = s.technicalTracking || {};
-
-            // ── Overlay evaluations from ExtendedInfo into teams (same logic as openFicha) ──
-            if (extRes.ok) {
-                const ext = await extRes.json();
-                const projectEvaluations = ext.projectEvaluations || [];
-                const teamsFromDb = tt.teams || [];
-                for (const projEval of projectEvaluations) {
-                    let evalEntry = null;
-                    if (projEval.type === 'grupal') {
-                        const group = (projEval.groups || []).find(g => (g.studentIds || []).includes(String(studentId)));
-                        if (group) {
-                            evalEntry = (projEval.evaluations || []).find(e => e.targetId === group.groupName);
-                        }
-                    } else {
-                        evalEntry = (projEval.evaluations || []).find(e => String(e.targetId) === String(studentId));
-                    }
-                    if (!evalEntry) continue;
-                    if (!(evalEntry.competences || []).length && !evalEntry.feedback) continue;
-                    const alreadyIn = teamsFromDb.some(
-                        t => t.teamName === projEval.projectName && t.moduleId === projEval.moduleId
-                    );
-                    if (alreadyIn) continue;
-                    teamsFromDb.push({
-                        teamName:     projEval.projectName || '',
-                        projectType:  projEval.type || 'individual',
-                        moduleName:   projEval.moduleName || '',
-                        moduleId:     projEval.moduleId || '',
-                        assignedDate: evalEntry.evaluatedAt ? evalEntry.evaluatedAt.split('T')[0] : '',
-                        teacherNote:  evalEntry.feedback || '',
-                        members:      [],
-                        competences:  (evalEntry.competences || []).map(ce => ({
-                            competenceId:   ce.competenceId,
-                            competenceName: ce.competenceName,
-                            level:          ce.level,
-                            toolsUsed:      ce.toolsUsed || []
-                        }))
-                    });
-                }
-                tt.teams = teamsFromDb;
-            }
             const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-
-            // ── Format bootcamp date range ──
-            const fmtLong = (d) => {
-                if (!d) return '—';
-                try {
-                    const parts = String(d).split('T')[0].split('-');
-                    if (parts.length === 3) {
-                        const dt = new Date(+parts[0], +parts[1]-1, +parts[2]);
-                        return dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-                    }
-                    return String(d);
-                } catch { return String(d); }
-            };
-            const startStr = fmtLong(promo.startDate);
-            const endStr   = fmtLong(promo.endDate);
-            const dateRange = (promo.startDate || promo.endDate)
-                ? `${startStr} a ${endStr}`
-                : null;
 
             let html = _header(
                 'Ficha de Seguimiento Técnico',
@@ -556,32 +407,6 @@
                 promo.name,
                 _today()
             );
-
-            // ── Dates + reason block (injected right after the header) ──
-            if (dateRange || razonInforme) {
-                html += `<div style="
-                    margin-bottom: 14pt;
-                    padding: 8pt 12pt;
-                    background: #f8f9fa;
-                    border-left: 4px solid ${PRIMARY};
-                    border-radius: 0 6pt 6pt 0;
-                    font-size: 9.5pt;
-                    line-height: 1.6;
-                ">`;
-                if (dateRange) {
-                    html += `<div style="margin-bottom:${razonInforme ? '5pt' : '0'};">
-                        <span style="color:${SECONDARY}; font-weight:600;">Período del bootcamp:&nbsp;</span>
-                        <span style="color:#222;">${_esc(dateRange)}</span>
-                    </div>`;
-                }
-                if (razonInforme) {
-                    html += `<div>
-                        <span style="color:${SECONDARY}; font-weight:600;">Motivo del informe:&nbsp;</span>
-                        <span style="color:#222;">${_esc(razonInforme)}</span>
-                    </div>`;
-                }
-                html += `</div>`;
-            }
 
             // ── Notas del profesor ──
             html += `<h3><span style="color:${PRIMARY}">✦</span> Notas del Profesor</h3>`;
@@ -732,6 +557,22 @@
                 promo.name,
                 _today()
             );
+
+            // ── Datos personales resumidos ──
+            html += `<div class="section-box accent row2">
+                <div>
+                    <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                    <div class="kv"><strong>Edad:</strong> ${_esc(s.age || '—')}</div>
+                    <div class="kv"><strong>Género:</strong> ${_esc(s.gender || '—')}</div>
+                    <div class="kv"><strong>Sit. Administrativa:</strong> ${_esc(s.administrativeSituation || '—')}</div>
+                </div>
+                <div>
+                    <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+                    <div class="kv"><strong>Nivel Educativo:</strong> ${_esc(s.educationLevel || '—')}</div>
+                    <div class="kv"><strong>Comunidad:</strong> ${_esc(s.community || '—')}</div>
+                    <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+                </div>
+            </div>`;
 
             // ── Sesiones empleabilidad ──
             html += `<h3><span style="color:${PRIMARY}">✦</span> Sesiones de Empleabilidad</h3>`;
@@ -1197,250 +1038,6 @@ async function printActaInicio(promotionId) {
 }
 
     // ════════════════════════════════════════════════════════════════════════
-    // 3b. ACTA DE BAJA
-    // ════════════════════════════════════════════════════════════════════════
-    async function printActaBaja(studentId, promotionId) {
-        const token = localStorage.getItem('token');
-        try {
-            const [promoRes, extRes, studentRes] = await Promise.all([
-                fetch(`${API_URL}/api/promotions/${promotionId}`,                              { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`,                { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`,        { headers: { 'Authorization': `Bearer ${token}` } })
-            ]);
-            if (!promoRes.ok) throw new Error('No se pudo cargar la promoción');
-            if (!studentRes.ok) throw new Error('No se pudo cargar el estudiante');
-
-            const promo   = await promoRes.json();
-            const ext     = extRes.ok ? await extRes.json() : {};
-            const student = await studentRes.json();
-            const w = student.withdrawal || {};
-
-            const studentName = `${student.name || ''} ${student.lastname || ''}`.trim() || '—';
-            const docId       = student.identificationDocument || '—';
-
-            // Extract city from ext.presentialDays (last comma-segment) or fallback to promo location
-            const DAYS_ES = /^(lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)$/i;
-            let city = '';
-            if (ext.presentialDays) {
-                const parts = ext.presentialDays.split(',').map(p => p.trim()).filter(Boolean);
-                // Walk from the end and pick the first segment that doesn't look like a weekday
-                for (let i = parts.length - 1; i >= 0; i--) {
-                    if (!DAYS_ES.test(parts[i])) { city = parts[i]; break; }
-                }
-            }
-            // Last resort: try to pull city from the seat address stored in presentialDays free text
-            if (!city) city = ext.city || promo.city || '';
-
-            const withdrawalDate = w.date ? new Date(w.date) : new Date();
-            const withdrawalDateStr = withdrawalDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-            const withdrawalDateShort = withdrawalDate.toLocaleDateString('es-ES');
-
-            const representative = w.representative || '—';
-            const reason         = w.reason || '—';
-
-            const ORANGE = '#E85D26';
-            const BLUE   = '#4472C4';
-
-            const style = `
-                <style>
-                    * { box-sizing: border-box; margin: 0; padding: 0; }
-                    body {
-                        font-family: 'Poppins', Arial, sans-serif;
-                        font-size: 10pt;
-                        color: #1a1a1a;
-                        padding: 40pt 50pt 80pt 50pt;
-                        line-height: 1.6;
-                    }
-                    .doc-title {
-                        font-size: 20pt;
-                        font-weight: bold;
-                        color: ${ORANGE};
-                        text-align: center;
-                        margin-bottom: 6pt;
-                        margin-top: 10pt;
-                        text-transform: uppercase;
-                        letter-spacing: 1pt;
-                    }
-                    .doc-subtitle {
-                        text-align: center;
-                        font-size: 12pt;
-                        font-weight: bold;
-                        color: ${BLUE};
-                        margin-bottom: 24pt;
-                    }
-                    .doc-location {
-                        text-align: right;
-                        font-size: 10pt;
-                        color: #555;
-                        margin-bottom: 20pt;
-                        font-style: italic;
-                    }
-                    .body-text {
-                        font-size: 10pt;
-                        margin-bottom: 14pt;
-                        text-align: justify;
-                        line-height: 1.7;
-                    }
-                    .body-text .highlight {
-                        font-weight: bold;
-                        color: ${BLUE};
-                    }
-                    .reason-box {
-                        background: #fff8f5;
-                        border-left: 3pt solid ${ORANGE};
-                        padding: 10pt 14pt;
-                        margin: 16pt 0;
-                        font-size: 10pt;
-                        line-height: 1.6;
-                    }
-                    .reason-box .label {
-                        font-weight: bold;
-                        color: ${ORANGE};
-                        display: block;
-                        margin-bottom: 4pt;
-                    }
-                    .signatures {
-                        margin-top: 40pt;
-                        display: flex;
-                        justify-content: space-between;
-                        gap: 40pt;
-                    }
-                    .sign-block {
-                        flex: 1;
-                        text-align: center;
-                    }
-                    .sign-block .sign-line {
-                        border-bottom: 1px solid #999;
-                        height: 50pt;
-                        margin-bottom: 8pt;
-                    }
-                    .sign-block .sign-label {
-                        font-size: 9pt;
-                        color: #555;
-                        font-weight: bold;
-                    }
-                    .sign-block .sign-name {
-                        font-size: 9pt;
-                        color: #1a1a1a;
-                        margin-top: 2pt;
-                    }
-                    .divider {
-                        border: none;
-                        border-top: 1px solid #ddd;
-                        margin: 20pt 0;
-                    }
-                    .footer {
-                        position: fixed;
-                        bottom: 16pt;
-                        right: 40pt;
-                        display: flex;
-                        align-items: center;
-                        gap: 6pt;
-                    }
-                    .footer-badge {
-                        background: ${ORANGE};
-                        color: white;
-                        font-size: 9pt;
-                        font-weight: bold;
-                        padding: 2pt 4pt;
-                        border-radius: 2pt;
-                    }
-                    .footer-text {
-                        font-size: 14pt;
-                        font-weight: bold;
-                        color: ${ORANGE};
-                    }
-                    .footer-sub {
-                        font-size: 6.5pt;
-                        color: #999;
-                        letter-spacing: 1.2pt;
-                        text-transform: uppercase;
-                        display: block;
-                        margin-top: -2pt;
-                    }
-                    @media print {
-                        body { padding: 20pt 30pt 60pt 30pt; }
-                    }
-                </style>`;
-
-            const esc = (v) => _esc(v);
-
-            let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-                ${style}</head><body>`;
-
-            // Título
-            html += `<div class="doc-title">Acta de Baja Oficial</div>`;
-            html += `<div class="doc-subtitle">${esc(promo.name || '—')}</div>`;
-            html += `<div class="doc-location">${city ? `En ${esc(city)}, a` : 'A'} ${esc(withdrawalDateStr)}</div>`;
-            html += `<hr class="divider">`;
-
-            // Cuerpo
-            html += `<p class="body-text">
-                Mediante el presente documento se hace constar que
-                <span class="highlight">${esc(studentName)}</span>,
-                con documento de identidad <span class="highlight">${esc(docId)}</span>,
-                participante en el programa formativo
-                <span class="highlight">${esc(promo.name || '—')}</span>
-                impartido por Factoría F5, ha causado <strong>baja oficial</strong>
-                del citado programa con efectos a partir del día
-                <span class="highlight">${esc(withdrawalDateShort)}</span>.
-            </p>`;
-
-            html += `<div class="reason-box">
-                <span class="label">Motivo de la baja:</span>
-                ${esc(reason)}
-            </div>`;
-
-            html += `<p class="body-text">
-                Dicha baja ha sido tramitada y registrada en los sistemas de gestión de Factoría F5,
-                dejando constancia de la misma a todos los efectos legales y administrativos pertinentes.
-            </p>`;
-
-            html += `<p class="body-text">
-                La persona interesada ha sido informada de esta decisión y ha tenido la oportunidad de
-                conocer los motivos que la fundamentan.
-            </p>`;
-
-            // Firmas
-            html += `<div class="signatures">
-                <div class="sign-block">
-                    <div class="sign-line"></div>
-                    <div class="sign-label">La persona participante</div>
-                    <div class="sign-name">${esc(studentName)}</div>
-                    <div class="sign-name">${esc(docId)}</div>
-                </div>
-                <div class="sign-block">
-                    <div class="sign-line"></div>
-                    <div class="sign-label">Por Factoría F5</div>
-                    <div class="sign-name">${esc(representative)}</div>
-                </div>
-            </div>`;
-
-            // Footer
-            html += `<div class="footer">
-                <div>
-                    <span class="footer-badge">F5</span>
-                    <span class="footer-text">factoría</span>
-                    <span class="footer-sub">powered by simplon</span>
-                </div>
-            </div>`;
-
-            html += `</body></html>`;
-
-            const safeName = studentName.replace(/\s+/g, '-');
-            const filename = `acta-baja_${safeName}_${(promo.name||'promo').replace(/\s+/g,'-')}.pdf`;
-            _showSaving('Generando Acta de Baja…');
-            await _savePdf(html, filename);
-            _hideSaving();
-        } catch (e) {
-            _hideSaving();
-            console.error('[Reports] printActaBaja:', e);
-            alert('Error generando el Acta de Baja: ' + e.message);
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
     // 4. DESCRIPCIÓN TÉCNICA DE FORMACIÓN
     // ════════════════════════════════════════════════════════════════════════
     async function printDescripcionTecnica(promotionId) {
@@ -1790,6 +1387,17 @@ async function printActaInicio(promotionId) {
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
         let html = _header('Ficha de Seguimiento Técnico', fullName, promo.name, _today());
 
+        html += `<div class="section-box accent row2">
+            <div>
+                <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+            </div>
+            <div>
+                <div class="kv"><strong>Edad:</strong> ${_esc(s.age || '—')}</div>
+                <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+            </div>
+        </div>`;
+
         html += `<h3>✦ Notas del Profesor</h3>`;
         const notes = tt.teacherNotes || [];
         if (notes.length) {
@@ -1847,6 +1455,17 @@ async function printActaInicio(promotionId) {
         const tr2 = s.transversalTracking || {};
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
         let html = _header('Ficha de Seguimiento Transversal', fullName, promo.name, _today());
+
+        html += `<div class="section-box accent row2">
+            <div>
+                <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+            </div>
+            <div>
+                <div class="kv"><strong>Edad:</strong> ${_esc(s.age || '—')}</div>
+                <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+            </div>
+        </div>`;
 
         html += `<h3>✦ Sesiones de Empleabilidad</h3>`;
         const emp = tr2.employabilitySessions || [];
@@ -2207,7 +1826,6 @@ async function printActaInicio(promotionId) {
         printTechnical,
         printTransversal,
         printActaInicio,
-        printActaBaja,
         printDescripcionTecnica,
         printProjectReport,
         printBulkTechnical,

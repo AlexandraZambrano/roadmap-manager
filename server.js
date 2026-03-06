@@ -3,7 +3,6 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -41,18 +40,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-manager';
-
-// Public key of the external auth server (https://users.coderf5.es) — used to verify RS256 tokens
-let EXTERNAL_JWT_PUBLIC_KEY = null;
-try {
-  EXTERNAL_JWT_PUBLIC_KEY = readFileSync(join(__dirname, 'backend', 'keys', 'public.pem'), 'utf8');
-  console.log('[auth] External JWT public key loaded OK');
-} catch (e) {
-  console.warn('[auth] Could not load backend/keys/public.pem — external tokens will be rejected:', e.message);
-}
 
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
@@ -184,67 +174,10 @@ initializeTestAccounts();
 
 // --- Auth Middleware ---
 
-const verifyToken = async (req, res, next) => {
+const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
-  // 1. Try verifying with the external RS256 public key (tokens from users.coderf5.es)
-  if (EXTERNAL_JWT_PUBLIC_KEY) {
-    try {
-      const decoded = jwt.verify(token, EXTERNAL_JWT_PUBLIC_KEY, { algorithms: ['RS256'] });
-      // Map external payload to our internal user shape:
-      // External: { userId, email, roles: ['ROLE_USER'] }
-      // Internal: { id, email, role }
-      const roles = decoded.roles || [];
-      let role = 'teacher'; // default for external users
-      if (roles.includes('ROLE_SUPER_ADMIN') || roles.includes('ROLE_SUPERADMIN')) role = 'superadmin';
-      else if (roles.includes('ROLE_ADMIN') && roles.includes('ROLE_USER')) role = 'superadmin'; // ROLE_ADMIN+ROLE_USER → admin button
-      else if (roles.includes('ROLE_ADMIN')) role = 'teacher'; // ROLE_ADMIN alone → teacher only
-      else if (roles.includes('ROLE_STUDENT')) role = 'student';
-
-      // External token may store email under different field names
-      const externalEmail = decoded.email || decoded.sub || decoded.username || decoded.mail || null;
-      console.log(`[verifyToken] external token — decoded keys: ${JSON.stringify(Object.keys(decoded))}, email: ${externalEmail}, roles: ${JSON.stringify(roles)}, mapped role: ${role}`);
-
-      // Resolve local MongoDB teacher id by email so existing promotion references keep working.
-      // The external userId is different from the local UUID stored in Teacher.id / teacherId.
-      try {
-        if (!externalEmail) throw new Error(`No email field found in token. Token keys: ${JSON.stringify(Object.keys(decoded))}`);
-
-        let localTeacher = await Teacher.findOne({ email: externalEmail.toLowerCase() });
-        if (!localTeacher) {
-          // Auto-provision: create a minimal teacher record so the user can see/create promotions
-          const tempPw = await bcrypt.hash(uuidv4(), 10); // random unusable password
-          localTeacher = await Teacher.create({
-            id: uuidv4(),
-            name: decoded.name || decoded.username || externalEmail.split('@')[0],
-            email: externalEmail.toLowerCase(),
-            password: tempPw
-          });
-          console.log(`[verifyToken] Auto-provisioned teacher for ${externalEmail} with local id ${localTeacher.id}`);
-        }
-        req.user = {
-          id: localTeacher.id, // ← local UUID, matches teacherId / collaborators fields
-          email: externalEmail.toLowerCase(),
-          role,
-          _externalToken: true
-        };
-      } catch (dbErr) {
-        console.error('[verifyToken] DB lookup failed, using external id as fallback:', dbErr.message);
-        req.user = {
-          id: String(decoded.userId || decoded.sub || decoded.id),
-          email: externalEmail || '',
-          role,
-          _externalToken: true
-        };
-      }
-      return next();
-    } catch (_) {
-      // Not a valid external token — fall through to internal check
-    }
-  }
-
-  // 2. Try verifying with our internal HS256 secret (admin / student local accounts)
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
@@ -258,275 +191,127 @@ const canEditPromotion = (promotion, userId) => {
   return promotion.teacherId === userId || (promotion.collaborators && promotion.collaborators.includes(userId));
 };
 
-// ==================== EVALUATION API PROXY ====================
-// Proxies requests to https://evaluation.coderf5.es/v1/ forwarding the user's JWT token.
-// Supported: GET /api/eval/competences, /api/eval/areas, /api/eval/tools,
-//            /api/eval/indicators, /api/eval/levels, /api/eval/resources
-// Also supports query params and sub-paths (e.g. /api/eval/competences/search?query=x)
-
-const EVAL_API_BASE = 'https://evaluation.coderf5.es/v1';
-
-async function proxyToEvalApi(req, res, evalPath) {
-  try {
-    const token = req.headers.authorization; // pass through as-is (Bearer <token>)
-    const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-    const targetUrl = `${EVAL_API_BASE}${evalPath}${qs}`;
-    console.log(`[eval proxy] ${req.method} ${targetUrl}`);
-
-    const fetchOpts = {
-      method: req.method,
-      headers: { 'Content-Type': 'application/json', Authorization: token || '' }
-    };
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      fetchOpts.body = JSON.stringify(req.body);
-    }
-
-    const extRes = await fetch(targetUrl, fetchOpts);
-    const text = await extRes.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = text; }
-
-    // For GET requests that return paginated DRF responses, aggregate all pages and return flat array
-    if (req.method === 'GET' && data && !Array.isArray(data) && data.results && data.next) {
-      let allResults = [...data.results];
-      let nextUrl = data.next;
-      while (nextUrl) {
-        const nextRes = await fetch(nextUrl, { headers: { Authorization: token || '' } });
-        if (!nextRes.ok) break;
-        const nextJson = await nextRes.json();
-        allResults = allResults.concat(nextJson.results || []);
-        nextUrl = nextJson.next || null;
-      }
-      return res.status(extRes.status).json({ count: data.count, results: allResults, next: null, previous: null });
-    }
-
-    res.status(extRes.status).json(data);
-  } catch (err) {
-    console.error('[eval proxy] Error:', err.message);
-    res.status(502).json({ error: 'Evaluation API unreachable', detail: err.message });
-  }
-}
-
-// Mount eval proxy routes (verifyToken ensures only authenticated users can call them)
-app.get('/api/eval/competences*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/competences', '') || '/';
-  proxyToEvalApi(req, res, `/competences${sub === '/' ? '/' : sub}`);
-});
-app.get('/api/eval/areas*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/areas', '') || '/';
-  proxyToEvalApi(req, res, `/areas${sub === '/' ? '/' : sub}`);
-});
-app.get('/api/eval/tools*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/tools', '') || '/';
-  proxyToEvalApi(req, res, `/tools${sub === '/' ? '/' : sub}`);
-});
-app.get('/api/eval/indicators*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/indicators', '') || '/';
-  proxyToEvalApi(req, res, `/indicators${sub === '/' ? '/' : sub}`);
-});
-app.get('/api/eval/levels*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/levels', '') || '/';
-  proxyToEvalApi(req, res, `/levels${sub === '/' ? '/' : sub}`);
-});
-app.get('/api/eval/resources*', verifyToken, (req, res) => {
-  const sub = req.path.replace('/api/eval/resources', '') || '/';
-  proxyToEvalApi(req, res, `/resources${sub === '/' ? '/' : sub}`);
-});
-
 // ==================== COMPETENCES CATALOG ====================
 
-// Helper: call evaluation API using the authenticated user's token.
-// The token is the RS256 JWT issued by users.coderf5.es — the same one the user
-// logged in with. It is valid for evaluation.coderf5.es as both services share
-// the same auth provider.
-// Supports Django REST pagination — fetches all pages automatically.
-async function evalApiGet(path, userToken) {
-  if (!userToken) throw new Error('No user token available for eval API call');
-
-  const baseUrl = `${EVAL_API_BASE}${path}`;
-  // Add page_size=200 to get all results in one shot (avoids pagination for small catalogs)
-  const sep = baseUrl.includes('?') ? '&' : '?';
-  const url = `${baseUrl}${sep}page_size=200`;
-
-  console.log(`[evalApiGet] → GET ${url}`);
-
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${userToken}`, 'Content-Type': 'application/json' }
-  });
-
-  console.log(`[evalApiGet] ← ${path} status: ${res.status} ${res.statusText}`);
-
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`[evalApiGet] ❌ Error body for ${path}:`, errText.substring(0, 300));
-    throw new Error(`Eval API ${path} → ${res.status}`);
-  }
-
-  const json = await res.json();
-
-  // Handle Django REST paginated response: { count, next, results: [] }
-  if (!Array.isArray(json) && json.results) {
-    let allResults = [...json.results];
-    console.log(`[evalApiGet] ← ${path} paginated: count=${json.count} | page results=${json.results.length} | next=${json.next || 'none'}`);
-
-    // Fetch remaining pages if any
-    let nextUrl = json.next;
-    while (nextUrl) {
-      console.log(`[evalApiGet] Fetching next page: ${nextUrl}`);
-      const nextRes = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${userToken}`, 'Content-Type': 'application/json' }
-      });
-      if (!nextRes.ok) break;
-      const nextJson = await nextRes.json();
-      allResults = allResults.concat(nextJson.results || []);
-      nextUrl = nextJson.next || null;
-    }
-
-    console.log(`[evalApiGet] ← ${path} total after all pages: ${allResults.length} items`);
-    return allResults;
-  }
-
-  // Plain array response
-  const rows = Array.isArray(json) ? json : [];
-  console.log(`[evalApiGet] ← ${path} plain array: ${rows.length} items`);
-  return rows;
-}
-
-// Normalise a raw competence object from the external Eval API into the internal shape
-// expected by program-competences.js / promotion-detail.js.
-//
-// Real API shape (evaluation.coderf5.es/v1/competences/):
-// {
-//   id, name, description,
-//   area: ["Fullstack", "IA", ...],          ← array of strings, NOT objects
-//   tools: [{
-//     id, name, description,
-//     indicators: [{id, name, description, levelId}],  ← levelId is a number
-//     referents: [...],
-//     resources: [...]
-//   }]
-// }
-//
-// Internal shape expected by frontend:
-// {
-//   id, name, description,
-//   areas: [{id, name, icon}],               ← built from area strings
-//   tools: [{id, name, description}],
-//   levels: [{levelId, levelName, levelDescription, indicators:[{id, name, description}]}]
-// }
-function normaliseEvalCompetence(comp) {
-  // area is an array of strings in the real API
-  const areaStrings = Array.isArray(comp.area) ? comp.area : [];
-  const areas = areaStrings.map((name, idx) => ({ id: idx + 1, name, icon: '' }));
-
-  // tools array — extract tool objects (without indicators, just id/name/description)
-  const toolsRaw = comp.tools || [];
-  const tools = toolsRaw.map(t => ({ id: t.id, name: t.name, description: t.description || '' }));
-
-  // Build levels by collecting indicators from ALL tools and grouping by levelId
-  // Each tool has its own indicators with a numeric levelId field
-  const levelMap = {};
-  toolsRaw.forEach(tool => {
-    (tool.indicators || []).forEach(ind => {
-      const lvlId = ind.levelId ?? ind.level_id ?? ind.level ?? 0;
-      const lvlName = lvlId === 1 ? 'Inicial' : lvlId === 2 ? 'Medio' : lvlId === 3 ? 'Avanzado' : `Nivel ${lvlId}`;
-      if (!levelMap[lvlId]) {
-        levelMap[lvlId] = { levelId: lvlId, levelName: lvlName, levelDescription: '', indicators: [] };
-      }
-      // Avoid duplicate indicators (same indicator may appear in multiple tools)
-      const alreadyAdded = levelMap[lvlId].indicators.some(i => i.id === ind.id);
-      if (!alreadyAdded) {
-        levelMap[lvlId].indicators.push({
-          id: ind.id,
-          name: ind.name,
-          description: ind.description || '',
-          toolName: tool.name  // track which tool this indicator belongs to
-        });
-      }
-    });
-  });
-  const levels = Object.values(levelMap).sort((a, b) => a.levelId - b.levelId);
-
-  return {
-    id: comp.id,
-    name: comp.name,
-    description: comp.description || '',
-    areas,          // [{id, name, icon}] built from area string array
-    areaNames: areaStrings,  // keep original string array for easy filtering
-    tools,          // [{id, name, description}]
-    levels          // [{levelId, levelName, levelDescription, indicators:[...]}]
-  };
-}
-
-// GET /api/areas — evaluation.coderf5.es ONLY
+// Get all areas from DB
 app.get('/api/areas', verifyToken, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/areas/', token);
-    res.json(rows);
+    const areas = await Area.find({}).sort({ id: 1 }).lean();
+    console.log(`[GET /api/areas] Found ${areas.length} areas:`, areas.map(a => `${a.id}:${a.name}`));
+    res.json(areas);
   } catch (error) {
-    console.error('[GET /api/areas] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
+    console.error('[GET /api/areas] Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
-// GET /api/tools — evaluation.coderf5.es ONLY
-app.get('/api/tools', verifyToken, async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/tools/', token);
-    res.json(rows);
-  } catch (error) {
-    console.error('[GET /api/tools] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
-  }
-});
-// GET /api/indicators — evaluation.coderf5.es ONLY
-app.get('/api/indicators', verifyToken, async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/indicators/', token);
-    res.json(rows);
-  } catch (error) {
-    console.error('[GET /api/indicators] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
-  }
-});
-// GET /api/levels — evaluation.coderf5.es ONLY
-app.get('/api/levels', verifyToken, async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/levels/', token);
-    res.json(rows);
-  } catch (error) {
-    console.error('[GET /api/levels] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
-  }
-});
-// GET /api/resources — evaluation.coderf5.es ONLY
-app.get('/api/resources', verifyToken, async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/resources/', token);
-    res.json(rows);
-  } catch (error) {
-    console.error('[GET /api/resources] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
-  }
-});
-// GET /api/competences — evaluation.coderf5.es ONLY (normalised)
+
+// Get all competences enriched with areas, indicators (grouped by level) and tools
 app.get('/api/competences', verifyToken, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const rows = await evalApiGet('/competences/', token);
-    const normalised = rows.map(normaliseEvalCompetence);
-    console.log(`[GET /api/competences] OK: ${normalised.length} competencias. Tools por competencia:\n` +
-      normalised.map(c => `  - "${c.name}": ${(c.tools||[]).length} tools`).join('\n'));
-    res.json(normalised);
+    // Fetch all reference data in parallel
+    const [
+      competences,
+      indicators,
+      tools,
+      areas,
+      levels,
+      compIndicators,
+      compTools,
+      compAreas
+    ] = await Promise.all([
+      Competence.find({}).sort({ id: 1 }).lean(),
+      Indicator.find({}).lean(),
+      Tool.find({}).lean(),
+      Area.find({}).lean(),
+      Level.find({}).lean(),
+      CompetenceIndicator.find({}).lean(),
+      CompetenceTool.find({}).lean(),
+      CompetenceArea.find({}).lean()
+    ]);
+
+    console.log(`[GET /api/competences] Raw counts — competences:${competences.length} indicators:${indicators.length} tools:${tools.length} areas:${areas.length} levels:${levels.length} compIndicators:${compIndicators.length} compTools:${compTools.length} compAreas:${compAreas.length}`);
+    console.log('[GET /api/competences] Areas in DB:', areas.map(a => `${a.id}:${a.name}`));
+    console.log('[GET /api/competences] First 5 compAreas docs:', compAreas.slice(0, 5));
+    console.log('[GET /api/competences] First 5 compIndicators docs:', compIndicators.slice(0, 5));
+    console.log('[GET /api/competences] First 5 compTools docs:', compTools.slice(0, 5));
+
+    // Build lookup maps
+    const indicatorMap = Object.fromEntries(indicators.map(i => [i.id, i]));
+    const toolMap     = Object.fromEntries(tools.map(t => [t.id, t]));
+    const areaMap     = Object.fromEntries(areas.map(a => [a.id, a]));
+    const levelMap    = Object.fromEntries(levels.map(l => [l.id, l]));
+
+    // Group relations by id_competence (DB field names use snake_case)
+    const indsByComp  = {};
+    compIndicators.forEach(ci => {
+      if (!indsByComp[ci.id_competence]) indsByComp[ci.id_competence] = [];
+      indsByComp[ci.id_competence].push(ci.id_indicator);
+    });
+    const toolsByComp = {};
+    compTools.forEach(ct => {
+      if (!toolsByComp[ct.id_competence]) toolsByComp[ct.id_competence] = [];
+      toolsByComp[ct.id_competence].push(ct.id_tool);
+    });
+    const areasByComp = {};
+    compAreas.forEach(ca => {
+      if (!areasByComp[ca.id_competence]) areasByComp[ca.id_competence] = [];
+      areasByComp[ca.id_competence].push(ca.id_area);
+    });
+
+    console.log('[GET /api/competences] areasByComp (competenceId → areaIds):', JSON.stringify(areasByComp));
+    console.log('[GET /api/competences] areaMap keys:', Object.keys(areaMap));
+
+    // Build enriched competences
+    const enriched = competences.map(comp => {
+      // Areas
+      const compAreasList = (areasByComp[comp.id] || [])
+        .map(aId => areaMap[aId])
+        .filter(Boolean)
+        .map(a => ({ id: a.id, name: a.name, icon: a.icon }));
+
+      // Indicators grouped by level
+      const rawIndicators = (indsByComp[comp.id] || [])
+        .map(iId => indicatorMap[iId])
+        .filter(Boolean);
+
+      const indicatorsByLevel = {};
+      rawIndicators.forEach(ind => {
+        const lvl = ind.levelId || 0;
+        if (!indicatorsByLevel[lvl]) {
+          indicatorsByLevel[lvl] = {
+            levelId: lvl,
+            levelName: levelMap[lvl]?.name || `Nivel ${lvl}`,
+            levelDescription: levelMap[lvl]?.description || '',
+            indicators: []
+          };
+        }
+        indicatorsByLevel[lvl].indicators.push({ id: ind.id, name: ind.name, description: ind.description });
+      });
+      const levels_grouped = Object.values(indicatorsByLevel).sort((a, b) => a.levelId - b.levelId);
+
+      // Tools
+      const compToolsList = (toolsByComp[comp.id] || [])
+        .map(tId => toolMap[tId])
+        .filter(Boolean)
+        .map(t => ({ id: t.id, name: t.name, description: t.description }));
+
+      return {
+        id: comp.id,
+        name: comp.name,
+        description: comp.description,
+        areas: compAreasList,
+        levels: levels_grouped,
+        tools: compToolsList
+      };
+    });
+
+    res.json(enriched);
   } catch (error) {
-    console.error('[GET /api/competences] Error:', error.message);
-    res.status(502).json({ error: 'Evaluation API unavailable', detail: error.message });
+    console.error('[GET /api/competences] Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
+
 // ==================== PROMOTION PASSWORD ACCESS ====================
 
 // Get promotion access password (teacher only)
@@ -1069,78 +854,65 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
 
 // ==================== AUTHENTICATION ====================
 
-// Proxy to external auth API — avoids CORS issues when called from the browser
-app.post('/api/auth/external-login', async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) return res.status(400).json({ error: 'Email, password, and name are required' });
+
+    const existing = await Teacher.findOne({ email });
+    if (existing) return res.status(400).json({ error: 'Email already registered' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword });
+    const token = jwt.sign({ id: teacher.id, email: teacher.email, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ message: 'Teacher registered successfully', token, user: { id: teacher.id, name: teacher.name, email: teacher.email, role: 'teacher' } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-    const extRes = await fetch('https://users.coderf5.es/infouser', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
+    let user = null;
+    let userRole = null;
 
-    const extData = await extRes.json();
-    console.log('[external-login proxy] response status:', extRes.status, '| data keys:', Object.keys(extData));
-    if (extData.data?.token) {
-      // Decode without verify just to log the roles
-      const payload = JSON.parse(Buffer.from(extData.data.token.split('.')[1], 'base64').toString());
-      console.log('[external-login proxy] token roles:', payload.roles);
+    // Try Admin first
+    user = await Admin.findOne({ email });
+    if (user && (await bcrypt.compare(password, user.password))) {
+      userRole = 'admin';
     }
 
-    if (extRes.ok && extData.success && extData.data?.token) {
-      return res.json({ success: true, data: extData.data });
+    // Try Teacher
+    if (!user) {
+      user = await Teacher.findOne({ email });
+      if (user && (await bcrypt.compare(password, user.password))) {
+        userRole = 'teacher';
+      }
     }
 
-    // External API returned a failure — pass status and message through so the client knows
-    // whether it was wrong credentials (401) or user not found (404) vs other errors
-    const statusToReturn = extRes.status === 404 ? 404 : 401;
-    const errorMsg = extData.message || extData.error || 'Credenciales incorrectas';
-    console.log(`[external-login proxy] external API rejected login — status: ${extRes.status}, message: ${errorMsg}`);
-    return res.status(statusToReturn).json({ success: false, status: extRes.status, message: errorMsg });
+    // Try Student (for reference, though students typically don't login)
+    if (!user) {
+      user = await Student.findOne({ email });
+      if (user && (await bcrypt.compare(password, user.password))) {
+        userRole = 'student';
+      }
+    }
+
+    if (user && userRole) {
+      const token = jwt.sign({ id: user.id, email: user.email, role: userRole }, JWT_SECRET, { expiresIn: '7d' });
+      // Include userRole (Formador/a, CoFormador/a, Coordinador/a) for teacher accounts
+      const userData = { id: user.id, name: user.name, email: user.email, role: userRole };
+      if (userRole === 'teacher' && user.userRole) userData.userRole = user.userRole;
+      return res.json({ message: 'Login successful', token, user: userData });
+    }
+
+    return res.status(401).json({ error: 'Invalid email or password' });
   } catch (error) {
-    console.error('[external-login proxy] Error:', error.message);
-    res.status(502).json({ error: 'External auth server unreachable' });
+    res.status(500).json({ error: error.message });
   }
-});
-
-// Proxy to external change-password verification
-app.post('/api/auth/external-verify', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-
-    const extRes = await fetch('https://users.coderf5.es/infouser', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    const extData = await extRes.json();
-    if (extRes.ok && extData.success) {
-      return res.json({ success: true });
-    }
-    return res.status(401).json({ success: false, message: extData.message || 'Contraseña incorrecta' });
-  } catch (error) {
-    res.status(502).json({ error: 'External auth server unreachable' });
-  }
-});
-
-// Local register is disabled — user registration is handled exclusively by admins
-// via POST /api/admin/teachers, which registers in the external auth system (users.coderf5.es).
-app.post('/api/auth/register', (req, res) => {
-  res.status(410).json({
-    error: 'El registro de usuarios no está disponible públicamente. Un administrador debe crear la cuenta desde el panel de administración.'
-  });
-});
-
-// Local login is disabled — authentication is handled exclusively via the external auth API.
-// Use POST /api/auth/external-login instead.
-app.post('/api/auth/login', (req, res) => {
-  res.status(410).json({
-    error: 'El login local no está disponible. Por favor, inicia sesión con tus credenciales de users.coderf5.es.'
-  });
 });
 
 // ==================== PROFILE MANAGEMENT ====================
@@ -1151,7 +923,7 @@ app.get('/api/profile', verifyToken, async (req, res) => {
     let user = null;
     const { role } = req.user;
 
-    if (role === 'teacher' || role === 'superadmin') {
+    if (role === 'teacher') {
       user = await Teacher.findOne({ id: req.user.id });
     } else if (role === 'admin') {
       user = await Admin.findOne({ id: req.user.id });
@@ -1189,7 +961,7 @@ app.put('/api/profile', verifyToken, async (req, res) => {
 
     let user = null;
 
-    if (role === 'teacher' || role === 'superadmin') {
+    if (role === 'teacher') {
       user = await Teacher.findOneAndUpdate(
         { id: req.user.id },
         {
@@ -3561,7 +3333,7 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
 // ==================== ADMIN ====================
 
 const verifyAdmin = (req, res, next) => {
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) next();
+  if (req.user && req.user.role === 'admin') next();
   else res.status(403).json({ error: 'Admin role required' });
 };
 
@@ -3673,56 +3445,29 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Email already registered' });
 
     const provisionalPassword = Math.random().toString(36).slice(-10) + 'A1!';
-
-    // ── Register user in the external auth API ──────────────────────────────
-    let externalRegistered = false;
-    let externalError = null;
-    try {
-      const extRegRes = await fetch('https://users.coderf5.es/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: provisionalPassword, name })
-      });
-      const extRegData = await extRegRes.json();
-      console.log('[admin/teachers POST] external register status:', extRegRes.status, '| body:', JSON.stringify(extRegData));
-      if (extRegRes.ok && (extRegData.success !== false)) {
-        externalRegistered = true;
-      } else {
-        externalError = extRegData.message || extRegData.error || `External API returned ${extRegRes.status}`;
-      }
-    } catch (extErr) {
-      console.warn('[admin/teachers POST] External register unreachable:', extErr.message);
-      externalError = 'External auth server unreachable';
-    }
-
-    // Create local teacher record regardless (local system still needs the user)
     const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
+
     const validUserRoles = ['Formador/a', 'CoFormador/a', 'Coordinador/a'];
     const resolvedUserRole = validUserRoles.includes(userRole) ? userRole : 'Formador/a';
+
     const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword, provisional: true, userRole: resolvedUserRole });
 
-    // Send welcome email with provisional password
+    // Send password to email
     const emailSent = await sendPasswordEmail(email, name, provisionalPassword);
 
-    const responsePayload = {
-      teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
-      externalRegistered,
-      provisionalPassword
-    };
-
-    if (!externalRegistered) {
-      responsePayload.warning = `Local account created but external registration failed: ${externalError}. The user may need to register separately in the auth system.`;
+    if (emailSent) {
+      res.status(201).json({
+        message: 'Teacher created successfully. Password has been sent to their email address.',
+        teacher: { id: teacher.id, name: teacher.name, email: teacher.email }
+      });
+    } else {
+      // Still create teacher but alert admin
+      res.status(201).json({
+        message: 'Teacher created, but password email could not be sent. Please notify the teacher manually.',
+        teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
+        warning: 'Email not sent'
+      });
     }
-    if (!emailSent) {
-      responsePayload.emailWarning = 'Password email could not be sent. Please share the provisional password manually.';
-    }
-
-    res.status(201).json({
-      message: externalRegistered
-        ? 'User registered in auth system and local account created.'
-        : 'Local account created (external registration failed — see warning).',
-      ...responsePayload
-    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

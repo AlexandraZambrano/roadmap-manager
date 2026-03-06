@@ -1,4 +1,4 @@
-const API_URL = "https://users.coderf5.es/v1/infouser" || window.location.origin;
+const API_URL = "https://users.coderf5.es/infouser" || window.location.origin;
 
 function showAlert(message, type = 'danger') {
     const alert = document.getElementById(`${type}-alert`);
@@ -52,7 +52,7 @@ window.handleLogin = async function () {
     console.log(`Attempting login for: ${email}`);
 
     try {
-        const response = await fetch(`${API_URL}/api/auth/login`, {
+        const response = await fetch(`${API_URL}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
