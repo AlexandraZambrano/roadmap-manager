@@ -162,18 +162,34 @@ async function handleCreateTeacher(e) {
             console.log('[register] external response:', JSON.stringify(extData));
             if (extRes.ok && extData.success) {
                 externalRegistered = true;
-                // Extract identifier from JWT username claim (base64 decode payload)
-                // or fall back to email (which IS the username/identifier in this API)
-                const regToken = extData.data?.token;
-                if (regToken) {
-                    try {
-                        const payload = JSON.parse(atob(regToken.split('.')[1]));
-                        externalUserId = payload.username || payload.email || payload.sub || email;
-                    } catch(e) {
-                        externalUserId = email; // fallback: email is always the identifier
+                // Step 1b: call /infouser with new credentials to get the numeric userId
+                // /infouser returns { success, data: { token, userId: 19, email, name, roles } }
+                try {
+                    const infoRes = await fetch(`${EXTERNAL_AUTH_URL}/infouser`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password: provisionalPassword })
+                    });
+                    const infoData = await infoRes.json();
+                    console.log('[infouser] response after register:', JSON.stringify(infoData));
+                    const info = infoData.data || infoData;
+                    if (info.userId) {
+                        externalUserId = String(info.userId); // numeric ID from external API
+                    } else {
+                        // fallback: extract username from /register JWT, then email
+                        const regToken = extData.data?.token;
+                        if (regToken) {
+                            try {
+                                const payload = JSON.parse(atob(regToken.split('.')[1]));
+                                externalUserId = payload.username || payload.email || payload.sub || email;
+                            } catch(e) { externalUserId = email; }
+                        } else {
+                            externalUserId = extData.data?.user?.email || email;
+                        }
                     }
-                } else {
-                    externalUserId = extData.data?.user?.email || email;
+                } catch (infoErr) {
+                    console.warn('[infouser] failed after register, falling back to email:', infoErr.message);
+                    externalUserId = email;
                 }
             } else {
                 externalWarning = extData.message || extData.error || 'External registration failed';

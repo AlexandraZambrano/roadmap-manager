@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -177,7 +177,7 @@ initializeTestAccounts();
 
 // --- Auth Middleware ---
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
@@ -202,8 +202,15 @@ const verifyToken = (req, res, next) => {
       console.error('[verifyToken] RS256 ok but no user identifier claim. Claims:', Object.keys(decoded));
       return res.status(401).json({ error: 'Token missing user identifier', claims: Object.keys(decoded) });
     }
-    req.user = { id: String(extId), email: decoded.username || decoded.email || decoded.sub, role: extRole };
-    console.log('[verifyToken] RS256 ok, user:', req.user.id, req.user.role);
+    const email = String(extId);
+    let mongoId = email;
+    try {
+      const dbTeacher = await Teacher.findOne({ $or: [{ email }, { id: email }] }, '_id').lean();
+      if (dbTeacher) { mongoId = dbTeacher._id.toString(); console.log('[verifyToken] resolved mongoId:', mongoId); }
+      else { console.warn('[verifyToken] teacher not found, fallback to email'); }
+    } catch(dbErr) { console.warn('[verifyToken] DB err:', dbErr.message); }
+    req.user = { id: email, mongoId, email, role: extRole };
+    console.log('[verifyToken] RS256 ok, user:', email, '| mongoId:', mongoId, '| role:', extRole);
     next();
   } catch (rsErr) {
     console.warn('[verifyToken] RS256 failed:', rsErr.message);
@@ -220,9 +227,9 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-const canEditPromotion = (promotion, userId) => {
+const canEditPromotion = (promotion, mongoId) => {
   if (!promotion) return false;
-  return promotion.teacherId === userId || (promotion.collaborators && promotion.collaborators.includes(userId));
+  return promotion.teacherId === mongoId || (promotion.collaborators && promotion.collaborators.includes(mongoId));
 };
 
 // ==================== COMPETENCES CATALOG ====================
@@ -263,7 +270,7 @@ app.get('/api/competences', verifyToken, async (req, res) => {
       CompetenceArea.find({}).lean()
     ]);
 
-    console.log(`[GET /api/competences] Raw counts — competences:${competences.length} indicators:${indicators.length} tools:${tools.length} areas:${areas.length} levels:${levels.length} compIndicators:${compIndicators.length} compTools:${compTools.length} compAreas:${compAreas.length}`);
+    console.log(`[GET /api/competences] Raw counts â€” competences:${competences.length} indicators:${indicators.length} tools:${tools.length} areas:${areas.length} levels:${levels.length} compIndicators:${compIndicators.length} compTools:${compTools.length} compAreas:${compAreas.length}`);
     console.log('[GET /api/competences] Areas in DB:', areas.map(a => `${a.id}:${a.name}`));
     console.log('[GET /api/competences] First 5 compAreas docs:', compAreas.slice(0, 5));
     console.log('[GET /api/competences] First 5 compIndicators docs:', compIndicators.slice(0, 5));
@@ -292,7 +299,7 @@ app.get('/api/competences', verifyToken, async (req, res) => {
       areasByComp[ca.id_competence].push(ca.id_area);
     });
 
-    console.log('[GET /api/competences] areasByComp (competenceId → areaIds):', JSON.stringify(areasByComp));
+    console.log('[GET /api/competences] areasByComp (competenceId â†’ areaIds):', JSON.stringify(areasByComp));
     console.log('[GET /api/competences] areaMap keys:', Object.keys(areaMap));
 
     // Build enriched competences
@@ -353,7 +360,7 @@ app.get('/api/promotions/:promotionId/access-password', verifyToken, async (req,
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     res.json({ accessPassword: promotion.accessPassword || null });
   } catch (error) {
@@ -395,7 +402,7 @@ app.post('/api/promotions/:promotionId/access-password', verifyToken, async (req
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     // Store old password in history
     if (promotion.accessPassword) {
@@ -421,7 +428,7 @@ app.delete('/api/promotions/:promotionId/access-password', verifyToken, async (r
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     // Store in history before removing
     if (promotion.accessPassword) {
@@ -449,7 +456,7 @@ app.get('/api/promotions/:promotionId/teaching-content', verifyToken, async (req
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     res.json({ teachingContentUrl: promotion.teachingContentUrl || null });
   } catch (error) {
@@ -465,7 +472,7 @@ app.post('/api/promotions/:promotionId/teaching-content', verifyToken, async (re
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     promotion.teachingContentUrl = teachingContentUrl;
     await promotion.save();
@@ -481,7 +488,7 @@ app.delete('/api/promotions/:promotionId/teaching-content', verifyToken, async (
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     promotion.teachingContentUrl = undefined;
     await promotion.save();
@@ -500,27 +507,27 @@ async function initializeDefaultTemplates() {
     {
       id: 'ia-bootcamp',
       name: 'IA School Bootcamp',
-      description: 'Inteligencia Artificial y Machine Learning — bootcamp completo de 36 semanas',
+      description: 'Inteligencia Artificial y Machine Learning â€” bootcamp completo de 36 semanas',
       weeks: 36,
       hours: 1250,
       hoursPerWeek: Math.round(1250 / 36),
       isCustom: false,
-      // ── Acta de Inicio ─────────────────────────────────────────────────────
+      // â”€â”€ Acta de Inicio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       school: 'Madrid',
       projectType: 'Bootcamp',
       totalHours: '1.250 horas',
-      modality: 'Híbrido (Presencial + Online)',
+      modality: 'HÃ­brido (Presencial + Online)',
       materials: 'No son necesarios recursos adicionales.',
       internships: false,
-      funders: 'SAGE.\nJP Morgan.\nEn colaboración con Microsoft y Somos F5.',
+      funders: 'SAGE.\nJP Morgan.\nEn colaboraciÃ³n con Microsoft y Somos F5.',
       funderDeadlines: '',
-      okrKpis: 'PIPO3.R1 Satisfacción 4,2/5 de coders sobre la excelencia del equipo formativo de la formación\nISEC2.R1 Jornadas de selección con un 40% de personas participantes con el proceso 100% finalizado.\nISEC3.R2 Resultado 78% salida positiva.\nISECR2 Finalizar cada programa con un máximo de bajas de 10%.',
-      funderKpis: 'SAGE.: 50% mujeres\n30% jóvenes menores de 30 años\n15% inmigrantes o refugiados\n5% personas con discapacidad.',
+      okrKpis: 'PIPO3.R1 SatisfacciÃ³n 4,2/5 de coders sobre la excelencia del equipo formativo de la formaciÃ³n\nISEC2.R1 Jornadas de selecciÃ³n con un 40% de personas participantes con el proceso 100% finalizado.\nISEC3.R2 Resultado 78% salida positiva.\nISECR2 Finalizar cada programa con un mÃ¡ximo de bajas de 10%.',
+      funderKpis: 'SAGE.: 50% mujeres\n30% jÃ³venes menores de 30 aÃ±os\n15% inmigrantes o refugiados\n5% personas con discapacidad.',
       projectMeetings: 'Ver el calendario de reuniones en Asana.',
       teamMeetings: 'Semanal - jueves (14:30-15:00)',
       trainerDayOff: '',
       cotrainerDayOff: '',
-      // ── Schedule ───────────────────────────────────────────────────────────
+      // â”€â”€ Schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       schedule: {
         online: {
           entry: '08:15',
@@ -538,9 +545,9 @@ async function initializeDefaultTemplates() {
         },
         notes: ''
       },
-      // ── Evaluation ─────────────────────────────────────────────────────────
-      evaluation: `Evaluación del Proyecto\n\nSe brindará retroalimentación oral el mismo día de la presentación del proyecto, mientras que la autoevaluación (en proyectos individuales) y evaluación grupal (en proyectos grupales) se realizará al día siguiente y posteriormente, el equipo formativo compartirá las impresiones finales. Todo ello deberá almacenarse en Google Classroom.\n\nSe tendrán en cuenta los siguientes aspectos:\n\n• Análisis de los commits realizados por los coders, valorando tanto la cantidad como la calidad\n• Participación individual en la presentación del proyecto\n• Capacidad de responder preguntas específicas de manera clara y fundamentada\n• Desarrollo y demostración de las competencias adquiridas durante el proyecto\n\nEvaluación de las Píldoras\n\nLas píldoras se asignarán la primera semana, se apuntarán en el calendario y se valorarán los siguientes aspectos:\n• Que tenga un poco de inglés (hablado, no solo en la presentación)\n• Que tenga parte teórica y parte práctica. Énfasis en la práctica\n• Tiempo mínimo 1 hora\n• Crear un repositorio en Github y/o publicar un artículo en Medium\n\nEvaluación Global al Final del Bootcamp\n\n• Valoración de los proyectos entregados\n• Valoración de los cursos realizados\n• Valoración de las píldoras realizadas\n• Valoración de competencias transversales`,
-      // ── Resources ──────────────────────────────────────────────────────────
+      // â”€â”€ Evaluation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      evaluation: `EvaluaciÃ³n del Proyecto\n\nSe brindarÃ¡ retroalimentaciÃ³n oral el mismo dÃ­a de la presentaciÃ³n del proyecto, mientras que la autoevaluaciÃ³n (en proyectos individuales) y evaluaciÃ³n grupal (en proyectos grupales) se realizarÃ¡ al dÃ­a siguiente y posteriormente, el equipo formativo compartirÃ¡ las impresiones finales. Todo ello deberÃ¡ almacenarse en Google Classroom.\n\nSe tendrÃ¡n en cuenta los siguientes aspectos:\n\nâ€¢ AnÃ¡lisis de los commits realizados por los coders, valorando tanto la cantidad como la calidad\nâ€¢ ParticipaciÃ³n individual en la presentaciÃ³n del proyecto\nâ€¢ Capacidad de responder preguntas especÃ­ficas de manera clara y fundamentada\nâ€¢ Desarrollo y demostraciÃ³n de las competencias adquiridas durante el proyecto\n\nEvaluaciÃ³n de las PÃ­ldoras\n\nLas pÃ­ldoras se asignarÃ¡n la primera semana, se apuntarÃ¡n en el calendario y se valorarÃ¡n los siguientes aspectos:\nâ€¢ Que tenga un poco de inglÃ©s (hablado, no solo en la presentaciÃ³n)\nâ€¢ Que tenga parte teÃ³rica y parte prÃ¡ctica. Ã‰nfasis en la prÃ¡ctica\nâ€¢ Tiempo mÃ­nimo 1 hora\nâ€¢ Crear un repositorio en Github y/o publicar un artÃ­culo en Medium\n\nEvaluaciÃ³n Global al Final del Bootcamp\n\nâ€¢ ValoraciÃ³n de los proyectos entregados\nâ€¢ ValoraciÃ³n de los cursos realizados\nâ€¢ ValoraciÃ³n de las pÃ­ldoras realizadas\nâ€¢ ValoraciÃ³n de competencias transversales`,
+      // â”€â”€ Resources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       resources: [
         { title: 'CodigoMaquina', category: 'Youtube', url: 'https://www.youtube.com/@CodigoMaquina' },
         { title: '3blue1brown', category: 'Youtube', url: 'https://www.youtube.com/c/3blue1brown' },
@@ -548,14 +555,14 @@ async function initializeDefaultTemplates() {
         { title: '180 proyectos de data science y machine learning con python', category: 'Technical', url: 'https://noeliagorod.com/2022/02/09/180-proyectos-de-data-science-y-machine-learning-con-python-2/' },
         { title: 'Khan Academy', category: 'Technical', url: 'https://www.khanacademy.org/' }
       ],
-      // ── Employability ──────────────────────────────────────────────────────
+      // â”€â”€ Employability â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       employability: [
-        { name: 'Sesión 1: Introducción a la búsqueda de trabajo', url: '', startMonth: 2, duration: 1 },
-        { name: 'Sesión 2: Introducción a LinkedIn', url: '', startMonth: 3, duration: 1 },
-        { name: 'Sesión 3: Autoconocimiento (DAFO/Elevator/Objetivo profesional)', url: '', startMonth: 4, duration: 1 },
-        { name: 'Sesión 4: Autoconocimiento (Perfil profesional)', url: '', startMonth: 5, duration: 1 }
+        { name: 'SesiÃ³n 1: IntroducciÃ³n a la bÃºsqueda de trabajo', url: '', startMonth: 2, duration: 1 },
+        { name: 'SesiÃ³n 2: IntroducciÃ³n a LinkedIn', url: '', startMonth: 3, duration: 1 },
+        { name: 'SesiÃ³n 3: Autoconocimiento (DAFO/Elevator/Objetivo profesional)', url: '', startMonth: 4, duration: 1 },
+        { name: 'SesiÃ³n 4: Autoconocimiento (Perfil profesional)', url: '', startMonth: 5, duration: 1 }
       ],
-      // ── Modules (Roadmap) ──────────────────────────────────────────────────
+      // â”€â”€ Modules (Roadmap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       modules: [
         {
           name: 'Bases del desarrollo web',
@@ -577,9 +584,9 @@ async function initializeDefaultTemplates() {
           ],
           projects: [
             { name: 'Exploratory Data Analisys', url: '', duration: 1, startOffset: 0 },
-            { name: 'Problema de Regresión', url: '', duration: 2, startOffset: 1 },
-            { name: 'Problema de clasificación', url: '', duration: 2, startOffset: 3 },
-            { name: 'Problema de clasificación multiclase con Modelos Ensemble', url: '', duration: 2, startOffset: 5 },
+            { name: 'Problema de RegresiÃ³n', url: '', duration: 2, startOffset: 1 },
+            { name: 'Problema de clasificaciÃ³n', url: '', duration: 2, startOffset: 3 },
+            { name: 'Problema de clasificaciÃ³n multiclase con Modelos Ensemble', url: '', duration: 2, startOffset: 5 },
             { name: 'Aprendizaje no supervizado', url: '', duration: 1, startOffset: 7 }
           ]
         },
@@ -604,7 +611,7 @@ async function initializeDefaultTemplates() {
           projects: []
         }
       ],
-      // ── Competences ────────────────────────────────────────────────────────
+      // â”€â”€ Competences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       competences: [
         {
           id: '1',
@@ -617,8 +624,8 @@ async function initializeDefaultTemplates() {
               description: 'initial',
               indicators: [
                 'Organiza directorios de proyecto',
-                'Busca información técnica',
-                'Consulta documentación en inglés',
+                'Busca informaciÃ³n tÃ©cnica',
+                'Consulta documentaciÃ³n en inglÃ©s',
                 'Instala aplicaciones y extensiones'
               ]
             },
@@ -626,7 +633,7 @@ async function initializeDefaultTemplates() {
               level: 2,
               description: 'medio',
               indicators: [
-                'Usa líneas de comandos básicas',
+                'Usa lÃ­neas de comandos bÃ¡sicas',
                 'Declara funciones y variables en el entorno',
                 'Integra control de versiones'
               ]
@@ -636,7 +643,7 @@ async function initializeDefaultTemplates() {
               description: 'advance',
               indicators: [
                 'Establece un flujo de trabajo profesional',
-                'Utiliza herramientas de contenización',
+                'Utiliza herramientas de contenizaciÃ³n',
                 'Automatiza el entorno con scripts'
               ]
             }
@@ -646,34 +653,34 @@ async function initializeDefaultTemplates() {
           startModule: { id: '', name: 'Bases del desarrollo web' }
         }
       ],
-      // ── Píldoras por módulo ────────────────────────────────────────────────
+      // â”€â”€ PÃ­ldoras por mÃ³dulo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       modulesPildoras: [
         {
           moduleName: 'Bases del desarrollo web',
           pildoras: [
-            { title: 'Píldora: Clean code', mode: 'Virtual' },
-            { title: 'Píldora: Streamlit', mode: 'Presencial' },
-            { title: 'Píldora: Hilos en python', mode: 'Presencial' },
-            { title: 'Píldora: Protocolos de comunicación (http, IP)', mode: 'Virtual' },
-            { title: 'Píldora: API Rest y CRUD', mode: 'Virtual' },
-            { title: 'Píldora: Fastapi', mode: 'Virtual' },
-            { title: 'Píldora: Django', mode: 'Presencial' },
-            { title: 'Píldora: Bases de datos relacionales', mode: 'Presencial' },
-            { title: 'Píldora: Bases de datos no relacionales', mode: 'Virtual' },
-            { title: 'Píldora: Test de unitarios y de integración', mode: 'Virtual' },
-            { title: 'Píldora: TDD con Python', mode: 'Virtual' },
-            { title: 'Píldora: Versionado de APIs y gestión de endpoints', mode: 'Virtual' },
-            { title: 'Píldora: Docker (Contenedores, imágenes y volúmenes)', mode: 'Presencial' },
-            { title: 'Píldora: SOLID', mode: 'Presencial' },
-            { title: 'Píldora: Docker compose y microservicios', mode: 'Virtual' },
-            { title: 'Píldora: HTML & JS', mode: 'Virtual' },
-            { title: 'Píldora: Beautifulsoup', mode: 'Virtual' },
-            { title: 'Píldora: Scrapy', mode: 'Presencial' },
-            { title: 'Píldora: Selenium', mode: 'Presencial' },
-            { title: 'Píldora: Cronjob', mode: 'Virtual' },
-            { title: 'Píldora: Creación de Macros para la documentación de un proyecto', mode: 'Virtual' },
-            { title: 'Píldora Crea una documentación atractiva en github', mode: 'Virtual' },
-            { title: 'Píldora: Temas legales y seguridad IT', mode: 'Presencial' }
+            { title: 'PÃ­ldora: Clean code', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Streamlit', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Hilos en python', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Protocolos de comunicaciÃ³n (http, IP)', mode: 'Virtual' },
+            { title: 'PÃ­ldora: API Rest y CRUD', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Fastapi', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Django', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Bases de datos relacionales', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Bases de datos no relacionales', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Test de unitarios y de integraciÃ³n', mode: 'Virtual' },
+            { title: 'PÃ­ldora: TDD con Python', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Versionado de APIs y gestiÃ³n de endpoints', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Docker (Contenedores, imÃ¡genes y volÃºmenes)', mode: 'Presencial' },
+            { title: 'PÃ­ldora: SOLID', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Docker compose y microservicios', mode: 'Virtual' },
+            { title: 'PÃ­ldora: HTML & JS', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Beautifulsoup', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Scrapy', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Selenium', mode: 'Presencial' },
+            { title: 'PÃ­ldora: Cronjob', mode: 'Virtual' },
+            { title: 'PÃ­ldora: CreaciÃ³n de Macros para la documentaciÃ³n de un proyecto', mode: 'Virtual' },
+            { title: 'PÃ­ldora Crea una documentaciÃ³n atractiva en github', mode: 'Virtual' },
+            { title: 'PÃ­ldora: Temas legales y seguridad IT', mode: 'Presencial' }
           ]
         },
         {
@@ -683,21 +690,21 @@ async function initializeDefaultTemplates() {
             { title: 'Data cleaning con Python', mode: 'Virtual' },
             { title: 'Story telling con Datos', mode: 'Virtual' },
             { title: 'Etapas de Un proyecto de Machine Learning', mode: 'Presencial' },
-            { title: 'ML Supervisado: Algoritmos de Regresión', mode: 'Presencial' },
-            { title: 'Evaluación de modelos y métricas de rendimiento', mode: 'Presencial' },
-            { title: 'División de datos: entrenamiento, validación y prueba', mode: 'Virtual' },
-            { title: 'Overfitting, Underfitting y técnicas de regularización', mode: 'Virtual' },
-            { title: 'Pipeline básico de Machine Learning y uso de pickle (conexión de un  modelo de ML con tu aplicación web)', mode: 'Presencial' },
-            { title: 'ML Supervisado: Algoritmos de Clasificación', mode: 'Virtual' },
+            { title: 'ML Supervisado: Algoritmos de RegresiÃ³n', mode: 'Presencial' },
+            { title: 'EvaluaciÃ³n de modelos y mÃ©tricas de rendimiento', mode: 'Presencial' },
+            { title: 'DivisiÃ³n de datos: entrenamiento, validaciÃ³n y prueba', mode: 'Virtual' },
+            { title: 'Overfitting, Underfitting y tÃ©cnicas de regularizaciÃ³n', mode: 'Virtual' },
+            { title: 'Pipeline bÃ¡sico de Machine Learning y uso de pickle (conexiÃ³n de un  modelo de ML con tu aplicaciÃ³n web)', mode: 'Presencial' },
+            { title: 'ML Supervisado: Algoritmos de ClasificaciÃ³n', mode: 'Virtual' },
             { title: 'Ingenieria de Caracteristicas', mode: 'Virtual' },
-            { title: 'Manejo de datos desbalanceados en clasificación', mode: 'Presencial' },
+            { title: 'Manejo de datos desbalanceados en clasificaciÃ³n', mode: 'Presencial' },
             { title: 'Modelos Ensemble', mode: 'Virtual' },
-            { title: 'Selección de modelos y comparación de algoritmos', mode: 'Presencial' },
-            { title: 'Reducción de la Dimensionalidad', mode: 'Presencial' },
+            { title: 'SelecciÃ³n de modelos y comparaciÃ³n de algoritmos', mode: 'Presencial' },
+            { title: 'ReducciÃ³n de la Dimensionalidad', mode: 'Presencial' },
             { title: 'ML No Supervisado: Algoritmos Clustering', mode: 'Presencial' },
-            { title: 'Detección de data leakage en proyectos de Machine Learning', mode: 'Virtual' },
+            { title: 'DetecciÃ³n de data leakage en proyectos de Machine Learning', mode: 'Virtual' },
             { title: 'Herramientas de Business Intelligence (Power BI, Tableau, etc.)', mode: 'Virtual' },
-            { title: 'ETLs, Extracción, transformación y carga de datos para procesos de ML', mode: 'Presencial' },
+            { title: 'ETLs, ExtracciÃ³n, transformaciÃ³n y carga de datos para procesos de ML', mode: 'Presencial' },
             { title: 'Analisis de Series temporales', mode: 'Virtual' }
           ]
         },
@@ -1123,7 +1130,7 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const students = await Student.find({ promotionId: req.params.promotionId });
     console.log('Found students:', students.map(s => ({ customId: s.id, mongoId: s._id, name: s.name, lastname: s.lastname, email: s.email })));
@@ -1159,7 +1166,7 @@ app.get('/api/promotions/:promotionId/attendance', verifyToken, async (req, res)
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     console.log('Promotion found:', promotion ? promotion.id : 'NOT FOUND');
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     // Fetch all attendance for this promotion in the given month using regex
     const attendance = await Attendance.find({
@@ -1181,7 +1188,7 @@ app.put('/api/promotions/:promotionId/attendance', verifyToken, async (req, res)
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     console.log('UPDATING ATTENDANCE - payload:', { studentId, date, status, note });
 
@@ -1206,13 +1213,13 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const startDate = promotion.startDate;
     const endDate = promotion.endDate;
     
     if (!startDate || !endDate) {
-      return res.status(400).json({ error: 'La promoción debe tener fechas de inicio y fin válidas' });
+      return res.status(400).json({ error: 'La promociÃ³n debe tener fechas de inicio y fin vÃ¡lidas' });
     }
 
     console.log(`Exporting attendance for promotion ${req.params.promotionId} from ${startDate} to ${endDate}`);
@@ -1221,7 +1228,7 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
     const students = await Student.find({ promotionId: req.params.promotionId }).sort({ name: 1, lastname: 1 });
     
     if (students.length === 0) {
-      return res.status(400).json({ error: 'No se encontraron estudiantes en esta promoción' });
+      return res.status(400).json({ error: 'No se encontraron estudiantes en esta promociÃ³n' });
     }
 
     // Get all attendance records for the entire promotion period
@@ -1341,7 +1348,7 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
       const summaryData = [
         ['No hay registros de asistencia para exportar'],
         [''],
-        ['Período consultado:'],
+        ['PerÃ­odo consultado:'],
         [`Desde: ${startDate}`],
         [`Hasta: ${endDate}`],
         [`Estudiantes: ${students.length}`]
@@ -1370,8 +1377,8 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
   }
 });
 
-// ── Holidays (festivos) for a promotion ──────────────────────────────────────
-// GET — return the holiday list for the promotion
+// â”€â”€ Holidays (festivos) for a promotion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// GET â€” return the holiday list for the promotion
 app.get('/api/promotions/:promotionId/holidays', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
@@ -1382,12 +1389,12 @@ app.get('/api/promotions/:promotionId/holidays', verifyToken, async (req, res) =
   }
 });
 
-// PUT — replace the full holiday list for the promotion
+// PUT â€” replace the full holiday list for the promotion
 app.put('/api/promotions/:promotionId/holidays', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
     const { holidays } = req.body; // array of YYYY-MM-DD strings
     if (!Array.isArray(holidays)) return res.status(400).json({ error: 'holidays must be an array' });
     await Promotion.findOneAndUpdate({ id: req.params.promotionId }, { holidays });
@@ -1402,7 +1409,7 @@ app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) 
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const {
       name, lastname, email, phone, age, administrativeSituation,
@@ -1462,15 +1469,15 @@ app.post('/api/promotions/:promotionId/students', verifyToken, async (req, res) 
 
 // Import students from Excel
 // Expected columns (Spanish headers matching the student form):
-//   Nombre*, Apellidos*, Email*, Teléfono*, Edad*, Situación Administrativa*,
+//   Nombre*, Apellidos*, Email*, TelÃ©fono*, Edad*, SituaciÃ³n Administrativa*,
 //   Nacionalidad, Documento (DNI/NIE/Pasaporte), Sexo,
-//   Nivel Inglés, Nivel Educativo, Profesión, Comunidad
+//   Nivel InglÃ©s, Nivel Educativo, ProfesiÃ³n, Comunidad
 // (* = required)
 app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     if (!req.file) return res.status(400).json({ error: 'No Excel file provided' });
 
@@ -1479,7 +1486,7 @@ app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, uplo
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
 
-    if (data.length === 0) return res.status(400).json({ error: 'El archivo Excel está vacío' });
+    if (data.length === 0) return res.status(400).json({ error: 'El archivo Excel estÃ¡ vacÃ­o' });
 
     // Column name aliases (Spanish headers as defined in the template)
     const col = (row, ...keys) => {
@@ -1503,15 +1510,15 @@ app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, uplo
       const name     = col(row, 'Nombre');
       const lastname = col(row, 'Apellidos');
       const email    = col(row, 'Email');
-      const phone    = col(row, 'Teléfono', 'Telefono');
+      const phone    = col(row, 'TelÃ©fono', 'Telefono');
       const ageRaw   = col(row, 'Edad');
-      const adminSit = col(row, 'Situación Administrativa', 'Situacion Administrativa');
+      const adminSit = col(row, 'SituaciÃ³n Administrativa', 'Situacion Administrativa');
       const nationality         = col(row, 'Nacionalidad');
       const identificationDocument = col(row, 'Documento', 'DNI/NIE/Pasaporte');
       const gender              = col(row, 'Sexo');
-      const englishLevel        = col(row, 'Nivel Inglés', 'Nivel Ingles');
+      const englishLevel        = col(row, 'Nivel InglÃ©s', 'Nivel Ingles');
       const educationLevel      = col(row, 'Nivel Educativo');
-      const profession          = col(row, 'Profesión', 'Profesion');
+      const profession          = col(row, 'ProfesiÃ³n', 'Profesion');
       const community           = col(row, 'Comunidad');
 
       // Required field validation
@@ -1523,7 +1530,7 @@ app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, uplo
       // Duplicate check
       const existing = await Student.findOne({ email, promotionId: req.params.promotionId });
       if (existing) {
-        skipped.push(`Fila ${rowNum}: ${email} ya existe en esta promoción`);
+        skipped.push(`Fila ${rowNum}: ${email} ya existe en esta promociÃ³n`);
         continue;
       }
 
@@ -1563,7 +1570,7 @@ app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, uplo
 
     const parts = [];
     if (created.length) parts.push(`${created.length} estudiante(s) importado(s)`);
-    if (skipped.length) parts.push(`${skipped.length} omitido(s) (ya existían)`);
+    if (skipped.length) parts.push(`${skipped.length} omitido(s) (ya existÃ­an)`);
     if (errors.length)  parts.push(`${errors.length} error(es)`);
 
     res.json({
@@ -1594,7 +1601,7 @@ app.put('/api/promotions/:promotionId/students/:studentId', verifyToken, async (
       console.log('Promotion not found with ID:', req.params.promotionId);
       return res.status(404).json({ error: 'Promotion not found' });
     }
-    if (!canEditPromotion(promotion, req.user.id)) {
+    if (!canEditPromotion(promotion, req.user.mongoId)) {
       console.log('User unauthorized for promotion:', req.user.id);
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -1739,7 +1746,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/notes', verifyToken, a
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await Student.findOneAndUpdate(
       { id: req.params.studentId, promotionId: req.params.promotionId },
@@ -1767,7 +1774,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/progress', verifyToken
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -1839,7 +1846,7 @@ app.post('/api/promotions/:promotionId/projects/assign', verifyToken, async (req
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const moduleExists = (promotion.modules || []).some(m => m.id === moduleId);
     if (!moduleExists) return res.status(404).json({ error: 'Module not found in promotion' });
@@ -1883,7 +1890,7 @@ app.get('/api/promotions/:promotionId/students/:studentId/projects', verifyToken
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -1901,7 +1908,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/projects/:assignmentId
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -1920,7 +1927,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/projects/:assignmentId
   }
 });
 
-// ==================== PÍLDORAS MANAGEMENT ====================
+// ==================== PÃLDORAS MANAGEMENT ====================
 // Helper to convert Excel date to JS Date
 function excelDateToJSDate(serial) {
   if (typeof serial === 'string') return serial; // Already a string format
@@ -1941,12 +1948,12 @@ function excelDateToJSDate(serial) {
   return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
 }
 
-// Upload Excel file for píldoras to a specific module
+// Upload Excel file for pÃ­ldoras to a specific module
 app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const module = promotion.modules.find(m => m.id === req.params.moduleId);
     if (!module) return res.status(404).json({ error: 'Module not found' });
@@ -1977,9 +1984,9 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
 
     for (const row of data) {
       // Handle different column name variations
-      const mode = row['Presentación'] || row['Presentacion'] || row['presentación'] || row['presentacion'] || 'Virtual';
+      const mode = row['PresentaciÃ³n'] || row['Presentacion'] || row['presentaciÃ³n'] || row['presentacion'] || 'Virtual';
       const dateText = row['Fecha'] || row['fecha'] || '';
-      const title = row['Píldora'] || row['Pildora'] || row['píldora'] || row['pildora'] || '';
+      const title = row['PÃ­ldora'] || row['Pildora'] || row['pÃ­ldora'] || row['pildora'] || '';
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
@@ -2036,7 +2043,7 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
       }
     }
 
-    // Get current extended info and update píldoras for this module
+    // Get current extended info and update pÃ­ldoras for this module
     let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
     if (!extendedInfo) {
       extendedInfo = await ExtendedInfo.create({
@@ -2055,7 +2062,7 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
       extendedInfo.modulesPildoras = [];
     }
 
-    // Find or create module píldoras entry
+    // Find or create module pÃ­ldoras entry
     let modulePildoras = extendedInfo.modulesPildoras.find(mp => mp.moduleId === req.params.moduleId);
     if (!modulePildoras) {
       modulePildoras = {
@@ -2066,13 +2073,13 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
       extendedInfo.modulesPildoras.push(modulePildoras);
     }
 
-    // Add imported píldoras to the module (append to existing ones)
+    // Add imported pÃ­ldoras to the module (append to existing ones)
     modulePildoras.pildoras.push(...pildoras);
 
     await extendedInfo.save();
 
     res.json({
-      message: `Successfully imported ${pildoras.length} píldoras to module "${module.name}"`,
+      message: `Successfully imported ${pildoras.length} pÃ­ldoras to module "${module.name}"`,
       pildoras: pildoras,
       module: {
         id: module.id,
@@ -2090,12 +2097,12 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
   }
 });
 
-// Upload Excel file for píldoras (legacy endpoint - will add to first module)
+// Upload Excel file for pÃ­ldoras (legacy endpoint - will add to first module)
 app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     if (!req.file) {
       return res.status(400).json({ error: 'No Excel file provided' });
@@ -2123,9 +2130,9 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
 
     for (const row of data) {
       // Handle different column name variations
-      const mode = row['Presentación'] || row['Presentacion'] || row['presentación'] || row['presentacion'] || 'Virtual';
+      const mode = row['PresentaciÃ³n'] || row['Presentacion'] || row['presentaciÃ³n'] || row['presentacion'] || 'Virtual';
       const dateText = row['Fecha'] || row['fecha'] || '';
-      const title = row['Píldora'] || row['Pildora'] || row['píldora'] || row['pildora'] || '';
+      const title = row['PÃ­ldora'] || row['Pildora'] || row['pÃ­ldora'] || row['pildora'] || '';
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
@@ -2181,7 +2188,7 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
       }
     }
 
-    // Get current extended info and update píldoras
+    // Get current extended info and update pÃ­ldoras
     let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
     if (!extendedInfo) {
       extendedInfo = await ExtendedInfo.create({
@@ -2198,7 +2205,7 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
     }
 
     res.json({
-      message: `Successfully imported ${pildoras.length} píldoras from Excel file`,
+      message: `Successfully imported ${pildoras.length} pÃ­ldoras from Excel file`,
       pildoras: pildoras,
       studentsNotFound: data.length - pildoras.length
     });
@@ -2212,12 +2219,12 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
   }
 });
 
-// Get module-based píldoras for a promotion
+// Get module-based pÃ­ldoras for a promotion
 app.get('/api/promotions/:promotionId/modules-pildoras', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     let extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
     if (!extendedInfo) {
@@ -2237,7 +2244,7 @@ app.get('/api/promotions/:promotionId/modules-pildoras', verifyToken, async (req
       extendedInfo.modulesPildoras.some(mp => mp.pildoras && mp.pildoras.length > 0);
 
     if (!hasAnyModulePildoras && extendedInfo.pildoras && extendedInfo.pildoras.length > 0) {
-      console.log('Migrating legacy píldoras to modules for promotion:', req.params.promotionId);
+      console.log('Migrating legacy pÃ­ldoras to modules for promotion:', req.params.promotionId);
 
       // Group legacy pildoras by moduleId if present, otherwise put in first module
       const firstModule = promotion.modules && promotion.modules.length > 0 ? promotion.modules[0] : null;
@@ -2292,12 +2299,12 @@ app.get('/api/promotions/:promotionId/modules-pildoras', verifyToken, async (req
       modulesPildoras: extendedInfo.modulesPildoras || []
     });
   } catch (error) {
-    console.error('Error fetching modules píldoras:', error);
+    console.error('Error fetching modules pÃ­ldoras:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update píldoras for a specific module
+// Update pÃ­ldoras for a specific module
 app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, async (req, res) => {
   try {
     const { pildoras } = req.body;
@@ -2307,7 +2314,7 @@ app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const module = promotion.modules.find(m => m.id === req.params.moduleId);
     if (!module) return res.status(404).json({ error: 'Module not found' });
@@ -2325,7 +2332,7 @@ app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
       });
     }
 
-    // Find or create module píldoras entry
+    // Find or create module pÃ­ldoras entry
     let modulePildoras = extendedInfo.modulesPildoras.find(mp => mp.moduleId === req.params.moduleId);
     if (!modulePildoras) {
       modulePildoras = {
@@ -2336,7 +2343,7 @@ app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
       extendedInfo.modulesPildoras.push(modulePildoras);
     }
 
-    // Update píldoras for this module
+    // Update pÃ­ldoras for this module
     modulePildoras.pildoras = pildoras.map(p => ({
       mode: p.mode || 'Virtual',
       date: p.date || '',
@@ -2345,7 +2352,7 @@ app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
       status: p.status || ''
     }));
 
-    // Sync flattened píldoras array for backward compatibility
+    // Sync flattened pÃ­ldoras array for backward compatibility
     const allPildoras = [];
     extendedInfo.modulesPildoras.forEach(mp => {
       if (mp.pildoras) {
@@ -2357,11 +2364,11 @@ app.put('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
     await extendedInfo.save();
 
     res.json({
-      message: 'Module píldoras updated successfully',
+      message: 'Module pÃ­ldoras updated successfully',
       modulePildoras: modulePildoras
     });
   } catch (error) {
-    console.error('Error updating module píldoras:', error);
+    console.error('Error updating module pÃ­ldoras:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2371,7 +2378,7 @@ app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras', verifyToken, 
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const mod = (promotion.modules || []).find(m => m.id === req.params.moduleId);
     if (!mod) return res.status(404).json({ error: 'Module not found' });
@@ -2393,7 +2400,7 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/:pildoraId/ass
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const mod = (promotion.modules || []).find(m => m.id === req.params.moduleId);
     if (!mod) return res.status(404).json({ error: 'Module not found' });
@@ -2414,7 +2421,7 @@ app.get('/api/promotions/:promotionId/students/:studentId', verifyToken, async (
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -2425,7 +2432,7 @@ app.get('/api/promotions/:promotionId/students/:studentId', verifyToken, async (
   }
 });
 
-// ─── Fichas de Seguimiento del Coder ──────────────────────────────────────────
+// â”€â”€â”€ Fichas de Seguimiento del Coder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Helper: buscar estudiante por id custom o _id
 async function findStudentByIdOrObjectId(studentId, promotionId) {
@@ -2441,7 +2448,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/ficha/personal', verif
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await findStudentByIdOrObjectId(req.params.studentId, req.params.promotionId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -2500,7 +2507,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/ficha/technical', veri
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await findStudentByIdOrObjectId(req.params.studentId, req.params.promotionId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -2519,23 +2526,23 @@ app.put('/api/promotions/:promotionId/students/:studentId/ficha/technical', veri
       { new: true }
     );
 
-    res.json({ message: 'Seguimiento técnico actualizado', student: updated });
+    res.json({ message: 'Seguimiento tÃ©cnico actualizado', student: updated });
   } catch (error) {
     console.error('Error PUT ficha/technical:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/promotions/:promotionId/teams — Adds a team entry and propagates to all member students
+// POST /api/promotions/:promotionId/teams â€” Adds a team entry and propagates to all member students
 app.post('/api/promotions/:promotionId/teams', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const { teamEntry, memberStudentIds } = req.body;
     // teamEntry: { teamName, projectType, role, moduleName, moduleId, assignedDate, members:[{id,name}] }
-    // memberStudentIds: [studentId, ...] — all students to receive this entry (includes the current one)
+    // memberStudentIds: [studentId, ...] â€” all students to receive this entry (includes the current one)
 
     if (!teamEntry || !Array.isArray(memberStudentIds) || memberStudentIds.length === 0) {
       return res.status(400).json({ error: 'teamEntry and memberStudentIds are required' });
@@ -2580,7 +2587,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/ficha/transversal', ve
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const student = await findStudentByIdOrObjectId(req.params.studentId, req.params.promotionId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -2604,7 +2611,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/ficha/transversal', ve
   }
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Update student detailed information
 app.put('/api/promotions/:promotionId/students/:studentId/profile', verifyToken, async (req, res) => {
@@ -2613,7 +2620,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/profile', verifyToken,
     if (!promotion) {
       return res.status(404).json({ error: 'Promotion not found' });
     }
-    if (!canEditPromotion(promotion, req.user.id)) {
+    if (!canEditPromotion(promotion, req.user.mongoId)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -2694,7 +2701,7 @@ app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, asyn
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     // First, let's find the student to see what we're working with
     let existingStudent = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
@@ -2756,7 +2763,7 @@ app.get('/api/my-enrollments', verifyToken, async (req, res) => {
 
 app.get('/api/my-promotions', verifyToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.mongoId;
     if (!userId) return res.json([]);
     const teacherPromotions = await Promotion.find({
       $or: [{ teacherId: userId }, { collaborators: userId }]
@@ -2769,7 +2776,7 @@ app.get('/api/my-promotions', verifyToken, async (req, res) => {
 
 app.get('/api/my-promotions-all', verifyToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.mongoId;
     if (!userId) return res.json([]);
     const teacherPromotions = await Promotion.find({
       $or: [{ teacherId: userId }, { collaborators: userId }]
@@ -2800,7 +2807,7 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
     let template = null;
 
     if (templateId) {
-      // Use lean() to get plain JS objects — no Mongoose _id complications
+      // Use lean() to get plain JS objects â€” no Mongoose _id complications
       template = await BootcampTemplate.findOne({ id: templateId }).lean();
       console.log(`[POST /promotions] template found: ${template?.id}, modules: ${template?.modules?.length || 0}, competences: ${template?.competences?.length || 0}`);
       if (template && template.modules && template.modules.length > 0 && promotionModules.length === 0) {
@@ -2824,13 +2831,13 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
       weeks,
       modules: promotionModules,
       employability: template ? (template.employability || []).map(({ name, url, startMonth, duration }) => ({ name, url, startMonth, duration })) : [],
-      teacherId: req.user.id,
+      teacherId: req.user.mongoId,
       collaborators: []
     });
 
     // If a template was selected, pre-populate ExtendedInfo from it
     if (template) {
-      // Map module names → fresh IDs so competence startModule.id resolves correctly
+      // Map module names â†’ fresh IDs so competence startModule.id resolves correctly
       const moduleNameToId = {};
       promotionModules.forEach(m => { moduleNameToId[m.name] = m.id; });
 
@@ -2918,7 +2925,7 @@ app.put('/api/promotions/:id', verifyToken, async (req, res) => {
       { returnDocument: 'after' }
     );
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
     res.json(promotion);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2929,7 +2936,7 @@ app.delete('/api/promotions/:id', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.id });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     await Promotion.deleteOne({ id: req.params.id });
     await Student.deleteMany({ promotionId: req.params.id });
@@ -2953,7 +2960,7 @@ app.post('/api/promotions/:promotionId/modules', verifyToken, async (req, res) =
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const module = { id: uuidv4(), name, duration, courses: courses || [], projects: projects || [] };
     promotion.modules.push(module);
@@ -2982,7 +2989,7 @@ app.post('/api/promotions/:promotionId/quick-links', verifyToken, async (req, re
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url });
     res.status(201).json(quickLink);
@@ -2995,7 +3002,7 @@ app.delete('/api/promotions/:promotionId/quick-links/:linkId', verifyToken, asyn
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const result = await QuickLink.deleteOne({ id: req.params.linkId, promotionId: req.params.promotionId });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Quick link not found' });
@@ -3023,7 +3030,7 @@ app.post('/api/promotions/:promotionId/sections', verifyToken, async (req, res) 
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const section = await Section.create({ id: uuidv4(), promotionId: req.params.promotionId, title, content });
     res.status(201).json(section);
@@ -3036,7 +3043,7 @@ app.put('/api/promotions/:promotionId/sections/:sectionId', verifyToken, async (
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const section = await Section.findOneAndUpdate(
       { id: req.params.sectionId, promotionId: req.params.promotionId },
@@ -3054,7 +3061,7 @@ app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, asyn
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const result = await Section.deleteOne({ id: req.params.sectionId, promotionId: req.params.promotionId });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Section not found' });
@@ -3083,7 +3090,7 @@ app.post('/api/promotions/:promotionId/calendar', verifyToken, async (req, res) 
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     const calendar = await Calendar.findOneAndUpdate(
       { promotionId: req.params.promotionId },
@@ -3114,7 +3121,7 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!canEditPromotion(promotion, req.user.mongoId)) return res.status(403).json({ error: 'Unauthorized' });
 
     console.log('UPDATING EXTENDED INFO for promotion:', req.params.promotionId);
     console.log('ModulesPildoras present in request:', !!req.body.modulesPildoras);
@@ -3186,7 +3193,7 @@ app.get('/api/promotions/:promotionId/public-students', async (req, res) => {
   }
 });
 
-// Public píldora self-assignment
+// Public pÃ­ldora self-assignment
 app.put('/api/promotions/:promotionId/pildoras-self-assign', async (req, res) => {
   try {
     const { moduleId, pildoraIndex, studentId, action, isLegacy } = req.body; // action: 'add' or 'remove'
@@ -3205,14 +3212,14 @@ app.put('/api/promotions/:promotionId/pildoras-self-assign', async (req, res) =>
     let pildora;
     if (isLegacy) {
       if (!extendedInfo.pildoras || !extendedInfo.pildoras[pildoraIndex]) {
-        return res.status(404).json({ error: 'Legacy píldora not found' });
+        return res.status(404).json({ error: 'Legacy pÃ­ldora not found' });
       }
       pildora = extendedInfo.pildoras[pildoraIndex];
     } else {
-      if (!moduleId) return res.status(400).json({ error: 'moduleId is required for module-based píldoras' });
+      if (!moduleId) return res.status(400).json({ error: 'moduleId is required for module-based pÃ­ldoras' });
       const modulePildoras = extendedInfo.modulesPildoras.find(m => m.moduleId === moduleId);
       if (!modulePildoras || !modulePildoras.pildoras[pildoraIndex]) {
-        return res.status(404).json({ error: 'Píldora not found' });
+        return res.status(404).json({ error: 'PÃ­ldora not found' });
       }
       pildora = modulePildoras.pildoras[pildoraIndex];
     }
@@ -3261,7 +3268,7 @@ app.get('/api/promotions/:promotionId/collaborators', verifyToken, async (req, r
 
     const collaboratorIds = promotion.collaborators || [];
     const collaborators = await Teacher.find({ id: { $in: collaboratorIds } }, 'id name email userRole');
-    const owner = await Teacher.findOne({ id: promotion.teacherId }, 'id name email userRole');
+    const owner = await Teacher.findOne({ _id: promotion.teacherId }, 'id name email userRole');
 
     const result = [];
     if (owner) {
@@ -3296,7 +3303,7 @@ app.post('/api/promotions/:promotionId/collaborators', verifyToken, async (req, 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
 
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can add collaborators' });
+    if (promotion.teacherId !== req.user.mongoId) return res.status(403).json({ error: 'Only owner can add collaborators' });
     if (teacherId === promotion.teacherId) return res.status(400).json({ error: 'Cannot add owner as collaborator' });
 
     if (!promotion.collaborators) promotion.collaborators = [];
@@ -3328,7 +3335,7 @@ app.put('/api/promotions/:promotionId/collaborators/:teacherId/modules', verifyT
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can manage module assignments' });
+    if (promotion.teacherId !== req.user.mongoId) return res.status(403).json({ error: 'Only owner can manage module assignments' });
 
     if (req.params.teacherId === promotion.teacherId) {
       promotion.ownerModules = moduleIds;
@@ -3355,7 +3362,7 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
 
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can remove collaborators' });
+    if (promotion.teacherId !== req.user.mongoId) return res.status(403).json({ error: 'Only owner can remove collaborators' });
 
     promotion.collaborators = (promotion.collaborators || []).filter(id => id !== req.params.teacherId);
     promotion.collaboratorModules = (promotion.collaboratorModules || []).filter(m => m.teacherId !== req.params.teacherId);
@@ -3485,10 +3492,18 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
 
     // Use Teacher.id = email (matches decoded.username from JWT = req.user.id on all requests)
     const localId = email;
-    console.log('[POST /api/admin/teachers] Saving teacher:', email, 'id:', localId, 'externalNumericId:', externalUserId);
+    console.log('[POST /api/admin/teachers] Saving teacher:', email, 'id:', localId, 'externalId:', externalUserId);
 
     const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
-    const teacher = await Teacher.create({ id: localId, name, email, password: hashedPassword, provisional: true, userRole: resolvedUserRole });
+    const teacher = await Teacher.create({
+      id: localId,
+      externalId: externalUserId ? String(externalUserId) : null,
+      name,
+      email,
+      password: hashedPassword,
+      provisional: true,
+      userRole: resolvedUserRole
+    });
 
     // Send password email
     const emailSent = await sendPasswordEmail(email, name, provisionalPassword);
@@ -3496,7 +3511,7 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
 
     res.status(201).json({
       message: 'Teacher created successfully.',
-      teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
+      teacher: { id: teacher.id, externalId: teacher.externalId, name: teacher.name, email: teacher.email },
       ...(emailWarning && { emailWarning }),
     });
   } catch (error) {
