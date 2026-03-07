@@ -180,6 +180,14 @@ initializeTestAccounts();
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
+
+  // Always decode without verification first to inspect claims (for logging)
+  let rawDecoded = null;
+  try {
+    rawDecoded = jwt.decode(token);
+    console.log('[verifyToken] raw claims:', JSON.stringify(rawDecoded));
+  } catch(e) {}
+
   try {
     // Try RS256 first (external auth API token from users.coderf5.es)
     const decoded = jwt.verify(token, EXTERNAL_PUBLIC_KEY, { algorithms: ['RS256'] });
@@ -188,15 +196,26 @@ const verifyToken = (req, res, next) => {
     if (extRoles.includes('ROLE_SUPER_ADMIN') || extRoles.includes('ROLE_SUPERADMIN')) extRole = 'admin';
     else if (extRoles.includes('ROLE_USER') && extRoles.includes('ROLE_ADMIN')) extRole = 'admin';
     else if (extRoles.includes('ROLE_ADMIN')) extRole = 'teacher';
-    req.user = { id: String(decoded.userId || decoded.sub), email: decoded.email, role: extRole };
+    // JWT from external API uses 'username' (email) as identifier; userId may not be in the token
+    const extId = decoded.username || decoded.email || decoded.sub || decoded.userId || decoded.id || null;
+    if (!extId) {
+      console.error('[verifyToken] RS256 ok but no user identifier claim. Claims:', Object.keys(decoded));
+      return res.status(401).json({ error: 'Token missing user identifier', claims: Object.keys(decoded) });
+    }
+    req.user = { id: String(extId), email: decoded.username || decoded.email || decoded.sub, role: extRole };
+    console.log('[verifyToken] RS256 ok, user:', req.user.id, req.user.role);
     next();
   } catch (rsErr) {
+    console.warn('[verifyToken] RS256 failed:', rsErr.message);
     try {
       // Fallback: HS256 legacy local token
-      req.user = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET);
+      req.user = decoded;
+      console.log('[verifyToken] HS256 ok, user:', req.user.id || req.user.email);
       next();
     } catch (error) {
-      res.status(401).json({ error: 'Invalid token' });
+      console.error('[verifyToken] Both RS256 and HS256 failed. Raw claims:', rawDecoded ? Object.keys(rawDecoded) : 'none');
+      res.status(401).json({ error: 'Invalid token', hint: rsErr.message });
     }
   }
 };
@@ -2737,8 +2756,10 @@ app.get('/api/my-enrollments', verifyToken, async (req, res) => {
 
 app.get('/api/my-promotions', verifyToken, async (req, res) => {
   try {
+    const userId = req.user.id;
+    if (!userId) return res.json([]);
     const teacherPromotions = await Promotion.find({
-      $or: [{ teacherId: req.user.id }, { collaborators: req.user.id }]
+      $or: [{ teacherId: userId }, { collaborators: userId }]
     });
     res.json(teacherPromotions);
   } catch (error) {
@@ -2748,8 +2769,10 @@ app.get('/api/my-promotions', verifyToken, async (req, res) => {
 
 app.get('/api/my-promotions-all', verifyToken, async (req, res) => {
   try {
+    const userId = req.user.id;
+    if (!userId) return res.json([]);
     const teacherPromotions = await Promotion.find({
-      $or: [{ teacherId: req.user.id }, { collaborators: req.user.id }]
+      $or: [{ teacherId: userId }, { collaborators: userId }]
     });
     res.json(teacherPromotions);
   } catch (error) {
@@ -3460,9 +3483,9 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
     const validUserRoles = ['Formador/a', 'CoFormador/a', 'Coordinador/a'];
     const resolvedUserRole = validUserRoles.includes(userRole) ? userRole : 'Formador/a';
 
-    // Use externalUserId sent by frontend (browser registered directly), fallback to uuid
-    const localId = externalUserId || uuidv4();
-    console.log('[POST /api/admin/teachers] Saving teacher:', email, 'id:', localId, externalUserId ? '(external)' : '(local uuid)');
+    // Use Teacher.id = email (matches decoded.username from JWT = req.user.id on all requests)
+    const localId = email;
+    console.log('[POST /api/admin/teachers] Saving teacher:', email, 'id:', localId, 'externalNumericId:', externalUserId);
 
     const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
     const teacher = await Teacher.create({ id: localId, name, email, password: hashedPassword, provisional: true, userRole: resolvedUserRole });

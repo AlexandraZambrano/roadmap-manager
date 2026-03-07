@@ -215,7 +215,7 @@
         <div id="danger-alert" class="alert alert-danger hidden" role="alert"></div>
         <div id="success-alert" class="alert alert-success hidden" role="alert"></div>
 
-        <form id="login-form">
+        <form id="login-form" onsubmit="event.preventDefault(); handleLogin();">
             <div class="form-group">
                 <label for="email" class="form-label" data-i18n="email-address">Email Address</label>
                 <input type="email" id="email" class="form-control" placeholder="your.email@example.com" required />

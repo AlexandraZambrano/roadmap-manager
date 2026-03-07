@@ -1,36 +1,36 @@
-const API_URL = "http://127.0.0.1:8000/infouser" || window.location.origin;
+const API_URL = "http://127.0.0.1:8000/infouser";
 
-function showAlert(message, type = 'danger') {
-    const alert = document.getElementById(`${type}-alert`);
-    alert.textContent = message;
-    alert.classList.remove('hidden');
-
-    if (type === 'success') {
-        setTimeout(() => alert.classList.add('hidden'), 3000);
+function showAlert(message, type) {
+    if (type === undefined) type = 'danger';
+    // Map 'error' to 'danger' since there is no error-alert element
+    var resolvedType = (type === 'error') ? 'danger' : type;
+    var alertEl = document.getElementById(resolvedType + '-alert');
+    if (!alertEl) { console.warn('Alert element not found:', resolvedType + '-alert'); return; }
+    alertEl.textContent = message;
+    alertEl.classList.remove('hidden');
+    if (resolvedType === 'success') {
+        setTimeout(function() { alertEl.classList.add('hidden'); }, 4000);
     }
 }
 
 function hideAlerts() {
-    const danger = document.getElementById('danger-alert');
+    var danger = document.getElementById('danger-alert');
     if (danger) danger.classList.add('hidden');
-
-    const success = document.getElementById('success-alert');
+    var success = document.getElementById('success-alert');
     if (success) success.classList.add('hidden');
-
-    const error = document.getElementById('error-alert');
+    var error = document.getElementById('error-alert');
     if (error) error.classList.add('hidden');
 }
 
 function setLoading(isLoading) {
-    const spinner = document.querySelector('.spinner-sm');
-    const button = document.querySelector('.btn-login');
-
+    var spinner = document.querySelector('.spinner-sm');
+    var button = document.querySelector('.btn-login');
     if (isLoading) {
-        spinner.style.display = 'inline-block';
-        button.disabled = true;
+        if (spinner) spinner.style.display = 'inline-block';
+        if (button) button.disabled = true;
     } else {
-        spinner.style.display = 'none';
-        button.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+        if (button) button.disabled = false;
     }
 }
 
@@ -38,8 +38,8 @@ function setLoading(isLoading) {
 window.handleLogin = async function () {
     console.log('handleLogin called');
 
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
+    var email = document.getElementById('email').value;
+    var password = document.getElementById('password').value;
 
     if (!email || !password) {
         showAlert('Please enter both email and password', 'danger');
@@ -48,30 +48,35 @@ window.handleLogin = async function () {
 
     hideAlerts();
     setLoading(true);
-
-    console.log(`Attempting login for: ${email}`);
+    console.log('Attempting login for:', email);
 
     try {
-        const response = await fetch(`${API_URL}`, {
+        var response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email: email, password: password })
         });
 
-        const data = await response.json();
-        console.log('Login response:', data);
+        var data = await response.json();
+        console.log('Login response status:', response.status);
+        console.log('Login response data:', JSON.stringify(data));
 
-        if (response.ok && data.success && data.data?.token) {
-            const token = data.data.token;
-            const roles = Array.isArray(data.data.roles) ? data.data.roles : [];
+        // Support multiple response shapes:
+        // Shape A (external API): { success: true, data: { token, userId, roles, name, email } }
+        // Shape B (flat): { token, userId, roles, name, email }
+        var payload = data.data || data;
+        var token = payload.token;
+        var loginOk = (data.success !== false) && !!token;
+
+        if (loginOk && token) {
+            var roles = Array.isArray(payload.roles) ? payload.roles : [];
             console.log('roles:', roles);
 
             // Role mapping from external API:
             // ROLE_USER + ROLE_ADMIN together = superadmin (full platform admin)
             // ROLE_ADMIN alone = teacher/coordinator
-            // ROLE_STUDENT = student
             // ROLE_SUPER_ADMIN = superadmin
-            let role = 'teacher';
+            var role = 'teacher';
             if (roles.includes('ROLE_SUPER_ADMIN') || roles.includes('ROLE_SUPERADMIN')) {
                 role = 'superadmin';
             } else if (roles.includes('ROLE_USER') && roles.includes('ROLE_ADMIN')) {
@@ -79,41 +84,52 @@ window.handleLogin = async function () {
             } else if (roles.includes('ROLE_ADMIN')) {
                 role = 'teacher';
             }
-
             console.log('Mapped role:', role);
 
-            const user = {
-                id: data.data.userId || '',
-                name: data.data.name || data.data.email || '',
-                email: data.data.email || '',
-                role
+            // The JWT uses 'username' (email) as identifier — server sets req.user.id = email (from decoded.username)
+            // We store email as id so promotions filter (teacherId === req.user.id) works correctly
+            // userId (numeric, e.g. 19) is stored separately for reference
+            var user = {
+                id: payload.email || payload.userId || '',
+                userId: payload.userId || payload.id || '',
+                name: payload.name || payload.email || '',
+                email: payload.email || '',
+                role: role
             };
 
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
             localStorage.setItem('role', role);
-            showAlert('Login successful! Redirecting...', 'success');
+            console.log('Saved user to localStorage:', JSON.stringify(user));
 
-            setTimeout(() => {
-                // All roles go to dashboard; superadmin has Admin Panel button in navbar
+            showAlert('Login successful! Redirecting...', 'success');
+            setTimeout(function() {
                 window.location.href = 'dashboard.html';
             }, 1000);
         } else {
-            showAlert(data.message || data.error || 'Login failed', 'danger');
+            var errMsg = data.message || data.error || payload.message || payload.error || 'Login failed. Check credentials.';
+            console.warn('Login failed:', errMsg, 'HTTP status:', response.status);
+            showAlert(errMsg, 'danger');
         }
-    } catch (error) {
-        console.error('Login error:', error);
+    } catch (err) {
+        console.error('Login error:', err);
         showAlert('Connection error. Please try again.', 'danger');
     } finally {
         setLoading(false);
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('login-form');
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.getElementById('login-form');
     if (form) {
-        form.addEventListener('keydown', (e) => {
+        // Prevent native form submit (page reload)
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            handleLogin();
+        });
+        form.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 handleLogin();
             }
         });
