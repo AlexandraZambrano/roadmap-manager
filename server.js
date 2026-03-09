@@ -2203,6 +2203,45 @@ function excelDateToJSDate(serial) {
   return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
 }
 
+// Download Excel template for importing píldoras into a module
+app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras/template-excel', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = promotion.modules.find(m => m.id === req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const headers = ['Presentación', 'Fecha', 'Píldora', 'Student', 'Estado'];
+    const exampleRow = ['Virtual', new Date().toISOString().split('T')[0], 'Ej: Testing con Jest', 'Nombre Apellido, Nombre2 Apellido2', 'Pendiente'];
+
+    const worksheet = xlsx.utils.aoa_to_sheet([headers, exampleRow]);
+    // Set some friendly column widths
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 40 },
+      { wch: 40 },
+      { wch: 16 }
+    ];
+
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Pildoras');
+
+    const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const safeModuleName = (module.name || module.id || 'modulo').toString().replace(/[\\/:*?"<>|]+/g, '-').trim();
+    const filename = `plantilla_importar_pildoras_${safeModuleName}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(excelBuffer);
+  } catch (error) {
+    console.error('Error generating píldoras Excel template:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Upload Excel file for píldoras to a specific module
 app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {

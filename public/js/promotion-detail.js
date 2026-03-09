@@ -1028,117 +1028,34 @@ function updatePildoraStudentSelection(pildoraIndex, studentId, isChecked) {
     }
 }
 
-function importPildorasFromCsv(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
+function downloadPildorasExcelTemplate() {
+    const headers = [
+        'Presentación', 'Fecha', 'Píldora', 'Student', 'Estado'
+    ];
 
-    const reader = new FileReader();
-    reader.onload = e => {
-        try {
-            const text = e.target.result || '';
-            const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-            if (lines.length <= 1) {
-                alert('CSV file is empty or missing data.');
-                return;
-            }
+    const hints = [
+        'Virtual | Presencial',
+        'YYYY-MM-DD',
+        'Título de la píldora',
+        'Nombre Apellido, Nombre2 Apellido2',
+        'Pendiente | Completada | Cancelada'
+    ];
 
-            const headerCols = lines[0].split(';').map(h => h.trim().toLowerCase());
-            const idxPresentacion = headerCols.indexOf('presentación') !== -1 ? headerCols.indexOf('presentación') : headerCols.indexOf('presentacion');
-            const idxFecha = headerCols.indexOf('fecha');
-            const idxPildora = headerCols.indexOf('píldora') !== -1 ? headerCols.indexOf('píldora') : headerCols.indexOf('pildora');
-            const idxStudent = headerCols.indexOf('student') !== -1 ? headerCols.indexOf('student') : headerCols.indexOf('coders');
-            const idxEstado = headerCols.indexOf('estado');
-
-            if (idxPresentacion === -1 || idxFecha === -1 || idxPildora === -1 || idxStudent === -1 || idxEstado === -1) {
-                alert('CSV header must include: Presentación;Fecha;Píldora;Student;Estado');
-                return;
-            }
-
-            const students = window.currentStudents || [];
-            const pildoras = [];
-            const currentModule = promotionModules[currentModuleIndex];
-
-            if (!currentModule) {
-                alert('No module selected. Please select a module first.');
-                input.value = '';
-                return;
-            }
-
-            for (let i = 1; i < lines.length; i++) {
-                const raw = lines[i];
-                if (!raw) continue;
-                const cols = raw.split(';');
-                if (cols.length <= Math.min(idxPresentacion, idxFecha, idxPildora, idxStudent, idxEstado)) continue;
-
-                const mode = (cols[idxPresentacion] || '').trim();
-                const dateText = (cols[idxFecha] || '').trim();
-                const title = (cols[idxPildora] || '').trim();
-                const studentText = (cols[idxStudent] || '').trim();
-                const status = (cols[idxEstado] || '').trim();
-
-                const studentsForPildora = [];
-                if (studentText && studentText.toLowerCase() !== 'desierta') {
-                    const parts = studentText.split(',').map(p => p.trim()).filter(Boolean);
-                    parts.forEach(part => {
-                        const lowerPart = part.toLowerCase();
-                        const s = students.find(st => {
-                            const full = `${st.name || ''} ${st.lastname || ''}`.trim().toLowerCase();
-                            return full && (full === lowerPart || full.includes(lowerPart) || lowerPart.includes(full));
-                        });
-                        if (s) {
-                            if (!studentsForPildora.some(x => x.id === s.id)) {
-                                studentsForPildora.push({
-                                    id: s.id,
-                                    name: s.name || '',
-                                    lastname: s.lastname || ''
-                                });
-                            }
-                        }
-                    });
-                }
-
-                let isoDate = '';
-                if (dateText && /^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-                    isoDate = dateText;
-                }
-
-                pildoras.push({
-                    mode: mode || 'Virtual',
-                    date: isoDate,
-                    title,
-                    students: studentsForPildora,
-                    status
-                });
-            }
-
-            // Add píldoras to the current module instead of the global pildoras array
-            if (!extendedInfoData.modulesPildoras) {
-                extendedInfoData.modulesPildoras = [];
-            }
-
-            // Find or create module píldoras entry
-            let modulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === currentModule.id);
-            if (!modulePildoras) {
-                modulePildoras = {
-                    moduleId: currentModule.id,
-                    moduleName: currentModule.name,
-                    pildoras: []
-                };
-                extendedInfoData.modulesPildoras.push(modulePildoras);
-            }
-
-            // Add imported píldoras to current module
-            modulePildoras.pildoras.push(...pildoras);
-
-            alert(`Successfully imported ${pildoras.length} píldoras to module "${currentModule.name}"`);
-            displayPildoras();
-            input.value = '';
-        } catch (err) {
-            console.error('Error importing CSV:', err);
-            alert('Error importing CSV file');
-        }
-    };
-    reader.readAsText(file);
+    const escape = v => `"${String(v).replace(/"/g, '""')}"`;
+    const rows = [
+        headers.map(escape).join(','),
+        hints.map(escape).join(',')
+    ];
+    const csvContent = rows.join('\r\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'plantilla_importar_pildoras.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function importPildorasFromExcel(input) {
@@ -1162,9 +1079,12 @@ function importPildorasFromExcel(input) {
     }
 
     // Show loading indicator
-    const originalText = document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML;
-    document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML =
-        '<i class="bi bi-hourglass-split"></i> Importing...';
+    const importBtn = document.getElementById('pildoras-import-excel-btn');
+    const originalText = importBtn ? importBtn.innerHTML : '';
+    if (importBtn) {
+        importBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Importando...';
+        importBtn.disabled = true;
+    }
 
     // Use module-specific endpoint
     fetch(`${API_URL}/api/promotions/${promotionId}/modules/${currentModule.id}/pildoras/upload-excel`, {
@@ -1211,7 +1131,10 @@ function importPildorasFromExcel(input) {
         })
         .finally(() => {
             // Restore button text
-            document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML = originalText;
+            if (importBtn) {
+                importBtn.innerHTML = originalText;
+                importBtn.disabled = false;
+            }
         });
 }
 
