@@ -13,7 +13,7 @@ RUN npm install --production
 COPY . .
 
 # Expose the port (Render will provide PORT as an environment variable)
-EXPOSE 3001
+EXPOSE 3000
 
 # Start the application
 CMD ["npm", "start"]
