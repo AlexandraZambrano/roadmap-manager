@@ -131,14 +131,15 @@
 
         try {
             const token = localStorage.getItem('token');
-            // Fetch student + fresh pildoras status in parallel
-            const [studentRes, pildarasRes] = await Promise.all([
+            // Fetch student + pildoras + extended-info in parallel
+            const [studentRes, pildarasRes, extRes] = await Promise.all([
                 fetch(`${API_URL}/api/promotions/${_promotionId}/students/${studentId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
                 fetch(`${API_URL}/api/promotions/${_promotionId}/modules-pildoras`, {
                     headers: { 'Authorization': `Bearer ${token}` }
-                })
+                }),
+                fetch(`${API_URL}/api/promotions/${_promotionId}/extended-info`)
             ]);
 
             if (!studentRes.ok) throw new Error('No se pudo cargar el estudiante');
@@ -147,6 +148,14 @@
             if (pildarasRes.ok) {
                 const pildarasData = await pildarasRes.json();
                 _modulesPildarasExtended = pildarasData.modulesPildoras || [];
+            }
+
+            // Merge project evaluations from ExtendedInfo into the student's technicalTracking.teams
+            // so that evaluations done from the Evaluación tab are always visible in the ficha
+            if (extRes.ok) {
+                const ext = await extRes.json();
+                const projectEvaluations = ext.projectEvaluations || [];
+                _mergeProjectEvaluationsIntoFicha(projectEvaluations, studentId);
             }
         } catch (e) {
             console.error('[StudentTracking] Error cargando estudiante:', e);
@@ -163,6 +172,10 @@
         _competences = (tt.competences || []).map(c => ({ ...c }));
         _completedModules = (tt.completedModules || []).map(m => ({ ...m }));
         _completedPildoras = (tt.completedPildoras || []).map(p => ({ ...p }));
+
+        // Overlay: inject evaluations from ExtendedInfo that are not yet in technicalTracking
+        _overlayEvaluationsIntoTeams(studentId);
+
         _employabilitySessions = (tr.employabilitySessions || []).map(s => ({ ...s }));
         _individualSessions = (tr.individualSessions || []).map(s => ({ ...s }));
         _incidents = (tr.incidents || []).map(i => ({ ...i }));
@@ -172,6 +185,67 @@
     }
 
     // ─── Modal principal ──────────────────────────────────────────────────────
+
+    /**
+     * Stores the fetched projectEvaluations from ExtendedInfo so _overlayEvaluationsIntoTeams can use them.
+     * Called during openFicha before data is loaded into memory.
+     */
+    let _extProjectEvaluations = [];
+
+    function _mergeProjectEvaluationsIntoFicha(projectEvaluations, studentId) {
+        _extProjectEvaluations = projectEvaluations || [];
+    }
+
+    /**
+     * After _teams is populated from technicalTracking, overlay any project evaluations from ExtendedInfo
+     * that don't yet have a corresponding entry in _teams (i.e. evaluations saved before sync existed,
+     * or evaluations that were never synced). This ensures they always appear in the ficha.
+     */
+    function _overlayEvaluationsIntoTeams(studentId) {
+        const LEVEL_LABELS_MAP = { 0: 'Sin nivel', 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+        for (const projEval of _extProjectEvaluations) {
+            // Find the entry for this student (individual) or any group (grupal) that contains this student
+            let evalEntry = null;
+            if (projEval.type === 'grupal') {
+                // Find which group the student belongs to
+                const group = (projEval.groups || []).find(g => (g.studentIds || []).includes(String(studentId)));
+                if (group) {
+                    evalEntry = (projEval.evaluations || []).find(e => e.targetId === group.groupName);
+                }
+            } else {
+                evalEntry = (projEval.evaluations || []).find(e => String(e.targetId) === String(studentId));
+            }
+            if (!evalEntry) continue;
+            if (!(evalEntry.competences || []).length && !evalEntry.feedback) continue;
+
+            // Check if this project is already in _teams (it will be if _syncEvaluationsToStudentTracking ran)
+            const alreadyInTeams = _teams.some(
+                t => t.teamName === projEval.projectName && t.moduleId === projEval.moduleId
+            );
+            if (alreadyInTeams) continue;
+
+            // Build a synthetic team entry from the evaluation data
+            const teamEntry = {
+                teamName: projEval.projectName || '',
+                projectType: projEval.type || 'individual',
+                role: '',
+                moduleName: projEval.moduleName || '',
+                moduleId: projEval.moduleId || '',
+                assignedDate: evalEntry.evaluatedAt ? evalEntry.evaluatedAt.split('T')[0] : '',
+                teacherNote: evalEntry.feedback || '',
+                studentComment: evalEntry.studentComment || '',
+                members: [],
+                competences: (evalEntry.competences || []).map(ce => ({
+                    competenceId: ce.competenceId,
+                    competenceName: ce.competenceName,
+                    level: ce.level,
+                    toolsUsed: ce.toolsUsed || []
+                })),
+                _fromEvaluation: true  // marker so we know it came from ExtendedInfo
+            };
+            _teams.push(teamEntry);
+        }
+    }
 
     function _showFichaModal() {
         const modal = _getOrCreateModal();
@@ -338,6 +412,11 @@
                                             </button>
                                         </div>
                                     </form>
+
+                                    <!-- ══ SECCIÓN DAR DE BAJA ══ -->
+                                    <div id="ficha-baja-section" class="mt-4 pt-3 border-top">
+                                        <div id="ficha-baja-content"></div>
+                                    </div>
                                 </div>
 
                                 <!-- ══ PESTAÑA SEGUIMIENTO TÉCNICO ══ -->
@@ -495,6 +574,9 @@
         if (form) {
             form.onsubmit = (e) => { e.preventDefault(); _savePersonal(); };
         }
+
+        // ── Sección de baja ──
+        _renderBajaSection();
     }
 
     // ─── Helpers de UI ────────────────────────────────────────────────────────
@@ -635,6 +717,12 @@
                     <span class="text-muted fst-italic">${_esc(t.teacherNote)}</span>
                    </div>`
                 : '';
+            const commentBlock = t.studentComment
+                ? `<div class="mt-1 small">
+                    <i class="bi bi-chat-right-text text-primary me-1"></i>
+                    <span class="text-primary fst-italic">${_esc(t.studentComment)}</span>
+                   </div>`
+                : '';
             const competencesList = (t.competences && t.competences.length)
                 ? `<div class="mt-2 pt-2 border-top">
                     <div class="small fw-semibold text-muted mb-1"><i class="bi bi-award me-1"></i>Competencias trabajadas:</div>
@@ -701,6 +789,7 @@
                             <small class="text-muted">Módulo: <strong>${_esc(t.moduleName || '—')}</strong></small>
                             ${membersList}
                             ${noteBlock}
+                            ${commentBlock}
                             ${competencesList}
                         </div>
                         <div class="d-flex flex-column gap-1 ms-2">
@@ -2013,6 +2102,151 @@
         if (wrapper) wrapper.remove();
     }
 
+    // ─── Dar de baja ──────────────────────────────────────────────────────────
+
+    function _renderBajaSection() {
+        const container = document.getElementById('ficha-baja-content');
+        if (!container) return;
+        const s = _currentStudent;
+        if (!s) return;
+
+        if (s.isWithdrawn && s.withdrawal) {
+            const w = s.withdrawal;
+            container.innerHTML = `
+                <div class="alert alert-danger d-flex align-items-start gap-3 mb-3" role="alert">
+                    <i class="bi bi-person-x-fill fs-4 text-danger mt-1 flex-shrink-0"></i>
+                    <div class="flex-grow-1">
+                        <h6 class="alert-heading mb-2">Este coder ha causado baja oficial</h6>
+                        <div class="row g-2 small">
+                            <div class="col-md-4"><span class="fw-semibold">Fecha de baja:</span><br>${_esc(w.date ? new Date(w.date).toLocaleDateString('es-ES') : '—')}</div>
+                            <div class="col-md-4"><span class="fw-semibold">Representante F5:</span><br>${_esc(w.representative || '—')}</div>
+                            <div class="col-12"><span class="fw-semibold">Motivo:</span><br>${_esc(w.reason || '—')}</div>
+                        </div>
+                        <div class="mt-3 d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                onclick="window.StudentTracking._openBajaForm()">
+                                <i class="bi bi-pencil me-1"></i>Editar datos de baja
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                onclick="window.Reports?.printActaBaja(window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId())">
+                                <i class="bi bi-file-earmark-text me-1"></i>Descargar Acta de Baja
+                            </button>
+                            <button type="button" class="btn btn-sm btn-link text-secondary p-0 ms-auto align-self-center"
+                                onclick="window.StudentTracking._cancelWithdrawal()">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Reactivar estudiante
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            container.innerHTML = `
+                <button type="button" class="btn btn-outline-danger btn-sm"
+                        onclick="window.StudentTracking._openBajaForm()">
+                    <i class="bi bi-person-x me-1"></i> Dar de Baja al Estudiante
+                </button>`;
+        }
+    }
+
+    function _openBajaForm() {
+        const container = document.getElementById('ficha-baja-content');
+        if (!container) return;
+        const s = _currentStudent;
+        const w = s?.withdrawal || {};
+        const today = _todayISO();
+
+        container.innerHTML = `
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white d-flex align-items-center gap-2">
+                    <i class="bi bi-person-x-fill"></i>
+                    <strong>${s?.isWithdrawn ? 'Editar datos de baja' : 'Registrar Baja Oficial'}</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Fecha oficial de baja <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control form-control-sm" id="baja-date"
+                                value="${_esc(w.date ? w.date.split('T')[0] : today)}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Representante Factoría F5 que firma <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-sm" id="baja-representative"
+                                placeholder="Nombre y cargo del representante"
+                                value="${_esc(w.representative || '')}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Motivo de la baja <span class="text-danger">*</span></label>
+                            <textarea class="form-control form-control-sm" id="baja-reason" rows="3"
+                                placeholder="Describe el motivo de la baja del estudiante…">${_esc(w.reason || '')}</textarea>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" class="btn btn-sm btn-secondary"
+                            onclick="window.StudentTracking._renderBajaSection()">Cancelar</button>
+                        <button type="button" class="btn btn-sm btn-danger"
+                            onclick="window.StudentTracking._saveWithdrawal()">
+                            <i class="bi bi-check-lg me-1"></i>
+                            ${s?.isWithdrawn ? 'Actualizar' : 'Registrar Baja y Generar Acta'}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    async function _saveWithdrawal() {
+        const date         = document.getElementById('baja-date')?.value?.trim();
+        const reason       = document.getElementById('baja-reason')?.value?.trim();
+        const representative = document.getElementById('baja-representative')?.value?.trim();
+
+        if (!date || !reason || !representative) {
+            _showToast('Completa todos los campos de baja (*)', 'warning');
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+        const payload = {
+            isWithdrawn: true,
+            withdrawal: { date, reason, representative, processedAt: new Date().toISOString() }
+        };
+
+        try {
+            const res = await fetch(`${API_URL}/api/promotions/${_promotionId}/students/${_currentStudentId}/ficha/personal`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+            _currentStudent = { ..._currentStudent, ...payload };
+            _syncStudentInTable(_currentStudent);
+            _showToast('Baja registrada correctamente ✓');
+            _renderBajaSection();
+            // Generar PDF del acta
+            window.Reports?.printActaBaja(_currentStudentId, _promotionId);
+        } catch (e) {
+            console.error('[StudentTracking] saveWithdrawal error:', e);
+            _showToast(e.message || 'Error al registrar la baja', 'danger');
+        }
+    }
+
+    async function _cancelWithdrawal() {
+        if (!confirm('¿Reactivar a este estudiante? Se eliminará el registro de baja.')) return;
+        const token = localStorage.getItem('token');
+        const payload = { isWithdrawn: false, withdrawal: null };
+        try {
+            const res = await fetch(`${API_URL}/api/promotions/${_promotionId}/students/${_currentStudentId}/ficha/personal`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error((await res.json()).error || 'Error al reactivar');
+            _currentStudent = { ..._currentStudent, isWithdrawn: false, withdrawal: null };
+            _syncStudentInTable(_currentStudent);
+            _showToast('Estudiante reactivado correctamente ✓');
+            _renderBajaSection();
+        } catch (e) {
+            _showToast(e.message || 'Error al reactivar el estudiante', 'danger');
+        }
+    }
+
     // ─── Persistencia (API calls) ─────────────────────────────────────────────
 
     async function _savePersonal() {
@@ -2023,23 +2257,31 @@
             email: document.getElementById('fp-email')?.value?.trim(),
             phone: document.getElementById('fp-phone')?.value?.trim(),
             age: parseInt(document.getElementById('fp-age')?.value) || null,
-            administrativeSituation: document.getElementById('fp-admin-situation')?.value,
-            nationality: document.getElementById('fp-nationality')?.value?.trim(),
-            identificationDocument: document.getElementById('fp-document')?.value?.trim(),
-            gender: document.getElementById('fp-gender')?.value,
-            englishLevel: document.getElementById('fp-english-level')?.value,
-            educationLevel: document.getElementById('fp-education-level')?.value,
-            profession: document.getElementById('fp-profession')?.value?.trim(),
-            community: document.getElementById('fp-community')?.value,
+            administrativeSituation: document.getElementById('fp-admin-situation')?.value || '',
+            nationality: document.getElementById('fp-nationality')?.value?.trim() || '',
+            identificationDocument: document.getElementById('fp-document')?.value?.trim() || '',
+            gender: document.getElementById('fp-gender')?.value || '',
+            englishLevel: document.getElementById('fp-english-level')?.value || '',
+            educationLevel: document.getElementById('fp-education-level')?.value || '',
+            profession: document.getElementById('fp-profession')?.value?.trim() || '',
+            community: document.getElementById('fp-community')?.value || '',
         };
 
-        // Validación de obligatorios
-        const required = ['name', 'lastname', 'email', 'phone', 'administrativeSituation'];
-        const missing = required.filter(f => !payload[f]);
-        if (missing.length || !payload.age) {
-            _showToast('Completa todos los campos obligatorios (*)', 'warning');
+        // Only validate the absolutely minimum fields
+        if (!payload.name || !payload.lastname || !payload.email) {
+            // Highlight missing fields
+            ['fp-name', 'fp-lastname', 'fp-email'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('is-invalid', !el.value.trim());
+            });
+            _showToast('Nombre, apellido y email son obligatorios', 'warning');
             return;
         }
+
+        // Clear any previous validation highlights
+        ['fp-name', 'fp-lastname', 'fp-email', 'fp-phone', 'fp-age'].forEach(id => {
+            document.getElementById(id)?.classList.remove('is-invalid');
+        });
 
         try {
             const res = await fetch(`${API_URL}/api/promotions/${_promotionId}/students/${_currentStudentId}/ficha/personal`, {
@@ -2047,7 +2289,10 @@
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Error ${res.status}`);
+            }
             const updated = await res.json();
             _currentStudent = { ..._currentStudent, ...payload };
             // Actualizar nombre en el subtítulo
@@ -2174,7 +2419,8 @@
         _openIndSessionForm, _saveIndSession, _removeIndSession,
         _openIncidentForm, _saveIncident, _resolveIncident, _removeIncident,
         _cancelInlineForm,
-        _saveTechnical, _saveTransversal
+        _saveTechnical, _saveTransversal,
+        _renderBajaSection, _openBajaForm, _saveWithdrawal, _cancelWithdrawal
     };
 
 })(window);

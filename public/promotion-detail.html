@@ -82,17 +82,7 @@
                                 <i class="bi bi-info-circle me-2"></i>Contenido del Programa
                             </a>
                         </li>
-                                           <li class="nav-item">
-                            <a class="nav-link" href="#roadmap" onclick="switchTab('roadmap')">
-                                <i class="bi bi-map me-2"></i>Roadmap
-                            </a>
-                        </li>
-                                                <li class="nav-item">
-                            <a class="nav-link" href="#calendar" onclick="switchTab('calendar')">
-                                <i class="bi bi-calendar me-2"></i>Calendario
-                            </a>
-                        </li>
-                                                <li class="nav-item teacher-only">
+                        <li class="nav-item teacher-only">
                             <a class="nav-link" href="#access-settings" onclick="switchTab('access-settings')">
                                 <i class="bi bi-lock me-2"></i>Accesos
                             </a>
@@ -194,62 +184,6 @@
                 </div>
 
                 <!-- Roadmap Tab -->
-                <div id="roadmap-tab" class="section-content hidden">
-                    <div class="d-flex justify-content-between align-items-center my-4">
-                        <h2>Roadmap & Modules</h2>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-warning" onclick="openEmployabilityModal()">
-                                <i class="bi bi-briefcase me-2"></i>Sesiones Empleabilidad
-                            </button>
-                            <button class="btn btn-primary" onclick="openModuleModal()">
-                                <i class="bi bi-plus-circle me-2"></i>Add Module
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="modules-list" class="row">
-                        <!-- Modules will be loaded here -->
-                    </div>
-
-                    <div class="mt-4">
-                        <h3>Gantt Chart</h3>
-                        <div class="table-responsive">
-                            <table id="gantt-table" class="table">
-                                <!-- Gantt will be generated here -->
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Calendar Tab -->
-                <div id="calendar-tab" class="section-content hidden">
-                    <div class="my-4">
-                        <h2>Google Calendar</h2>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-body">
-                            <h5 class="card-title">Calendar Configuration</h5>
-                            <form id="calendar-form">
-                                <div class="mb-3">
-                                    <label for="google-calendar-id" class="form-label">Google Calendar ID</label>
-                                    <input type="text" class="form-control" id="google-calendar-id"
-                                        placeholder="your-calendar@group.calendar.google.com" />
-                                    <small class="text-muted">Get your calendar ID from Google Calendar settings</small>
-                                </div>
-                                <button type="submit" class="btn btn-primary">Save Calendar</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div id="calendar-preview" class="mt-4 hidden">
-                        <h5>Calendar Preview</h5>
-                        <div class="ratio ratio-16x9">
-                            <iframe id="calendar-iframe"></iframe>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Students Tab -->
                 <div id="students-tab" class="section-content hidden">
                     <div class="d-flex justify-content-between align-items-center my-4">
@@ -587,7 +521,15 @@
 
                     <!-- Program Details Navigation Tabs -->
                     <nav class="nav nav-tabs mb-4" id="program-details-tabs" role="tablist">
-                        <button class="nav-link active" id="program-details-schedule-tab" type="button" role="tab" aria-selected="true"
+                        <button class="nav-link active" id="program-details-roadmap-tab" type="button" role="tab" aria-selected="true"
+                            onclick="switchProgramDetailsTab('roadmap')">
+                            <i class="bi bi-map me-2"></i>Roadmap
+                        </button>
+                        <button class="nav-link" id="program-details-calendar-tab" type="button" role="tab" aria-selected="false"
+                            onclick="switchProgramDetailsTab('calendar')">
+                            <i class="bi bi-calendar me-2"></i>Calendario
+                        </button>
+                        <button class="nav-link" id="program-details-schedule-tab" type="button" role="tab" aria-selected="false"
                             onclick="switchProgramDetailsTab('schedule')">
                             <i class="bi bi-clock me-2"></i>Horario
                         </button>
@@ -623,8 +565,58 @@
 
                     <!-- Tab Content -->
                     <div class="tab-content" id="program-details-content">
+                        <!-- Roadmap Tab -->
+                        <div class="tab-pane fade show active" id="program-details-roadmap" role="tabpanel" aria-labelledby="program-details-roadmap-tab">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <h5 class="mb-0">Roadmap & Modules</h5>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-outline-warning btn-sm" onclick="openEmployabilityModal()">
+                                        <i class="bi bi-briefcase me-2"></i>Sesiones Empleabilidad
+                                    </button>
+                                    <button class="btn btn-primary btn-sm" onclick="openModuleModal()">
+                                        <i class="bi bi-plus-circle me-2"></i>Add Module
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="modules-list" class="row">
+                                <!-- Modules will be loaded here -->
+                            </div>
+                            <div class="mt-4">
+                                <h6 class="mb-3">Gantt Chart</h6>
+                                <div class="table-responsive">
+                                    <table id="gantt-table" class="table">
+                                        <!-- Gantt will be generated here -->
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Calendario Tab -->
+                        <div class="tab-pane fade" id="program-details-calendar" role="tabpanel" aria-labelledby="program-details-calendar-tab">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Calendar Configuration</h5>
+                                    <form id="calendar-form">
+                                        <div class="mb-3">
+                                            <label for="google-calendar-id" class="form-label">Google Calendar ID</label>
+                                            <input type="text" class="form-control" id="google-calendar-id"
+                                                placeholder="your-calendar@group.calendar.google.com" />
+                                            <small class="text-muted">Get your calendar ID from Google Calendar settings</small>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary">Save Calendar</button>
+                                    </form>
+                                </div>
+                            </div>
+                            <div id="calendar-preview" class="mt-4 hidden">
+                                <h5>Calendar Preview</h5>
+                                <div class="ratio ratio-16x9">
+                                    <iframe id="calendar-iframe"></iframe>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Schedule Tab -->
-                        <div class="tab-pane fade show active" id="program-details-schedule" role="tabpanel" aria-labelledby="program-details-schedule-tab">
+                        <div class="tab-pane fade" id="program-details-schedule" role="tabpanel" aria-labelledby="program-details-schedule-tab">
                             <div class="card">
                                 <div class="card-body">
                                     <div class="row">
