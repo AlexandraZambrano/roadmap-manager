@@ -7034,6 +7034,58 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
             if (teamIdx >= 0) existingTeams[teamIdx] = { ...existingTeams[teamIdx], ...teamEntry };
             else existingTeams.push(teamEntry);
 
+            // ── Auto-calculate module progress ───────────────────────────────
+            const allModules = window._evalState?.modules || [];
+            const updatedCompletedModules = (tt.completedModules || []).map(m => ({ ...m }));
+
+            allModules.forEach(module => {
+                const mid = String(module.id || '');
+                const totalProjects = (module.projects || []).length;
+                if (totalProjects === 0) return; // skip modules with no projects
+
+                // Count unique evaluated project names for this module in the student's teams
+                const evaluatedProjectNames = new Set(
+                    existingTeams
+                        .filter(t => String(t.moduleId) === mid)
+                        .map(t => t.teamName)
+                );
+                const evaluatedCount = evaluatedProjectNames.size;
+                const progressPct = Math.round((evaluatedCount / totalProjects) * 100);
+
+                if (evaluatedCount === 0) return; // don't create entry if nothing evaluated yet
+
+                // Compute average competence level for modules with evaluated projects
+                const moduleTeams = existingTeams.filter(t => String(t.moduleId) === mid);
+                const allLevels = moduleTeams.flatMap(t => (t.competences || []).map(c => c.level)).filter(l => l > 0);
+                const avgLevel = allLevels.length
+                    ? Math.round(allLevels.reduce((a, b) => a + b, 0) / allLevels.length)
+                    : 0;
+                // Map 0-3 team level → 1-4 module grade: 0→1, 1→2, 2→3, 3→4
+                const autoGrade = Math.min(4, avgLevel + 1);
+
+                const existingIdx = updatedCompletedModules.findIndex(cm => String(cm.moduleId) === mid);
+                const today = new Date().toISOString().split('T')[0];
+                const totalCourses = (module.courses || []).length;
+                const completedNotes = `${evaluatedCount}/${totalProjects} proyectos evaluados${totalCourses > 0 ? `, ${totalCourses} cursos` : ''}`;
+
+                const entry = {
+                    moduleId: mid,
+                    moduleName: module.name || '',
+                    progressPercent: progressPct,
+                    finalGrade: existingIdx >= 0 && updatedCompletedModules[existingIdx].finalGrade
+                        ? updatedCompletedModules[existingIdx].finalGrade
+                        : autoGrade,
+                    completionDate: progressPct >= 100 ? today : (existingIdx >= 0 ? updatedCompletedModules[existingIdx].completionDate : ''),
+                    notes: completedNotes
+                };
+
+                if (existingIdx >= 0) {
+                    updatedCompletedModules[existingIdx] = { ...updatedCompletedModules[existingIdx], ...entry };
+                } else {
+                    updatedCompletedModules.push(entry);
+                }
+            });
+
             // ── Persist to student ficha ─────────────────────────────────────
             await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}/ficha/technical`, {
                 method: 'PUT',
@@ -7045,7 +7097,7 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
                     teacherNotes: tt.teacherNotes || [],
                     teams: existingTeams,
                     competences: existingComps,
-                    completedModules: tt.completedModules || [],
+                    completedModules: updatedCompletedModules,
                     completedPildoras: tt.completedPildoras || []
                 })
             });

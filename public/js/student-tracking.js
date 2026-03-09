@@ -447,11 +447,17 @@
                                     <!-- Módulos completados -->
                                     <div class="tracking-section mb-4">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <h6 class="text-primary mb-0"><i class="bi bi-book-half me-1"></i> Módulos Completados</h6>
+                                            <h6 class="text-primary mb-0">
+                                                <i class="bi bi-book-half me-1"></i> Progreso por Módulos
+                                                <span class="badge bg-light text-secondary border ms-2" style="font-size:.65rem; vertical-align:middle;">
+                                                    <i class="bi bi-robot me-1"></i>Automático
+                                                </span>
+                                            </h6>
                                             <button class="btn btn-sm btn-outline-primary" onclick="window.StudentTracking._openModuleForm()">
-                                                <i class="bi bi-plus-lg me-1"></i>Registrar Módulo
+                                                <i class="bi bi-plus-lg me-1"></i>Añadir Manual
                                             </button>
                                         </div>
+                                        <div id="ficha-modules-progress-summary"></div>
                                         <div id="ficha-modules-list"></div>
                                     </div>
 
@@ -1600,31 +1606,143 @@
 
     // ─── Renderizado: Módulos completados ─────────────────────────────────────
 
+    function _renderModulesSummary() {
+        const summary = document.getElementById('ficha-modules-progress-summary');
+        if (!summary) return;
+
+        // Only show summary if there are auto-tracked modules (with progressPercent)
+        const autoModules = _completedModules.filter(m => m.progressPercent !== undefined && m.progressPercent !== null);
+        const allModules = _promotionModules.length ? _promotionModules : autoModules.map(m => ({ id: m.moduleId, name: m.moduleName }));
+
+        if (!allModules.length || !autoModules.length) {
+            summary.innerHTML = '';
+            return;
+        }
+
+        // Calculate overall bootcamp progress
+        const totalModules = allModules.length;
+        const completedModulesCount = autoModules.filter(m => parseInt(m.progressPercent) >= 100).length;
+        const avgProgress = autoModules.length
+            ? Math.round(autoModules.reduce((sum, m) => sum + (parseInt(m.progressPercent) || 0), 0) / autoModules.length)
+            : 0;
+
+        const globalColor = avgProgress >= 100 ? '#198754'
+                          : avgProgress >= 60  ? '#0d6efd'
+                          : avgProgress >= 30  ? '#ffc107'
+                          : '#dc3545';
+        const globalBarColor = avgProgress >= 100 ? 'bg-success'
+                             : avgProgress >= 60  ? 'bg-primary'
+                             : avgProgress >= 30  ? 'bg-warning'
+                             : 'bg-danger';
+
+        summary.innerHTML = `
+            <div class="card border-0 bg-light mb-3">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small fw-semibold text-secondary">
+                            <i class="bi bi-bar-chart-fill me-1"></i>Progreso global del bootcamp
+                        </span>
+                        <span class="fw-bold" style="color:${globalColor}; font-size:1.1rem;">${avgProgress}%</span>
+                    </div>
+                    <div class="progress mb-2" style="height:10px;">
+                        <div class="progress-bar ${globalBarColor}" role="progressbar"
+                            style="width:${avgProgress}%; transition:width 0.6s ease;"
+                            aria-valuenow="${avgProgress}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex gap-3 flex-wrap">
+                        <small class="text-muted">
+                            <i class="bi bi-check-circle-fill text-success me-1"></i>
+                            <strong>${completedModulesCount}</strong> de <strong>${totalModules}</strong> módulos completados
+                        </small>
+                        <small class="text-muted">
+                            <i class="bi bi-folder2-open me-1"></i>
+                            <strong>${_teams.length}</strong> proyecto${_teams.length !== 1 ? 's' : ''} evaluado${_teams.length !== 1 ? 's' : ''}
+                        </small>
+                    </div>
+                </div>
+            </div>`;
+    }
+
     function _renderModules() {
         const container = document.getElementById('ficha-modules-list');
         if (!container) return;
+
+        // Always render the global progress summary first
+        _renderModulesSummary();
+
         if (!_completedModules.length) {
-            container.innerHTML = _emptyState('book', 'Sin módulos completados');
+            container.innerHTML = _emptyState('book', 'Sin módulos registrados');
             return;
         }
-        container.innerHTML = _completedModules.map((m, i) => `
-            <div class="card mb-2 border-start border-4 border-primary">
+        container.innerHTML = _completedModules.map((m, i) => {
+            const pct = (m.progressPercent !== undefined && m.progressPercent !== null)
+                ? Math.min(100, Math.max(0, parseInt(m.progressPercent) || 0))
+                : null;
+            const isAutoEntry = pct !== null;
+
+            // Color of progress bar based on percentage
+            const barColor = pct >= 100 ? 'bg-success'
+                           : pct >= 60  ? 'bg-primary'
+                           : pct >= 30  ? 'bg-warning'
+                           : 'bg-danger';
+
+            const borderColor = pct >= 100 ? 'border-success'
+                              : pct >= 60  ? 'border-primary'
+                              : pct >= 30  ? 'border-warning'
+                              : isAutoEntry ? 'border-danger' : 'border-primary';
+
+            const progressBar = isAutoEntry ? `
+                <div class="mt-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted fw-semibold">Progreso del módulo</small>
+                        <small class="fw-bold" style="color:${pct >= 100 ? '#198754' : pct >= 60 ? '#0d6efd' : pct >= 30 ? '#ffc107' : '#dc3545'}">${pct}%</small>
+                    </div>
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar ${barColor}" role="progressbar"
+                            style="width:${pct}%; transition: width 0.5s ease;"
+                            aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    ${pct >= 100 ? `<div class="mt-1"><span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Módulo completado</span></div>` : ''}
+                </div>` : '';
+
+            const gradeBadge = m.finalGrade
+                ? `<span class="badge bg-${LEVEL_COLORS[m.finalGrade] || 'secondary'} ms-1">${LEVEL_LABELS[m.finalGrade] || m.finalGrade}</span>`
+                : '';
+
+            const dateInfo = m.completionDate
+                ? `<i class="bi bi-calendar-check me-1"></i>${_fmtDate(m.completionDate)}`
+                : (pct >= 100 ? `<i class="bi bi-calendar-check me-1"></i>Hoy` : '');
+
+            const notesInfo = m.notes
+                ? `<div class="mt-1 small text-muted fst-italic"><i class="bi bi-info-circle me-1"></i>${_esc(m.notes)}</div>`
+                : '';
+
+            const autoLabel = isAutoEntry
+                ? `<span class="badge bg-light text-secondary border ms-2" style="font-size:.65rem;"><i class="bi bi-robot me-1"></i>Auto</span>`
+                : '';
+
+            return `
+            <div class="card mb-2 border-start border-4 ${borderColor}">
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="fw-semibold"><i class="bi bi-book-fill text-primary me-1"></i>${_esc(m.moduleName || '—')}</div>
-                            <small class="text-muted">
-                                <i class="bi bi-calendar-check me-1"></i>${_fmtDate(m.completionDate)}
-                                &nbsp;|&nbsp; Nota: <span class="badge bg-${LEVEL_COLORS[m.finalGrade] || 'secondary'}">${LEVEL_LABELS[m.finalGrade] || m.finalGrade || 'N/A'}</span>
-                                ${m.notes ? `&nbsp;|&nbsp;${_esc(m.notes)}` : ''}
-                            </small>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">
+                                <i class="bi bi-book-fill text-primary me-1"></i>${_esc(m.moduleName || '—')}
+                                ${gradeBadge}${autoLabel}
+                            </div>
+                            <small class="text-muted">${dateInfo}</small>
+                            ${notesInfo}
+                            ${progressBar}
                         </div>
-                        <button class="btn btn-sm btn-link text-danger p-0" onclick="window.StudentTracking._removeModule(${i})">
+                        <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="window.StudentTracking._removeModule(${i})">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 
     function _openModuleForm() {
