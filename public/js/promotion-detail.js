@@ -4206,7 +4206,7 @@ async function removeCollaborator(teacherId) {
 // ==================== ACCESS SETTINGS ====================
 
 async function loadAccessPassword() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -4255,7 +4255,7 @@ async function loadAccessPassword() {
 }
 
 async function updateAccessPassword() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     const passwordInput = document.getElementById('access-password-input');
@@ -4370,7 +4370,7 @@ function copyAccessLink() {
 // ==================== TEACHING CONTENT FUNCTIONS ====================
 
 async function loadTeachingContent() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -4432,7 +4432,7 @@ async function loadTeachingContent() {
 }
 
 async function updateTeachingContent() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     const urlInput = document.getElementById('teaching-content-url');
@@ -4490,7 +4490,7 @@ async function updateTeachingContent() {
 }
 
 async function removeTeachingContent() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     if (!confirm('Are you sure you want to remove the teaching content link?')) {
         return;
