@@ -1602,6 +1602,16 @@ async function saveExtendedInfo() {
         if (response.ok) {
             const savedData = await response.json();
             console.log('Data saved successfully:', savedData);
+
+            // ── Auto-sync competences → roadmap module projects ───────────────
+            if (window.ProgramCompetences && window.ProgramCompetences.getEvalModulesSyncData) {
+                try {
+                    await _syncCompetencesToRoadmap();
+                } catch (syncErr) {
+                    console.error('[saveExtendedInfo] Error syncing competences to roadmap:', syncErr);
+                }
+            }
+
             location.reload();
         } else {
             try {
@@ -1616,6 +1626,61 @@ async function saveExtendedInfo() {
         console.error('Error saving info:', error);
         alert(`Error saving info: ${error.message}`);
     }
+}
+
+/**
+ * Auto-syncs program competences to roadmap module projects.
+ * For each competence that has evalModules defined, adds that competence's id
+ * to the competenceIds of ALL projects inside those modules.
+ * Competences NOT assigned to a module are ignored (not removed from projects they may already have).
+ */
+async function _syncCompetencesToRoadmap() {
+    const token = localStorage.getItem('token');
+    const syncData = window.ProgramCompetences.getEvalModulesSyncData(); // [{moduleId, competenceId}]
+    if (!syncData.length) return;
+
+    // Fetch current promotion data
+    const res = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) return;
+    const promotion = await res.json();
+    const modules = promotion.modules || [];
+
+    // Build a map: moduleId → Set of competenceIds to add
+    const moduleCompMap = {};
+    syncData.forEach(({ moduleId, competenceId }) => {
+        if (!moduleCompMap[moduleId]) moduleCompMap[moduleId] = new Set();
+        moduleCompMap[moduleId].add(String(competenceId));
+    });
+
+    let changed = false;
+    modules.forEach(mod => {
+        const key = String(mod.id || '');
+        const toAdd = moduleCompMap[key];
+        if (!toAdd || !toAdd.size) return;
+        (mod.projects || []).forEach(proj => {
+            if (!proj.competenceIds) proj.competenceIds = [];
+            toAdd.forEach(cid => {
+                if (!proj.competenceIds.map(String).includes(cid)) {
+                    proj.competenceIds.push(cid);
+                    changed = true;
+                }
+            });
+        });
+    });
+
+    if (!changed) return;
+
+    await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ modules })
+    });
+    console.log('[Sync] Competencias sincronizadas al roadmap correctamente.');
 }
 
 // ── Acta de Inicio modal ─────────────────────────────────────────────────────
