@@ -2916,21 +2916,24 @@ async function loadOverviewPildoraAlert() {
                 })
                 .filter(Boolean);
             if (assignedStudentNames.length > 0) {
-                studentsText = `<p class="mb-0 small"><strong>Estudiantes:</strong> ${assignedStudentNames.join(', ')}</p>`;
+                studentsText = `<small class="text-muted d-block mb-1">${assignedStudentNames.join(', ')}</small>`;
             }
         }
 
         contentEl.innerHTML = `
-            <div class="mb-2">
-                <h6 class="mb-1 text-dark">
-                    <i class="bi bi-star-fill me-2 text-warning"></i>${nextPildora.title || 'Sin título'}
-                </h6>
-                <p class="mb-1 small">
-                    <strong>Fecha:</strong> ${formattedDate} <span class="badge bg-info">${daysText}</span>
-                </p>
-                ${nextPildora.teacher ? `<p class="mb-0 small"><strong>Profesor:</strong> ${nextPildora.teacher}</p>` : ''}
+            <div>
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1 text-dark">
+                            <i class="bi bi-star-fill me-1 text-warning"></i>${nextPildora.title || 'Sin título'}
+                        </h6>
+                        <small class="text-muted d-block">${formattedDate}</small>
+                    </div>
+                    <span class="badge bg-primary text-white">${daysText}</span>
+                </div>
+                ${nextPildora.teacher ? `<small class="text-muted d-block mb-1"><strong>Profesor:</strong> ${nextPildora.teacher}</small>` : ''}
                 ${studentsText}
-                ${nextPildora.description ? `<p class="mb-0 small text-muted">${nextPildora.description}</p>` : ''}
+                ${nextPildora.description ? `<small class="text-muted d-block">${nextPildora.description}</small>` : ''}
             </div>
         `;
     } catch (error) {
@@ -3072,18 +3075,11 @@ async function loadOverviewAttendanceAlert() {
         const totalActive = activeStudents.length;
 
         let html = `
-            <div class="mb-2">
-                <div class="row g-2 mb-2">
-                    <div class="col-6">
-                        <p class="mb-0 small">
-                            <strong>Total:</strong> ${totalActive} estudiantes
-                        </p>
-                    </div>
-                    <div class="col-6">
-                        <p class="mb-0 small">
-                            <strong>Asistencia:</strong> <span class="badge ${attendanceRate >= 80 ? 'bg-success' : attendanceRate >= 60 ? 'bg-warning text-dark' : 'bg-danger'}">${attendanceRate}%</span>
-                        </p>
-                    </div>
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <!-- Attendance Rate -->
+                <div>
+                    <small class="text-muted d-block mb-1">Asistencia</small>
+                    <span class="badge fs-6 ${attendanceRate >= 80 ? 'bg-warning' : attendanceRate >= 60 ? 'bg-warning' : 'bg-danger'}">${attendanceRate}%</span>
                 </div>
         `;
 
@@ -3093,21 +3089,23 @@ async function loadOverviewAttendanceAlert() {
         if (studentsWithAbsences.length > 0) {
             const maxAbsenceStudent = studentsWithAbsences[0];
             html += `
-                <div class="alert alert-warning py-2 px-2 mb-0">
-                    <strong class="d-block mb-2 small text-warning">
-                        <i class="bi bi-exclamation-circle me-1"></i>Mayor número de ausencias registradas:
-                    </strong>
-                    <div class="d-flex justify-content-between align-items-center">
+                <!-- Max Absences -->
+                <div class="flex-grow-1">
+                    <small class="text-muted d-block mb-1">Mayor ausencias</small>
+                    <div class="d-flex align-items-center gap-2">
                         <span class="small">${maxAbsenceStudent.name}</span>
-                        <span class="badge bg-warning text-dark">${maxAbsenceStudent.absences}</span>
+                        <span class="badge bg-warning">${maxAbsenceStudent.absences}</span>
                     </div>
                 </div>
             `;
         } else {
             html += `
-                <p class="text-success small mb-0">
-                    <i class="bi bi-check-circle me-2"></i>¡Excelente asistencia!
-                </p>
+                <!-- No Absences -->
+                <div class="flex-grow-1">
+                    <small class="text-success d-block">
+                        <i class="bi bi-check-circle me-1"></i>¡Excelente asistencia!
+                    </small>
+                </div>
             `;
         }
 
