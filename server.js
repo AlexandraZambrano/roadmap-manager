@@ -2149,9 +2149,12 @@ app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras/template-excel'
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const headers = ['Presentación', 'Fecha', 'Píldora', 'Student', 'Estado'];
-    const exampleRow = ['Virtual', new Date().toISOString().split('T')[0], 'Ej: Testing con Jest', 'Nombre Apellido, Nombre2 Apellido2', 'Pendiente'];
+    // Date cell uses a proper date string so Excel recognises it; leave blank if no date
+    const todayStr = new Date().toISOString().split('T')[0];
+    const exampleRow = ['Virtual', todayStr, 'Ej: Testing con Jest', 'Nombre Apellido, Nombre2 Apellido2', 'Pendiente'];
+    const noteRow   = ['', '(dejar vacío si no hay fecha)', '', '(separar por comas)', ''];
 
-    const worksheet = xlsx.utils.aoa_to_sheet([headers, exampleRow]);
+    const worksheet = xlsx.utils.aoa_to_sheet([headers, exampleRow, noteRow]);
     // Set some friendly column widths
     worksheet['!cols'] = [
       { wch: 14 },
@@ -2203,11 +2206,42 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
 
     // Get current students for validation
     const students = await Student.find({ promotionId: req.params.promotionId });
-    const studentMap = new Map();
+    // Build lookup maps: exact "name lastname", name-only, and lastname-only (all lowercased)
+    const studentByFullName = new Map();
+    const studentByFirstName = new Map();
+    const studentByLastName = new Map();
     students.forEach(student => {
-      const fullName = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
-      studentMap.set(fullName, student);
+      const full = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
+      const first = (student.name || '').trim().toLowerCase();
+      const last = (student.lastname || '').trim().toLowerCase();
+      studentByFullName.set(full, student);
+      if (first && !studentByFirstName.has(first)) studentByFirstName.set(first, student);
+      if (last && !studentByLastName.has(last)) studentByLastName.set(last, student);
     });
+
+    // Resolve a single name string to a student object or a plain-name entry
+    function resolveStudent(rawName) {
+      const key = rawName.trim().toLowerCase();
+      if (!key) return null;
+      // 1. Exact full-name match
+      const byFull = studentByFullName.get(key);
+      if (byFull) return { id: byFull.id, name: byFull.name, lastname: byFull.lastname };
+      // 2. Match by first name only
+      const byFirst = studentByFirstName.get(key);
+      if (byFirst) return { id: byFirst.id, name: byFirst.name, lastname: byFirst.lastname };
+      // 3. Match by last name only
+      const byLast = studentByLastName.get(key);
+      if (byLast) return { id: byLast.id, name: byLast.name, lastname: byLast.lastname };
+      // 4. Partial contains match (e.g. first word matches)
+      const firstWord = key.split(/\s+/)[0];
+      for (const [, s] of studentByFullName) {
+        const sKey = `${s.name || ''} ${s.lastname || ''}`.trim().toLowerCase();
+        if (sKey.includes(firstWord)) return { id: s.id, name: s.name, lastname: s.lastname };
+      }
+      // 5. Not found — store as plain name so the data isn't lost
+      const parts = rawName.trim().split(/\s+/);
+      return { id: '', name: parts[0] || rawName.trim(), lastname: parts.slice(1).join(' ') };
+    }
 
     const pildoras = [];
 
@@ -2219,46 +2253,37 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
-      // Process assigned students
+      // Process assigned students — accept names even if not matched in DB
       const assignedStudents = [];
-      if (studentText && studentText.toLowerCase() !== 'desierta') {
-        const studentNames = studentText.split(',').map(name => name.trim().toLowerCase());
-
+      if (studentText && String(studentText).trim().toLowerCase() !== 'desierta') {
+        const studentNames = String(studentText).split(',').map(n => n.trim()).filter(Boolean);
         for (const name of studentNames) {
-          const student = studentMap.get(name);
-          if (student) {
-            assignedStudents.push({
-              id: student.id,
-              name: student.name,
-              lastname: student.lastname
-            });
-          }
+          const resolved = resolveStudent(name);
+          if (resolved) assignedStudents.push(resolved);
         }
       }
 
-      // Process date
+      // Process date — leave empty if not provided or unparseable
       let isoDate = '';
-      if (dateText) {
+      if (dateText !== '' && dateText !== null && dateText !== undefined) {
         try {
-          // Check if it's a number (Excel serial date)
           let date;
-          if (typeof dateText === 'number' && dateText < 100000) { // Likely Excel serial date
+          if (typeof dateText === 'number' && dateText > 1 && dateText < 200000) {
+            // Excel serial date
             date = excelDateToJSDate(dateText);
+          } else if (dateText instanceof Date) {
+            date = dateText;
           } else {
             date = new Date(dateText);
           }
-
           if (date && !isNaN(date.getTime())) {
             isoDate = date.toISOString().split('T')[0];
-          } else {
-            isoDate = new Date().toISOString().split('T')[0];
           }
+          // If invalid date, leave isoDate as ''
         } catch (e) {
           console.warn('Invalid date format:', dateText);
-          isoDate = new Date().toISOString().split('T')[0];
+          // Leave isoDate as ''
         }
-      } else {
-        isoDate = new Date().toISOString().split('T')[0];
       }
 
       if (title) { // Only add if title is provided
@@ -2349,11 +2374,36 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
 
     // Get current students for validation
     const students = await Student.find({ promotionId: req.params.promotionId });
-    const studentMap = new Map();
+    // Build lookup maps: exact "name lastname", name-only, and lastname-only (all lowercased)
+    const studentByFullName2 = new Map();
+    const studentByFirstName2 = new Map();
+    const studentByLastName2 = new Map();
     students.forEach(student => {
-      const fullName = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
-      studentMap.set(fullName, student);
+      const full = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
+      const first = (student.name || '').trim().toLowerCase();
+      const last = (student.lastname || '').trim().toLowerCase();
+      studentByFullName2.set(full, student);
+      if (first && !studentByFirstName2.has(first)) studentByFirstName2.set(first, student);
+      if (last && !studentByLastName2.has(last)) studentByLastName2.set(last, student);
     });
+
+    function resolveStudent2(rawName) {
+      const key = rawName.trim().toLowerCase();
+      if (!key) return null;
+      const byFull = studentByFullName2.get(key);
+      if (byFull) return { id: byFull.id, name: byFull.name, lastname: byFull.lastname };
+      const byFirst = studentByFirstName2.get(key);
+      if (byFirst) return { id: byFirst.id, name: byFirst.name, lastname: byFirst.lastname };
+      const byLast = studentByLastName2.get(key);
+      if (byLast) return { id: byLast.id, name: byLast.name, lastname: byLast.lastname };
+      const firstWord = key.split(/\s+/)[0];
+      for (const [, s] of studentByFullName2) {
+        const sKey = `${s.name || ''} ${s.lastname || ''}`.trim().toLowerCase();
+        if (sKey.includes(firstWord)) return { id: s.id, name: s.name, lastname: s.lastname };
+      }
+      const parts = rawName.trim().split(/\s+/);
+      return { id: '', name: parts[0] || rawName.trim(), lastname: parts.slice(1).join(' ') };
+    }
 
     const pildoras = [];
 
@@ -2365,45 +2415,34 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
-      // Process assigned students
+      // Process assigned students — accept names even if not matched in DB
       const assignedStudents = [];
-      if (studentText && studentText.toLowerCase() !== 'desierta') {
-        const studentNames = studentText.split(',').map(name => name.trim().toLowerCase());
-
+      if (studentText && String(studentText).trim().toLowerCase() !== 'desierta') {
+        const studentNames = String(studentText).split(',').map(n => n.trim()).filter(Boolean);
         for (const name of studentNames) {
-          const student = studentMap.get(name);
-          if (student) {
-            assignedStudents.push({
-              id: student.id,
-              name: student.name,
-              lastname: student.lastname
-            });
-          }
+          const resolved = resolveStudent2(name);
+          if (resolved) assignedStudents.push(resolved);
         }
       }
 
-      // Process date
+      // Process date — leave empty if not provided or unparseable
       let isoDate = '';
-      if (dateText) {
+      if (dateText !== '' && dateText !== null && dateText !== undefined) {
         try {
           let date;
-          if (typeof dateText === 'number' && dateText < 100000) {
+          if (typeof dateText === 'number' && dateText > 1 && dateText < 200000) {
             date = excelDateToJSDate(dateText);
+          } else if (dateText instanceof Date) {
+            date = dateText;
           } else {
             date = new Date(dateText);
           }
-
           if (date && !isNaN(date.getTime())) {
             isoDate = date.toISOString().split('T')[0];
-          } else {
-            isoDate = new Date().toISOString().split('T')[0];
           }
         } catch (e) {
           console.warn('Invalid date format:', dateText);
-          isoDate = new Date().toISOString().split('T')[0];
         }
-      } else {
-        isoDate = new Date().toISOString().split('T')[0];
       }
 
       if (title) { // Only add if title is provided
