@@ -7146,44 +7146,33 @@ function _openStudentEvalSubModalFor(studentId) {
                 data-target-type="individual" data-target-id="${escapeHtml(studentId)}">${escapeHtml(savedFeedback)}</textarea>
         </div>`;
 
-    // Create or reuse sub-modal
-    let subModalEl = document.getElementById('studentEvalSubModal');
-    if (!subModalEl) {
-        subModalEl = document.createElement('div');
-        subModalEl.className = 'modal fade';
-        subModalEl.id = 'studentEvalSubModal';
-        subModalEl.tabIndex = -1;
-        subModalEl.setAttribute('data-bs-backdrop', 'static');
-        subModalEl.innerHTML = `
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header" style="background:linear-gradient(135deg,#E85D26,#f97316);color:#fff;">
-                    <h5 class="modal-title fw-bold">
-                        <i class="bi bi-person-check me-2"></i>
-                        <span id="student-eval-sub-modal-title">Evaluación individual</span>
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="student-eval-sub-modal-body"></div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="saveIndividualStudentEval()"
-                        style="background:#E85D26;border-color:#E85D26;">
-                        <i class="bi bi-save me-1"></i>Guardar evaluación
-                    </button>
-                </div>
-            </div>
-        </div>`;
-        document.body.appendChild(subModalEl);
-    }
+    // ── Show the inline eval panel (within the page, sidebar + navbar still visible) ──
+    const panel = document.getElementById('student-eval-panel');
+    const tabView = document.getElementById('evaluation-tab-view');
+    const evalModal = document.getElementById('evaluationModal');
 
-    document.getElementById('student-eval-sub-modal-title').textContent = `Evaluando: ${studentName}`;
-    document.getElementById('student-eval-sub-modal-body').innerHTML = bodyHtml;
+    // Close the evaluation modal first
+    const evalModalInstance = bootstrap.Modal.getInstance(evalModal);
+    if (evalModalInstance) evalModalInstance.hide();
 
-    // Store the current student id on the sub-modal element
-    subModalEl.dataset.targetStudentId = studentId;
+    // Populate the panel
+    const titleEl = document.getElementById('student-eval-panel-title');
+    const subtitleEl = document.getElementById('student-eval-panel-subtitle');
+    const bodyEl = document.getElementById('student-eval-panel-body');
 
-    new bootstrap.Modal(subModalEl).show();
+    if (titleEl) titleEl.innerHTML = `<i class="bi bi-person-check me-2 text-warning"></i>Evaluando: ${escapeHtml(studentName)}`;
+    if (subtitleEl) subtitleEl.innerHTML = `<i class="bi bi-clipboard-check me-2"></i>${escapeHtml(studentName)}`;
+    if (bodyEl) bodyEl.innerHTML = bodyHtml;
+
+    // Store the current student id on the panel element
+    if (panel) panel.dataset.targetStudentId = studentId;
+
+    // Swap views: hide the tab overview, show the panel
+    if (tabView) tabView.classList.add('hidden');
+    if (panel) panel.classList.remove('hidden');
+
+    // Scroll to top of panel smoothly
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function removeEvalTool(targetId, compId, toolName) {
@@ -7327,48 +7316,91 @@ function updateEvalIndicator(targetId, compId, indKey, level, checked, compName)
 }
 
 async function saveIndividualStudentEval() {
-    const subModalEl = document.getElementById('studentEvalSubModal');
-    const studentId = subModalEl ? subModalEl.dataset.targetStudentId : null;
+    const panel = document.getElementById('student-eval-panel');
+    const studentId = panel ? panel.dataset.targetStudentId : null;
     if (!studentId) return;
 
     const saved = window._evalCurrentSaved;
     if (!saved) return;
 
-    // Collect feedback from the sub-modal textarea
-    const ta = subModalEl.querySelector('textarea[data-target-id]');
-    const feedback = ta ? ta.value : '';
-
-    let evalEntry = (saved.evaluations || []).find(e => e.targetId === studentId);
-    if (!evalEntry) {
-        if (!saved.evaluations) saved.evaluations = [];
-        evalEntry = { targetId: studentId, targetName: _resolveTargetName(studentId), competences: [], feedback: '' };
-        saved.evaluations.push(evalEntry);
+    // ── Show spinner on the save button ──────────────────────────────────────
+    const saveBtn = document.getElementById('save-eval-panel-btn');
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Guardando...`;
     }
-    evalEntry.feedback = feedback;
-    evalEntry.evaluatedAt = new Date().toISOString();
 
-    // Persist
-    const { modules, savedEvaluations } = window._evalState;
-    const mIdx = window._evalState.currentModuleIdx;
-    const pIdx = window._evalState.currentProjectIdx;
-    const mod = modules[mIdx];
-    const proj = mod.projects[pIdx];
-    const modId = mod.id || String(mIdx);
-    const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
-    if (existingIdx >= 0) window._evalState.savedEvaluations[existingIdx] = saved;
-    else window._evalState.savedEvaluations.push(saved);
+    try {
+        // Collect feedback from the panel textarea
+        const ta = panel ? panel.querySelector('textarea[data-target-id]') : null;
+        const feedback = ta ? ta.value : '';
 
-    await _persistEvaluations();
+        let evalEntry = (saved.evaluations || []).find(e => e.targetId === studentId);
+        if (!evalEntry) {
+            if (!saved.evaluations) saved.evaluations = [];
+            evalEntry = { targetId: studentId, targetName: _resolveTargetName(studentId), competences: [], feedback: '' };
+            saved.evaluations.push(evalEntry);
+        }
+        evalEntry.feedback = feedback;
+        evalEntry.evaluatedAt = new Date().toISOString();
 
-    // Sync to student ficha
-    const { students } = window._evalState;
-    await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+        // Persist
+        const { modules, savedEvaluations } = window._evalState;
+        const mIdx = window._evalState.currentModuleIdx;
+        const pIdx = window._evalState.currentProjectIdx;
+        const mod = modules[mIdx];
+        const proj = mod.projects[pIdx];
+        const modId = mod.id || String(mIdx);
+        const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
+        if (existingIdx >= 0) window._evalState.savedEvaluations[existingIdx] = saved;
+        else window._evalState.savedEvaluations.push(saved);
 
-    bootstrap.Modal.getInstance(subModalEl)?.hide();
-    // Re-open the parent eval modal to refresh saved evaluations list
-    openEvaluationModal(mIdx, pIdx);
-    showToast('Evaluación guardada correctamente', 'success');
+        await _persistEvaluations();
+
+        // Sync to student ficha
+        const { students } = window._evalState;
+        await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+
+        showToast('Evaluación guardada correctamente', 'success');
+
+        // Return to the evaluation modal
+        _closeStudentEvalPanel();
+        openEvaluationModal(mIdx, pIdx);
+    } catch (err) {
+        console.error('[saveIndividualStudentEval]', err);
+        showToast('Error al guardar la evaluación', 'danger');
+        // Restore button on error
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalBtnHtml;
+        }
+    }
 }
+
+/** Hides the inline student-eval panel and restores the evaluation tab view. */
+function _closeStudentEvalPanel() {
+    const panel = document.getElementById('student-eval-panel');
+    const tabView = document.getElementById('evaluation-tab-view');
+    if (panel) panel.classList.add('hidden');
+    if (tabView) tabView.classList.remove('hidden');
+    // Reset save button just in case
+    const saveBtn = document.getElementById('save-eval-panel-btn');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<i class="bi bi-save me-1"></i>Guardar evaluación`;
+    }
+}
+
+/** Called by the "Cancelar" / "Volver" buttons in the inline eval panel. */
+window.cancelStudentEvalPanel = function() {
+    _closeStudentEvalPanel();
+    const mIdx = window._evalState?.currentModuleIdx;
+    const pIdx = window._evalState?.currentProjectIdx;
+    if (mIdx !== undefined && pIdx !== undefined) {
+        openEvaluationModal(mIdx, pIdx);
+    }
+};
 
 // Legacy – kept for group eval and backward compat; also handles "edit" click scroll
 function onEvalStudentChange() {
