@@ -737,12 +737,30 @@
                           const lvlColor = PROJ_LEVEL_COLORS[c.level] ?? 'secondary';
                           const lvlLabel = PROJ_LEVEL_LABELS[c.level] ?? c.level;
                           const toolTags = (c.toolsUsed || []).map(tool =>
-                              `<span class="badge bg-light text-dark border">${_esc(tool)}</span>`
+                              `<span class="badge bg-light text-dark border"><i class="bi bi-tools me-1 text-secondary" style="font-size:.65rem;"></i>${_esc(tool)}</span>`
                           ).join(' ');
-                          return `<div class="w-100 small">
+                          // Group achieved indicators by tool
+                          const indsByTool = {};
+                          (c.achievedIndicators || []).forEach(ai => {
+                              if (!indsByTool[ai.toolName]) indsByTool[ai.toolName] = [];
+                              indsByTool[ai.toolName].push(ai);
+                          });
+                          const LEVEL_COLORS_IND = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+                          const indicatorsHtml = Object.entries(indsByTool).map(([toolName, inds]) =>
+                              `<div class="mt-1 ms-2">
+                                  <span class="small text-muted"><i class="bi bi-tools me-1"></i>${_esc(toolName)}:</span>
+                                  <div class="d-flex flex-wrap gap-1 mt-1">
+                                      ${inds.map(ai => `<span class="badge rounded-pill" style="font-size:.65rem;background:#f0f0f0;color:#333;border:1px solid ${LEVEL_COLORS_IND[ai.levelId]??'#999'}">
+                                          <span style="color:${LEVEL_COLORS_IND[ai.levelId]??'#999'}">Nv.${ai.levelId}</span> ${_esc(ai.indicatorName)}
+                                      </span>`).join('')}
+                                  </div>
+                              </div>`
+                          ).join('');
+                          return `<div class="w-100 small mb-1">
                               <span class="badge bg-${lvlColor} me-1">Nv.${c.level ?? '—'} ${lvlLabel}</span>
                               <strong>${_esc(c.competenceName)}</strong>
                               ${toolTags ? `<span class="ms-1">${toolTags}</span>` : ''}
+                              ${indicatorsHtml}
                           </div>`;
                       }).join('')}
                     </div>
@@ -1500,24 +1518,47 @@
             container.innerHTML = _emptyState('trophy', 'Sin competencias registradas');
             return;
         }
-        container.innerHTML = _competences.map((c, i) => `
-            <div class="card mb-2 border-start border-4 border-warning">
+        container.innerHTML = _competences.map((c, i) => {
+            const indsByTool = {};
+            (c.achievedIndicators || []).forEach(ai => {
+                if (!indsByTool[ai.toolName]) indsByTool[ai.toolName] = [];
+                indsByTool[ai.toolName].push(ai);
+            });
+            const IND_COLORS = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+            const indicatorsBlock = Object.keys(indsByTool).length
+                ? `<div class="mt-2">` + Object.entries(indsByTool).map(([toolName, inds]) =>
+                    `<div class="mb-1">
+                        <span class="small fw-semibold text-secondary"><i class="bi bi-tools me-1"></i>${_esc(toolName)}</span>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            ${inds.map(ai => `<span class="badge rounded-pill" style="font-size:.65rem;background:#f8f9fa;color:#333;border:1px solid ${IND_COLORS[ai.levelId]??'#999'}">
+                                <span style="color:${IND_COLORS[ai.levelId]??'#999'}">Nv.${ai.levelId}</span> ${_esc(ai.indicatorName)}
+                            </span>`).join('')}
+                        </div>
+                    </div>`).join('') + `</div>`
+                : '';
+            const toolsBlock = (c.toolsUsed || []).length
+                ? `<div class="mt-1 d-flex flex-wrap gap-1">` +
+                  c.toolsUsed.map(t => `<span class="badge bg-light text-dark border" style="font-size:.7rem;"><i class="bi bi-tools me-1 text-secondary" style="font-size:.6rem;"></i>${_esc(t)}</span>`).join('') +
+                  `</div>` : '';
+            return `<div class="card mb-2 border-start border-4 border-warning">
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-start">
-                        <div>
+                        <div class="flex-grow-1">
                             <div class="fw-semibold"><i class="bi bi-award text-warning me-1"></i>${_esc(c.competenceName || `Competencia ${c.competenceId || i+1}`)}</div>
                             <small class="text-muted">
                                 <span class="badge bg-${LEVEL_COLORS[c.level] || 'secondary'} me-1">Nivel ${c.level || '—'}: ${LEVEL_LABELS[c.level] || ''}</span>
-                                ${c.toolsUsed?.length ? `Herramientas: ${c.toolsUsed.join(', ')}` : ''}
-                                ${c.evaluatedDate ? `&nbsp;|&nbsp;<i class="bi bi-calendar3 me-1"></i>${_fmtDate(c.evaluatedDate)}` : ''}
+                                ${c.evaluatedDate ? `<i class="bi bi-calendar3 me-1"></i>${_fmtDate(c.evaluatedDate)}` : ''}
                             </small>
+                            ${toolsBlock}
+                            ${indicatorsBlock}
                         </div>
                         <button class="btn btn-sm btn-link text-danger p-0" onclick="window.StudentTracking._removeCompetence(${i})">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 
     function _openCompetenceForm() {

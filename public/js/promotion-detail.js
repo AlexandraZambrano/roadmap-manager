@@ -6481,7 +6481,11 @@ function openEvaluationModal(mIdx, pIdx) {
             const savedCompEntry = savedEval ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id)) : null;
             const currentLevel = savedCompEntry ? savedCompEntry.level : 0;
             const rawCompId = String(comp.id);
-            const savedCheckedIndicators = savedCompEntry?.checkedIndicators || savedEval?.checkedIndicators || {};
+            // savedCompEntry.checkedIndicators is flat: { [indKey]: bool }
+            // savedEval.checkedIndicators is nested: { [compId]: { [indKey]: bool } }
+            const checkedData = savedCompEntry?.checkedIndicators
+                || savedEval?.checkedIndicators?.[rawCompId]
+                || {};
             const levelDescs = (comp.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
 
             const toolsWithInds = (comp.toolsWithIndicators || []).filter(t => t.indicators && t.indicators.length > 0);
@@ -6505,7 +6509,7 @@ function openEvaluationModal(mIdx, pIdx) {
             const prefix = `grp-ind-${safeCompId}-${safeTargetId}`;
 
             // Count checked/total indicators to compute auto-level
-            const checkedData = savedCheckedIndicators[rawCompId] || {};
+            // (checkedData is already set above as the flat {indKey: bool} map)
             const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
             const totalByLevel   = { 1: 0, 2: 0, 3: 0 };
             if (hasToolIndicators) {
@@ -6542,39 +6546,61 @@ function openEvaluationModal(mIdx, pIdx) {
             const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
             const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
 
-            // Build indicator checkboxes grouped by tool
+            // Build indicator checkboxes grouped by tool — accordion, levels side-by-side
             let indicatorsHtml = '';
             if (hasToolIndicators) {
-                indicatorsHtml = activeToolsWithInds.map(tool => {
+                const accordionId = `acc-grp-${safeCompId}-${safeTargetId}`;
+                indicatorsHtml = `<div class="accordion accordion-flush" id="${accordionId}">` +
+                activeToolsWithInds.map((tool, toolIdx) => {
                     const byLevel = { 1: [], 2: [], 3: [] };
                     tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
-                    const levelRows = [1, 2, 3].map(lvl => {
+                    const hasChecked = tool.indicators.some(ind => checkedData[`tool-${tool.id}-${ind.id}`]);
+                    const collapseId = `${accordionId}-t${toolIdx}`;
+                    const toolAutoLevel = (() => {
+                        let lvl = 0;
+                        for (const l of [1,2,3]) {
+                            if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedData[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                            else if (byLevel[l].length > 0) break;
+                        }
+                        return lvl;
+                    })();
+                    const activeLevels = [1,2,3].filter(l => byLevel[l].length > 0);
+                    const levelCols = activeLevels.map(lvl => {
                         const inds = byLevel[lvl];
-                        if (!inds.length) return '';
-                        return `<div class="mb-1">
-                            <div class="small" style="color:${LEVEL_BORDER[lvl]}; font-weight:600; margin-bottom:2px;">
-                                <i class="bi bi-${lvl===1?'circle':lvl===2?'circle-half':'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                        return `<div class="col">
+                            <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                                <i class="bi bi-${lvl===1?'circle':lvl===2?'circle-half':'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
                             </div>
                             ${inds.map(ind => {
                                 const indKey = `tool-${tool.id}-${ind.id}`;
                                 const isChecked = !!(checkedData[indKey]);
-                                return `<div class="form-check form-check-sm mb-0 ms-2">
+                                return `<div class="form-check form-check-sm mb-0">
                                     <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
                                         id="${prefix}-${escapeHtml(indKey)}"
                                         onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
-                                    <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}">
+                                    <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
                                         ${escapeHtml(ind.name)}
-                                        ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                        ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
                                     </label>
                                 </div>`;
                             }).join('')}
                         </div>`;
                     }).join('');
-                    return `<div class="border rounded p-2 mb-2" style="background:#fafafa;">
-                        <div class="small fw-semibold text-secondary mb-1"><i class="bi bi-tools me-1"></i>${escapeHtml(tool.name)}</div>
-                        ${levelRows}
+                    return `<div class="accordion-item border-0 border-bottom">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                                <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                                ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                            <div class="accordion-body p-2">
+                                <div class="row g-2">${levelCols}</div>
+                            </div>
+                        </div>
                     </div>`;
-                }).join('');
+                }).join('') + `</div>`;
             } else if (hasCompIndicators) {
                 indicatorsHtml = [
                     { lvl:1, inds: compInds.initial },
@@ -6858,7 +6884,11 @@ function _openStudentEvalSubModalFor(studentId) {
             const currentLevel = savedCompEntry ? savedCompEntry.level : 0;
             // Use the raw comp.id (not HTML-escaped) as the key when reading checkedIndicators
             const rawCompId = String(comp.id);
-            const savedCheckedIndicators = savedCompEntry?.checkedIndicators || savedEval?.checkedIndicators || {};
+            // savedCompEntry.checkedIndicators is flat: { [indKey]: bool }
+            // savedEval.checkedIndicators is nested: { [compId]: { [indKey]: bool } }
+            const checkedDataForComp = savedCompEntry?.checkedIndicators
+                || savedEval?.checkedIndicators?.[rawCompId]
+                || {};
 
             // Build the indicators structure from toolsWithIndicators + competenceIndicators
             // Priority: use toolsWithIndicators if available and have indicators; else use competenceIndicators
@@ -6893,26 +6923,37 @@ function _openStudentEvalSubModalFor(studentId) {
             const safeTargetId = escapeHtml(String(targetId));
             const prefix = `ind-${safeCompId}-${safeTargetId}`;
 
-            // Build indicators HTML — grouped by tool (or by level if no tool indicators)
+            // Build indicators HTML — accordion per tool, levels side-by-side
             let indicatorsHtml = '';
 
             if (hasToolIndicators) {
-                // Group by tool, then within each tool group by level (1, 2, 3)
-                indicatorsHtml = activeToolsWithInds.map(tool => {
+                // Each tool = accordion item, levels shown as side-by-side columns inside
+                const accordionId = `acc-ind-${safeCompId}-${safeTargetId}`;
+                indicatorsHtml = `<div class="accordion accordion-flush" id="${accordionId}">` +
+                activeToolsWithInds.map((tool, toolIdx) => {
                     const byLevel = { 1: [], 2: [], 3: [] };
                     tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
-
-                    const levelRows = [1, 2, 3].map(lvl => {
+                    const hasChecked = tool.indicators.some(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`]);
+                    const collapseId = `${accordionId}-t${toolIdx}`;
+                    const toolAutoLevel = (() => {
+                        let lvl = 0;
+                        for (const l of [1,2,3]) {
+                            if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                            else if (byLevel[l].length > 0) break;
+                        }
+                        return lvl;
+                    })();
+                    const activeLevels = [1,2,3].filter(l => byLevel[l].length > 0);
+                    const levelCols = activeLevels.map(lvl => {
                         const inds = byLevel[lvl];
-                        if (!inds.length) return '';
-                        return `<div class="mb-1">
-                            <div class="small" style="color:${LEVEL_BORDER[lvl]}; font-weight:600; margin-bottom:2px;">
-                                <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                        return `<div class="col">
+                            <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                                <i class="bi bi-${lvl===1?'circle':lvl===2?'circle-half':'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
                             </div>
                             ${inds.map(ind => {
                                 const indKey = `tool-${tool.id}-${ind.id}`;
-                                const isChecked = !!(savedCheckedIndicators[rawCompId]?.[indKey]);
-                                return `<div class="form-check form-check-sm mb-0 ms-2">
+                                const isChecked = !!(checkedDataForComp[indKey]);
+                                return `<div class="form-check form-check-sm mb-0">
                                     <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
                                         id="${prefix}-${escapeHtml(indKey)}"
                                         data-comp-id="${safeCompId}"
@@ -6922,20 +6963,27 @@ function _openStudentEvalSubModalFor(studentId) {
                                         onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
                                     <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
                                         ${escapeHtml(ind.name)}
-                                        ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                        ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
                                     </label>
                                 </div>`;
                             }).join('')}
                         </div>`;
                     }).join('');
-
-                    return `<div class="border rounded p-2 mb-2" style="background:#fafafa;">
-                        <div class="small fw-semibold text-secondary mb-1">
-                            <i class="bi bi-tools me-1"></i>${escapeHtml(tool.name)}
+                    return `<div class="accordion-item border-0 border-bottom">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                                <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                                ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                            <div class="accordion-body p-2">
+                                <div class="row g-2">${levelCols}</div>
+                            </div>
                         </div>
-                        ${levelRows}
                     </div>`;
-                }).join('');
+                }).join('') + `</div>`;
 
             } else if (hasCompIndicators) {
                 // Use general competence indicators grouped by level
@@ -6950,7 +6998,7 @@ function _openStudentEvalSubModalFor(studentId) {
                         </div>
                         ${inds.map(ind => {
                             const indKey = `comp-${ind.id}`;
-                            const isChecked = !!(savedCheckedIndicators[rawCompId]?.[indKey]);
+                            const isChecked = !!(checkedDataForComp[indKey]);
                             return `<div class="form-check form-check-sm mb-0">
                                 <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
                                     id="${prefix}-${escapeHtml(indKey)}"
@@ -6970,7 +7018,7 @@ function _openStudentEvalSubModalFor(studentId) {
             }
 
             // Calculate current level from checked indicators
-            const checkedData = savedCheckedIndicators[rawCompId] || {};
+            const checkedData = checkedDataForComp;
             const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
             const totalByLevel = { 1: 0, 2: 0, 3: 0 };
 
@@ -7477,11 +7525,40 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
             for (const ce of (evalEntry.competences || [])) {
                 if (!ce.competenceName) continue;
                 const idx = existingComps.findIndex(c => String(c.competenceId) === String(ce.competenceId));
+
+                // Extract tools worked and indicators achieved from checkedIndicators
+                // ce.checkedIndicators is flat { [indKey]: bool } stored at comp level
+                const compChecked = ce.checkedIndicators || evalEntry.checkedIndicators?.[String(ce.competenceId)] || {};
+                const projComp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(ce.competenceId));
+                const toolsWithInds = projComp?.toolsWithIndicators || [];
+
+                // Tools with at least one checked indicator
+                const toolsUsed = toolsWithInds
+                    .filter(t => t.indicators && t.indicators.some(ind => compChecked[`tool-${t.id}-${ind.id}`]))
+                    .map(t => t.name);
+
+                // Build achieved indicators list: [{toolName, indicatorName, indicatorId, levelId}]
+                const achievedIndicators = [];
+                toolsWithInds.forEach(t => {
+                    if (!t.indicators) return;
+                    t.indicators.forEach(ind => {
+                        if (compChecked[`tool-${t.id}-${ind.id}`]) {
+                            achievedIndicators.push({
+                                toolName: t.name,
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: ind.levelId || 1
+                            });
+                        }
+                    });
+                });
+
                 const entry = {
                     competenceId: ce.competenceId,
                     competenceName: ce.competenceName,
                     level: ce.level,
-                    toolsUsed: ce.toolsUsed || [],
+                    toolsUsed,
+                    achievedIndicators,
                     evaluatedDate: new Date().toISOString().split('T')[0],
                     notes: evalEntry.feedback || ''
                 };
@@ -7494,6 +7571,38 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
             const teamIdx = existingTeams.findIndex(
                 t => t.teamName === (proj.name || '') && t.moduleId === (mod.id || String(window._evalState.currentModuleIdx))
             );
+
+            // Build competences list for team entry with tools + indicators
+            const teamCompetences = (evalEntry.competences || []).map(ce => {
+                const compChecked = ce.checkedIndicators || evalEntry.checkedIndicators?.[String(ce.competenceId)] || {};
+                const projComp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(ce.competenceId));
+                const toolsWithInds = projComp?.toolsWithIndicators || [];
+                const toolsUsed = toolsWithInds
+                    .filter(t => t.indicators && t.indicators.some(ind => compChecked[`tool-${t.id}-${ind.id}`]))
+                    .map(t => t.name);
+                const achievedIndicators = [];
+                toolsWithInds.forEach(t => {
+                    if (!t.indicators) return;
+                    t.indicators.forEach(ind => {
+                        if (compChecked[`tool-${t.id}-${ind.id}`]) {
+                            achievedIndicators.push({
+                                toolName: t.name,
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: ind.levelId || 1
+                            });
+                        }
+                    });
+                });
+                return {
+                    competenceId: ce.competenceId,
+                    competenceName: ce.competenceName,
+                    level: ce.level,
+                    toolsUsed,
+                    achievedIndicators
+                };
+            });
+
             const teamEntry = {
                 teamName: proj.name || '',
                 projectType: 'individual',
@@ -7504,12 +7613,7 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
                 teacherNote: evalEntry.feedback || '',
                 studentComment: evalEntry.studentComment || '',
                 members: [],
-                competences: (evalEntry.competences || []).map(ce => ({
-                    competenceId: ce.competenceId,
-                    competenceName: ce.competenceName,
-                    level: ce.level,
-                    toolsUsed: ce.toolsUsed || []
-                }))
+                competences: teamCompetences
             };
             if (teamIdx >= 0) existingTeams[teamIdx] = { ...existingTeams[teamIdx], ...teamEntry };
             else existingTeams.push(teamEntry);

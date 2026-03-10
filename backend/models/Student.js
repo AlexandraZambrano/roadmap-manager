@@ -56,12 +56,19 @@ const StudentSchema = new mongoose.Schema({
             moduleId: String,
             assignedDate: String,
             teacherNote: String,
+            studentComment: String,
             members: [{ id: String, name: String }],
             competences: [{
                 competenceId: mongoose.Schema.Types.Mixed,
                 competenceName: String,
                 level: Number,
-                toolsUsed: [String]
+                toolsUsed: [String],
+                achievedIndicators: [{
+                    toolName: String,
+                    indicatorName: String,
+                    indicatorId: String,
+                    levelId: Number
+                }]
             }]
         }],
         competences: [{
@@ -69,6 +76,12 @@ const StudentSchema = new mongoose.Schema({
             competenceName: String,
             level: Number,
             toolsUsed: [String],
+            achievedIndicators: [{
+                toolName: String,
+                indicatorName: String,
+                indicatorId: String,
+                levelId: Number
+            }],
             evaluatedDate: String,
             notes: String
         }],
