@@ -34,6 +34,13 @@ const StudentSchema = new mongoose.Schema({
         assignedAt: { type: Date, default: Date.now }
     }],
     isManuallyAdded: { type: Boolean, default: true }, // Changed default to true since we removed auto-tracking
+    isWithdrawn: { type: Boolean, default: false },
+    withdrawal: {
+        date: { type: String, default: null },
+        reason: { type: String, default: '' },
+        representative: { type: String, default: '' },
+        processedAt: { type: String, default: null }
+    },
     accessLog: [{
         accessedAt: { type: Date, default: Date.now },
         ipAddress: { type: String },

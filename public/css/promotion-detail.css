@@ -528,6 +528,23 @@ border-color: #c1aee6;
     font-weight: 500;
 }
 
+/* ── Withdrawn / baja students ─────────────────────────────────────── */
+.student-row-withdrawn {
+    background-color: rgba(220, 53, 69, 0.08) !important;
+    color: #6b2b33;
+    opacity: 0.85;
+}
+.student-row-withdrawn td {
+    border-color: rgba(220, 53, 69, 0.15) !important;
+}
+.student-name-cell-withdrawn {
+    background-color: rgba(220, 53, 69, 0.1) !important;
+}
+/* keep attendance cells from overriding the row tint unless they have own status */
+.student-row-withdrawn .attendance-cell:not(.attendance-present):not(.attendance-absent):not(.attendance-late):not(.attendance-justified):not(.attendance-early-leave):not(.attendance-blocked) {
+    background-color: rgba(220, 53, 69, 0.07) !important;
+}
+
 .student-name-cell:hover {
     text-decoration: underline;
     color: var(--complementario-2);

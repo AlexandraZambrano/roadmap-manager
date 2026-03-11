@@ -265,6 +265,24 @@
                         </div>
                     </div>
 
+                    <!-- Search bar -->
+                    <div class="mb-3">
+                        <div class="input-group" style="max-width: 420px;">
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input type="text" id="student-search-input"
+                                class="form-control border-start-0"
+                                placeholder="Buscar por nombre, email, nacionalidad…"
+                                oninput="filterStudentsTable(this.value)">
+                            <button class="btn btn-outline-secondary" type="button"
+                                onclick="document.getElementById('student-search-input').value=''; filterStudentsTable('');"
+                                title="Limpiar búsqueda">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Selection controls -->
                     <div class="mb-3" id="selection-controls" style="display:none;">
                         <div class="d-flex align-items-center gap-3">

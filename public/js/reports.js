@@ -1941,11 +1941,121 @@ async function printActaInicio(promotionId) {
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // ACTA DE BAJA
+    // ════════════════════════════════════════════════════════════════════════
+    async function printActaBaja(studentId, promotionId) {
+        const token = localStorage.getItem('token');
+        try {
+            const [stuRes, promoRes] = await Promise.all([
+                fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
+            const s     = await stuRes.json();
+            const promo = promoRes.ok ? await promoRes.json() : {};
+            const w     = s.withdrawal || {};
+            const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
+
+            const bajaDate        = w.date         ? new Date(w.date).toLocaleDateString('es-ES',         { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+            const processedDate   = w.processedAt  ? new Date(w.processedAt).toLocaleDateString('es-ES',  { day: '2-digit', month: 'long', year: 'numeric' }) : _today();
+            const promoStart      = promo.startDate ? new Date(promo.startDate).toLocaleDateString('es-ES',{ day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+            const promoEnd        = promo.endDate   ? new Date(promo.endDate).toLocaleDateString('es-ES',  { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+            let html = _header(
+                'Acta de Baja',
+                fullName,
+                promo.name,
+                processedDate
+            );
+
+            // ── Alert banner ──
+            html += `
+            <div style="background:#fff1f0; border:1.5px solid #dc3545; border-left:5px solid #dc3545;
+                        border-radius:6pt; padding:10pt 14pt; margin-bottom:16pt; display:flex; align-items:center; gap:12pt;">
+                <div style="font-size:20pt; flex-shrink:0;">🚫</div>
+                <div>
+                    <div style="font-size:11pt; font-weight:700; color:#a31515;">Baja oficial del programa</div>
+                    <div style="font-size:9pt; color:#6b2b33; margin-top:2pt;">
+                        Este documento certifica que el/la participante ha causado baja oficial del bootcamp
+                        con fecha <strong>${bajaDate}</strong>.
+                    </div>
+                </div>
+            </div>`;
+
+            // ── Datos del participante ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Datos del/la Participante</h3>
+            <div class="section-box accent row2">
+                <div>
+                    <div class="kv"><strong>Nombre completo:</strong> ${_esc(fullName)}</div>
+                    <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                    <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+                    <div class="kv"><strong>Sit. Administrativa:</strong> ${_esc(s.administrativeSituation || '—')}</div>
+                </div>
+                <div>
+                    <div class="kv"><strong>Documento (DNI/NIE):</strong> ${_esc(s.identificationDocument || '—')}</div>
+                    <div class="kv"><strong>Nivel educativo:</strong> ${_esc(s.educationLevel || '—')}</div>
+                    <div class="kv"><strong>Género:</strong> ${_esc(s.gender || '—')}</div>
+                    <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+                </div>
+            </div>`;
+
+            // ── Datos del programa ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Datos del Programa</h3>
+            <div class="section-box blue row2">
+                <div>
+                    <div class="kv"><strong>Promoción:</strong> ${_esc(promo.name || '—')}</div>
+                    <div class="kv"><strong>Inicio del programa:</strong> ${promoStart}</div>
+                    <div class="kv"><strong>Fin previsto:</strong> ${promoEnd}</div>
+                </div>
+                <div>
+                    <div class="kv"><strong>Fecha oficial de baja:</strong>
+                        <span style="color:#dc3545; font-weight:700;">${bajaDate}</span>
+                    </div>
+                    <div class="kv"><strong>Representante Factoría F5:</strong> ${_esc(w.representative || '—')}</div>
+                    <div class="kv"><strong>Acta generada el:</strong> ${processedDate}</div>
+                </div>
+            </div>`;
+
+            // ── Motivo de la baja ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Motivo de la Baja</h3>
+            <div class="section-box red">
+                <p style="white-space:pre-wrap; font-size:10pt; color:#333;">${_esc(w.reason || 'No especificado.')}</p>
+            </div>`;
+
+            // ── Bloque de firmas ──
+            html += `
+            <div style="margin-top:40pt;">
+                <h3><span style="color:${PRIMARY}">✦</span> Firmas</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:30pt; margin-top:16pt;">
+                    <div style="border-top:1.5px solid #333; padding-top:8pt; text-align:center;">
+                        <div style="font-size:9pt; color:${SECONDARY}; font-weight:600;">PARTICIPANTE</div>
+                        <div style="font-size:9pt; margin-top:4pt;">${_esc(fullName)}</div>
+                    </div>
+                    <div style="border-top:1.5px solid #333; padding-top:8pt; text-align:center;">
+                        <div style="font-size:9pt; color:${SECONDARY}; font-weight:600;">REPRESENTANTE FACTORÍA F5</div>
+                        <div style="font-size:9pt; margin-top:4pt;">${_esc(w.representative || '—')}</div>
+                    </div>
+                </div>
+            </div>`;
+
+            const filename = `acta_baja_${(fullName).replace(/\s+/g, '-')}.pdf`;
+            _showSaving('Generando Acta de Baja…');
+            await _savePdf(html, filename);
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printActaBaja:', e);
+            alert('Error generando el acta de baja: ' + e.message);
+        }
+    }
+
     // ─── Public API ──────────────────────────────────────────────────────────
     window.Reports = {
         printTechnical,
         printTransversal,
         printActaInicio,
+        printActaBaja,
         printDescripcionTecnica,
         printProjectReport,
         printBulkTechnical,

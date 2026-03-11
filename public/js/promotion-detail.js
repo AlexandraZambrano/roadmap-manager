@@ -3660,7 +3660,7 @@ function displayStudents(students) {
         const separator = (index === activeCount && withdrawnCount > 0)
             ? `<tr class="table-danger"><td colspan="6" class="py-1 px-3 small fw-semibold text-danger"><i class="bi bi-person-x me-1"></i>Bajas oficiales (${withdrawnCount})</td></tr>`
             : '';
-        const row = `<tr class="${student.isWithdrawn ? 'table-secondary text-muted opacity-75' : ''}">
+        const row = `<tr class="${student.isWithdrawn ? 'student-row-withdrawn' : ''}">
             <td>
                 <input type="checkbox" class="form-check-input student-checkbox" 
                        data-student-id="${student.id}" 
@@ -4625,19 +4625,31 @@ async function removeTeachingContent() {
 function filterStudentsTable(query) {
     const q = (query || '').toLowerCase().trim();
     const rows = document.querySelectorAll('#students-list tr');
+    let separatorRow = null;
+    let visibleAfterSeparator = 0;
+
     rows.forEach(row => {
-        // Skip separator rows (colspan rows)
+        // Identify the withdrawn separator row (has a td with colspan)
         if (row.querySelector('td[colspan]')) {
-            row.style.display = '';
-            return;
+            separatorRow = row;
+            visibleAfterSeparator = 0;
+            return; // decide visibility later
         }
         if (!q) {
             row.style.display = '';
+            if (separatorRow) separatorRow.style.display = '';
             return;
         }
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? '' : 'none';
+        const visible = text.includes(q);
+        row.style.display = visible ? '' : 'none';
+        if (visible && separatorRow && row.style.display !== 'none') visibleAfterSeparator++;
     });
+
+    // Hide separator if no withdrawn rows are visible
+    if (separatorRow && q) {
+        separatorRow.style.display = visibleAfterSeparator > 0 ? '' : 'none';
+    }
 }
 
 function updateSelectionState() {
@@ -5047,11 +5059,11 @@ function renderAttendanceTable() {
         }
 
         const tr = document.createElement('tr');
-        if (student.isWithdrawn) tr.classList.add('table-secondary', 'opacity-75');
+        if (student.isWithdrawn) tr.classList.add('student-row-withdrawn');
 
         // Name column
         const nameTd = document.createElement('td');
-        nameTd.className = `sticky-column student-name-cell ${student.isWithdrawn ? 'bg-light' : 'bg-white'}`;
+        nameTd.className = `sticky-column student-name-cell ${student.isWithdrawn ? 'student-name-cell-withdrawn' : 'bg-white'}`;
         if (student.isWithdrawn) {
             const withdrawalDateStr = student.withdrawal?.date
                 ? new Date(student.withdrawal.date).toLocaleDateString('es-ES')
