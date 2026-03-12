@@ -1728,3 +1728,35 @@ border-color: #c1aee6;
         min-height: 400px;
     }
 }
+
+/* ===== Resource Catalog Modal ===== */
+.resource-catalog-card {
+    transition: box-shadow .18s, transform .18s;
+}
+.resource-catalog-card:hover {
+    box-shadow: 0 6px 18px rgba(0,0,0,.12) !important;
+    transform: translateY(-2px);
+}
+.resource-catalog-card .card-body {
+    font-size: .875rem;
+}
+#resource-catalog-grid {
+    max-height: 60vh;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+}
+#resourceModal .modal-header {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+}
+#resourceModal .modal-body {
+    padding: 0;
+}
+#resource-search-input:focus {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 .2rem rgba(124,58,237,.18);
+}
+#resource-area-filter:focus,
+#resource-type-filter:focus {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 .2rem rgba(124,58,237,.18);
+}

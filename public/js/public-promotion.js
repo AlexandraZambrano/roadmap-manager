@@ -698,7 +698,8 @@ function updateSidebarWithExtendedInfo(info) {
     // Add Aula Virtual entry in sidebar (always visible)
     const aulaLi = document.createElement('li');
     aulaLi.className = 'nav-item';
-    aulaLi.innerHTML = '<a class="nav-link" href="#aula-virtual" onclick="openAulaVirtualPage(event)"><i class="bi bi-laptop me-2"></i>Aula Virtual</a>';
+    // Usamos href="#" para evitar scroll por ancla; el comportamiento lo controla openAulaVirtualPage
+    aulaLi.innerHTML = '<a class="nav-link" href="#" onclick="openAulaVirtualPage(event)"><i class="bi bi-laptop me-2"></i>Aula Virtual</a>';
 
     if (quickLinksItem) {
         nav.insertBefore(aulaLi, quickLinksItem);
@@ -913,14 +914,19 @@ function openAulaVirtualPage(event) {
     const contentEl = document.getElementById('aula-virtual-content');
     if (!page || !emptyEl || !contentEl) return;
 
-    // Ocultar secciones normales
+    // Ocultar secciones normales (incluyendo píldoras y resto de bloques de contenido del programa)
     const roadmap = document.getElementById('roadmap');
     const calendar = document.getElementById('calendar');
     const sectionsContainer = document.getElementById('sections-container');
     const competencesSection = document.getElementById('competences-section');
     const quickLinks = document.getElementById('quick-links');
+    const pildoras = document.getElementById('pildoras');
+    const horario = document.getElementById('horario');
+    const equipo = document.getElementById('equipo');
+    const resources = document.getElementById('resources');
+    const evaluacion = document.getElementById('evaluacion');
 
-    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks].forEach(el => {
+    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks, pildoras, horario, equipo, resources, evaluacion].forEach(el => {
         if (el) el.classList.add('d-none');
     });
 
@@ -949,8 +955,13 @@ function closeAulaVirtualPage() {
     const sectionsContainer = document.getElementById('sections-container');
     const competencesSection = document.getElementById('competences-section');
     const quickLinks = document.getElementById('quick-links');
+    const pildoras = document.getElementById('pildoras');
+    const horario = document.getElementById('horario');
+    const equipo = document.getElementById('equipo');
+    const resources = document.getElementById('resources');
+    const evaluacion = document.getElementById('evaluacion');
 
-    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks].forEach(el => {
+    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks, pildoras, horario, equipo, resources, evaluacion].forEach(el => {
         if (el) el.classList.remove('d-none');
     });
 

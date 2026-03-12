@@ -622,10 +622,33 @@ function displayResources() {
     tbody.innerHTML = '';
     (extendedInfoData.resources || []).forEach((res, index) => {
         const tr = document.createElement('tr');
+
+        // Build category/type cell
+        const categoryHtml = (res.types && res.types.length)
+            ? res.types.map(t => `<span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1">${escapeHtml(t.name)}</span>`).join('')
+            : `<span class="badge bg-info text-dark">${escapeHtml(res.category || '')}</span>`;
+
+        // Build area badges
+        const areaBadges = (res.areas && res.areas.length)
+            ? res.areas.slice(0, 3).map(a => `<span class="badge bg-light text-dark border small me-1">${escapeHtml(a.name)}</span>`).join('')
+            : '';
+
+        // Build tool chips
+        const toolChips = (res.tools && res.tools.length)
+            ? res.tools.slice(0, 4).map(t => `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small me-1">${escapeHtml(t.name)}</span>`).join('')
+            : '';
+
+        const extraHtml = (areaBadges || toolChips)
+            ? `<div class="mt-1">${areaBadges}${toolChips}</div>`
+            : '';
+
         tr.innerHTML = `
-            <td>${escapeHtml(res.title)}</td>
-            <td><span class="badge bg-info text-dark">${escapeHtml(res.category)}</span></td>
-            <td><a href="${escapeHtml(res.url)}" target="_blank" class="text-truncate d-inline-block" style="max-width: 150px;">${escapeHtml(res.url)}</a></td>
+            <td>
+                <div class="fw-semibold">${escapeHtml(res.title)}</div>
+                ${extraHtml}
+            </td>
+            <td>${categoryHtml}</td>
+            <td><a href="${escapeHtml(res.url)}" target="_blank" class="text-truncate d-inline-block" style="max-width: 180px;">${escapeHtml(res.url)}</a></td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="deleteResource(${index})"><i class="bi bi-trash"></i></button>
             </td>
@@ -1307,27 +1330,231 @@ function deleteTeamMember(index) {
     }
 }
 
-function openResourceModal() {
-    document.getElementById('resource-form').reset();
+// ── Resource Catalog (evaluation.coderf5.es/v1/resources — via local proxy) ──
+
+let _resourceCatalogAll = [];   // full list fetched from API
+let _resourceCatalogFiltered = [];
+
+async function openResourceModal() {
     resourceModal.show();
+
+    const grid     = document.getElementById('resource-catalog-grid');
+    const loading  = document.getElementById('resource-catalog-loading');
+    const emptyEl  = document.getElementById('resource-catalog-empty');
+    const countEl  = document.getElementById('resource-catalog-count');
+
+    // Reset inputs
+    document.getElementById('resource-search-input').value = '';
+    document.getElementById('resource-area-filter').value  = '';
+    document.getElementById('resource-type-filter').value  = '';
+
+    // If we already have the catalog cached, just re-render
+    if (_resourceCatalogAll.length) {
+        _buildResourceFilterOptions();
+        _resourceCatalogFiltered = [..._resourceCatalogAll];
+        _renderResourceCatalog();
+        return;
+    }
+
+    // Show loading state
+    grid.innerHTML = '';
+    emptyEl.classList.add('d-none');
+    loading.classList.remove('d-none');
+    countEl.textContent = '…';
+
+    try {
+        const token = localStorage.getItem('token');
+        // Use the local backend proxy which forwards the JWT to evaluation.coderf5.es
+        const res = await fetch(`${API_URL}/api/resources`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // Backend returns { count, results } (paginated DRF) or a plain array
+        _resourceCatalogAll = Array.isArray(data) ? data : (data.results || []);
+    } catch (err) {
+        console.error('[ResourceCatalog] Error fetching:', err);
+        loading.classList.add('d-none');
+        grid.innerHTML = `<div class="alert alert-danger m-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            No se pudo cargar el catálogo de recursos. Comprueba la conexión e inténtalo de nuevo.
+        </div>`;
+        countEl.textContent = 'Error';
+        return;
+    }
+
+    loading.classList.add('d-none');
+    _buildResourceFilterOptions();
+    _resourceCatalogFiltered = [..._resourceCatalogAll];
+    _renderResourceCatalog();
 }
 
-function addResource() {
-    const title = document.getElementById('resource-title').value;
-    const category = document.getElementById('resource-category').value;
-    const url = document.getElementById('resource-url').value;
+/** Populate Area and Type <select> options from the fetched catalog */
+function _buildResourceFilterOptions() {
+    const areaSelect = document.getElementById('resource-area-filter');
+    const typeSelect = document.getElementById('resource-type-filter');
 
-    if (!title || !url) return;
+    // Collect unique areas + types
+    const areasMap = new Map();
+    const typesMap = new Map();
 
-    extendedInfoData.resources.push({ title, category, url });
+    _resourceCatalogAll.forEach(r => {
+        (r.areas || []).forEach(a => { if (!areasMap.has(a.id)) areasMap.set(a.id, a.name); });
+        (r.types || []).forEach(t => { if (!typesMap.has(t.id)) typesMap.set(t.id, t.name); });
+    });
+
+    const makeOptions = (map) => [...map.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`)
+        .join('');
+
+    areaSelect.innerHTML = '<option value="">Todas las áreas</option>' + makeOptions(areasMap);
+    typeSelect.innerHTML = '<option value="">Todos los tipos</option>'  + makeOptions(typesMap);
+}
+
+/** Filter the catalog list and re-render */
+function filterResourceCatalog() {
+    const query    = (document.getElementById('resource-search-input').value || '').toLowerCase().trim();
+    const areaId   = document.getElementById('resource-area-filter').value;
+    const typeId   = document.getElementById('resource-type-filter').value;
+
+    _resourceCatalogFiltered = _resourceCatalogAll.filter(r => {
+        // Area filter
+        if (areaId && !(r.areas || []).some(a => String(a.id) === String(areaId))) return false;
+        // Type filter
+        if (typeId && !(r.types || []).some(t => String(t.id) === String(typeId))) return false;
+        // Text search across label, comments, tools, providers
+        if (query) {
+            const searchable = [
+                r.label || '',
+                r.comments || '',
+                ...(r.tools || []).map(t => t.name),
+                ...(r.providers || []).map(p => p.name),
+                ...(r.areas || []).map(a => a.name)
+            ].join(' ').toLowerCase();
+            if (!searchable.includes(query)) return false;
+        }
+        return true;
+    });
+
+    _renderResourceCatalog();
+}
+
+/** Render the filtered resource cards inside the grid */
+function _renderResourceCatalog() {
+    const grid    = document.getElementById('resource-catalog-grid');
+    const emptyEl = document.getElementById('resource-catalog-empty');
+    const countEl = document.getElementById('resource-catalog-count');
+
+    // Check which resources are already added
+    const addedIds = new Set((extendedInfoData.resources || []).map(r => r.externalId).filter(Boolean));
+
+    countEl.textContent = `${_resourceCatalogFiltered.length} recurso${_resourceCatalogFiltered.length !== 1 ? 's' : ''}`;
+
+    if (!_resourceCatalogFiltered.length) {
+        grid.innerHTML = '';
+        emptyEl.classList.remove('d-none');
+        return;
+    }
+
+    emptyEl.classList.add('d-none');
+
+    grid.innerHTML = `<div class="row g-3">
+        ${_resourceCatalogFiltered.map(r => _resourceCardHtml(r, addedIds.has(r.id))).join('')}
+    </div>`;
+}
+
+/** Build the HTML for a single resource card */
+function _resourceCardHtml(r, alreadyAdded) {
+    const typeNames  = (r.types  || []).map(t => `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">${escapeHtml(t.name)}</span>`).join(' ');
+    const areaBadges = (r.areas  || []).slice(0, 3).map(a =>
+        `<span class="badge bg-light text-dark border small">${escapeHtml(a.name)}</span>`).join(' ');
+    const toolBadges = (r.tools  || []).slice(0, 4).map(t =>
+        `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small">${escapeHtml(t.name)}</span>`).join(' ');
+    const provider   = (r.providers || [])[0];
+    const providerHtml = provider
+        ? `<span class="text-muted small"><i class="bi bi-building me-1"></i>${escapeHtml(provider.name)}</span>`
+        : '';
+
+    // Show first ~100 chars of comments (before the first '|')
+    const commentShort = (r.comments || '').split('|')[0].trim();
+
+    const btnHtml = alreadyAdded
+        ? `<button class="btn btn-sm btn-success w-100" disabled>
+               <i class="bi bi-check2-circle me-1"></i>Ya agregado
+           </button>`
+        : `<button class="btn btn-sm btn-primary w-100" onclick="addResourceFromCatalog(${r.id})">
+               <i class="bi bi-plus-circle me-1"></i>Agregar
+           </button>`;
+
+    return `
+    <div class="col-md-6 col-xl-4" id="resource-card-${r.id}">
+        <div class="card h-100 border shadow-sm resource-catalog-card" style="border-radius:.75rem;transition:box-shadow .15s;">
+            <div class="card-body d-flex flex-column gap-2 pb-2">
+                <div class="d-flex align-items-start justify-content-between gap-2">
+                    <h6 class="mb-0 fw-semibold lh-sm" style="font-size:.9rem;">
+                        <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" class="text-decoration-none text-dark stretched-link-sibling">
+                            ${escapeHtml(r.label)}
+                        </a>
+                    </h6>
+                    <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" class="text-muted flex-shrink-0" title="Abrir enlace">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                </div>
+                <div class="d-flex flex-wrap gap-1">${typeNames}</div>
+                ${commentShort ? `<p class="text-muted small mb-0 flex-grow-1" style="font-size:.78rem;line-height:1.4;">${escapeHtml(commentShort)}</p>` : ''}
+                <div class="d-flex flex-wrap gap-1 mt-1">${areaBadges}</div>
+                ${toolBadges ? `<div class="d-flex flex-wrap gap-1">${toolBadges}</div>` : ''}
+                ${providerHtml}
+            </div>
+            <div class="card-footer bg-transparent pt-0 pb-2 px-3">${btnHtml}</div>
+        </div>
+    </div>`;
+}
+
+/** Called when user clicks "Agregar" on a catalog card */
+function addResourceFromCatalog(resourceId) {
+    const r = _resourceCatalogAll.find(x => x.id === resourceId);
+    if (!r) return;
+
+    // Build a resource entry compatible with the existing extendedInfoData.resources shape
+    const type = (r.types || [])[0];
+    const entry = {
+        externalId: r.id,
+        title: r.label,
+        category: type ? type.name : 'Other',
+        url: r.url,
+        comments: r.comments || '',
+        areas: (r.areas || []).map(a => ({ id: a.id, name: a.name })),
+        tools: (r.tools || []).map(t => ({ id: t.id, name: t.name })),
+        types: (r.types || []).map(t => ({ id: t.id, name: t.name })),
+        providers: (r.providers || []).map(p => ({ id: p.id, name: p.name }))
+    };
+
+    extendedInfoData.resources.push(entry);
     displayResources();
-    resourceModal.hide();
+
+    // Update the card button to "Ya agregado" without re-rendering the whole grid
+    const card = document.getElementById(`resource-card-${resourceId}`);
+    if (card) {
+        const footer = card.querySelector('.card-footer');
+        if (footer) {
+            footer.innerHTML = `<button class="btn btn-sm btn-success w-100" disabled>
+                <i class="bi bi-check2-circle me-1"></i>Ya agregado
+            </button>`;
+        }
+    }
 }
+
+// Legacy stub kept so any lingering calls don't crash
+function addResource() { /* replaced by addResourceFromCatalog */ }
 
 function deleteResource(index) {
-    if (confirm('Delete this resource?')) {
+    if (confirm('¿Eliminar este recurso?')) {
         extendedInfoData.resources.splice(index, 1);
         displayResources();
+        // Invalidate catalog rendering so that "Ya agregado" state refreshes on next open
+        if (_resourceCatalogAll.length) _renderResourceCatalog();
     }
 }
 
@@ -5913,16 +6140,17 @@ function updateProgramDetailsSubtitle(sectionName) {
  */
 function switchProgramDetailsTab(tabName) {
     const tabNameMap = {
-        'roadmap':    { tabId: 'program-details-roadmap',    buttonId: 'program-details-roadmap-tab',    label: 'Roadmap' },
-        'calendar':   { tabId: 'program-details-calendar',   buttonId: 'program-details-calendar-tab',   label: 'Calendario' },
-        'schedule':   { tabId: 'program-details-schedule',   buttonId: 'program-details-schedule-tab',   label: 'Horario' },
-        'team':       { tabId: 'program-details-team',       buttonId: 'program-details-team-tab',       label: 'Team' },
-        'resources':  { tabId: 'program-details-resources',  buttonId: 'program-details-resources-tab',  label: 'Resources' },
-        'pildoras':   { tabId: 'program-details-pildoras',   buttonId: 'program-details-pildoras-tab',   label: 'Píldoras' },
-        'evaluation': { tabId: 'program-details-evaluation', buttonId: 'program-details-evaluation-tab', label: 'Evaluation' },
-        'quicklinks': { tabId: 'program-details-quicklinks', buttonId: 'program-details-quicklinks-tab', label: 'Quick Links' },
-        'sections':   { tabId: 'program-details-sections',   buttonId: 'program-details-sections-tab',   label: 'Sections' },
-        'competences':{ tabId: 'program-details-competences',buttonId: 'program-details-competences-tab',label: 'Competencias' }
+        'roadmap':          { tabId: 'program-details-roadmap',          buttonId: 'program-details-roadmap-tab',          label: 'Roadmap' },
+        'calendar':         { tabId: 'program-details-calendar',         buttonId: 'program-details-calendar-tab',         label: 'Calendario' },
+        'schedule':         { tabId: 'program-details-schedule',         buttonId: 'program-details-schedule-tab',         label: 'Horario' },
+        'team':             { tabId: 'program-details-team',             buttonId: 'program-details-team-tab',             label: 'Team' },
+        'resources':        { tabId: 'program-details-resources',        buttonId: 'program-details-resources-tab',        label: 'Resources' },
+        'pildoras':         { tabId: 'program-details-pildoras',         buttonId: 'program-details-pildoras-tab',         label: 'Píldoras' },
+        'evaluation':       { tabId: 'program-details-evaluation',       buttonId: 'program-details-evaluation-tab',       label: 'Evaluation' },
+        'virtual-classroom':{ tabId: 'program-details-virtual-classroom',buttonId: 'program-details-virtual-classroom-tab',label: 'Aula Virtual' },
+        'quicklinks':       { tabId: 'program-details-quicklinks',       buttonId: 'program-details-quicklinks-tab',       label: 'Quick Links' },
+        'sections':         { tabId: 'program-details-sections',         buttonId: 'program-details-sections-tab',         label: 'Sections' },
+        'competences':      { tabId: 'program-details-competences',      buttonId: 'program-details-competences-tab',      label: 'Competencias' }
     };
 
     const tab = tabNameMap[tabName];
@@ -5958,9 +6186,19 @@ function switchProgramDetailsTab(tabName) {
         selectedButton.setAttribute('aria-selected', 'true');
     }
 
-    // Lazy-load data for roadmap and calendar sub-tabs
+    // Lazy-load data for roadmap, calendar and aula virtual sub-tabs
     if (tabName === 'roadmap') loadModules();
     if (tabName === 'calendar') loadCalendar();
+    if (tabName === 'virtual-classroom') {
+        // Aseguramos que el estado de evaluación (proyectos + competences) esté cargado
+        if (!window._evalState || !(window._evalState.modules || []).length) {
+            loadEvaluation();
+        } else {
+            const extInfo = window.publicPromotionExtendedInfo || {};
+            const promoData = window.publicPromotionData || {};
+            initVirtualClassroomPanel(extInfo, promoData);
+        }
+    }
 
     // Update subtitle
     updateProgramDetailsSubtitle(tab.label);
@@ -7667,6 +7905,19 @@ function selectEvalTarget(targetId) {
     const bodyEl   = document.getElementById('eval-right-body');
 
     if (headerEl) {
+        const submissionStatus = savedEval
+            ? (savedEval.submissionStatus || (savedEval.submissionLink ? 'Entregado' : 'Pendiente'))
+            : 'Pendiente';
+        const hasLink = !!(savedEval && savedEval.submissionLink);
+        const statusBadge = `<span class="badge ${submissionStatus === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} mt-1">
+                <i class="bi bi-cloud-arrow-up${submissionStatus === 'Entregado' ? '-fill' : ''} me-1"></i>${submissionStatus}
+            </span>`;
+        const linkHtml = hasLink ? `<div class="small mt-1">
+                <a href="${escapeHtml(savedEval.submissionLink)}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-git me-1"></i>Repositorio entregado
+                </a>
+            </div>` : '';
+
         headerEl.innerHTML = `
         <div class="d-flex align-items-center gap-3 flex-wrap">
             <div class="eval-target-avatar" style="width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;background:${isDone ? 'linear-gradient(135deg,#198754,#20c997)' : 'linear-gradient(135deg,#E85D26,#f97316)'};">
@@ -7675,6 +7926,8 @@ function selectEvalTarget(targetId) {
             <div class="flex-grow-1 min-w-0">
                 <div class="fw-bold fs-6 text-truncate">${escapeHtml(displayName)}</div>
                 ${isDone ? `<span class="badge bg-success mt-1"><i class="bi bi-check-circle me-1"></i>Evaluado el ${new Date(savedEval.evaluatedAt).toLocaleDateString('es-ES')}</span>` : `<span class="badge bg-light text-muted border mt-1">Sin evaluar</span>`}
+                ${statusBadge}
+                ${linkHtml}
             </div>
         </div>`;
     }
