@@ -2816,7 +2816,7 @@ function displaySections(sections) {
     list.innerHTML = '';
 
     if (sections.length === 0) {
-        list.innerHTML = '<p class="text-muted">No sections yet</p>';
+        list.innerHTML = '<p class="text-muted">No hay secciones aún</p>';
         return;
     }
 
