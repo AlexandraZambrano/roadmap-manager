@@ -5974,8 +5974,11 @@ function switchProgramDetailsTab(tabName) {
 window._evalState = {
     modules: [],
     competences: [],
+    catalog: [],
     students: [],
     savedEvaluations: [],
+    projectCompetences: [],
+    virtualClassroom: null,
     currentModuleIdx: null,
     currentProjectIdx: null
 };
@@ -6066,7 +6069,9 @@ async function loadEvaluation() {
         window._evalState.students = studentsData.filter(s => !s.isWithdrawn);
         window._evalState.savedEvaluations = ext.projectEvaluations || [];
         window._evalState.projectCompetences = ext.projectCompetences || []; // per-project competence definitions
+        window._evalState.virtualClassroom = ext.virtualClassroom || null;
 
+        initVirtualClassroomPanel(ext, promo);
         renderEvaluationTab();
     } catch (err) {
         console.error('Error loading evaluation data:', err);
@@ -6075,6 +6080,216 @@ async function loadEvaluation() {
         }
     }
 }
+
+// ==================== AULA VIRTUAL – PANEL PROFESOR ====================
+
+function initVirtualClassroomPanel(ext, promo) {
+    const panel = document.getElementById('virtual-classroom-panel');
+    if (!panel) return;
+
+    const selectEl = document.getElementById('vc-project-select');
+    const repoBaseEl = document.getElementById('vc-repo-base');
+    const briefingEl = document.getElementById('vc-briefing-url');
+    const statusBadge = document.getElementById('vc-status-badge');
+    const deactivateBtn = document.getElementById('vc-deactivate-btn');
+    const activateBtn = document.getElementById('vc-activate-btn');
+    const competencesList = document.getElementById('vc-competences-list');
+    const competencesCount = document.getElementById('vc-competences-count');
+
+    if (!selectEl || !repoBaseEl || !briefingEl || !statusBadge || !deactivateBtn || !activateBtn) return;
+
+    const modules = promo.modules || [];
+    const projectCompetences = window._evalState.projectCompetences || [];
+
+    // Map rápido de módulo por id para obtener el nombre de módulo
+    const moduleById = {};
+    modules.forEach((m, idx) => {
+        const id = m.id || String(idx);
+        moduleById[id] = m;
+    });
+
+    // Populate project selector SOLO con los proyectos definidos en Evaluación (projectCompetences)
+    const prevValue = selectEl.value;
+    let optionsHtml = '<option value="">Selecciona módulo y proyecto…</option>';
+
+    projectCompetences.forEach(pc => {
+        const modId = pc.moduleId;
+        const mod = moduleById[modId];
+        const labelModule = mod ? (mod.name || '') : `Módulo ${modId}`;
+        const value = `${modId}__${pc.projectName}`;
+        const label = `${labelModule} — ${pc.projectName}`;
+        optionsHtml += `<option value="${value}">${escapeHtml(label)}</option>`;
+    });
+
+    selectEl.innerHTML = optionsHtml;
+
+    // Pre-select active project if any
+    const vc = ext.virtualClassroom || {};
+    let activeValue = '';
+    if (vc && vc.moduleId && vc.projectName) {
+        activeValue = `${vc.moduleId}__${vc.projectName}`;
+    }
+    // Solo mantener el valor si existe en el selector actual
+    const candidate = activeValue || prevValue || '';
+    if (candidate && Array.from(selectEl.options).some(o => o.value === candidate)) {
+        selectEl.value = candidate;
+    } else {
+        selectEl.value = '';
+    }
+
+    // Fill inputs from active config
+    repoBaseEl.value = vc.repoBaseUrl || '';
+    briefingEl.value = vc.briefingUrl || '';
+
+    // Update status UI
+    if (vc.isActive && activeValue) {
+        statusBadge.textContent = `Proyecto activo: ${vc.projectName}`;
+        statusBadge.className = 'badge bg-success';
+        deactivateBtn.disabled = false;
+        activateBtn.textContent = 'Actualizar Aula Virtual';
+        activateBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Actualizar Aula Virtual';
+    } else {
+        statusBadge.textContent = 'Sin proyecto activo';
+        statusBadge.className = 'badge bg-secondary';
+        deactivateBtn.disabled = true;
+        activateBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Activar Aula Virtual';
+    }
+
+    // Render competences preview for selected/active project
+    updateVirtualClassroomCompetencesPreview();
+}
+
+function updateVirtualClassroomCompetencesPreview() {
+    const selectEl = document.getElementById('vc-project-select');
+    const competencesList = document.getElementById('vc-competences-list');
+    const competencesCount = document.getElementById('vc-competences-count');
+    if (!selectEl || !competencesList || !competencesCount) return;
+
+    const value = selectEl.value;
+    if (!value) {
+        competencesList.innerHTML = '<span class="fst-italic">Selecciona un proyecto para ver sus competencias.</span>';
+        competencesCount.textContent = '0 competencias';
+        return;
+    }
+
+    const [moduleId, projectName] = value.split('__');
+    const pcEntry = (window._evalState.projectCompetences || []).find(
+        pc => pc.moduleId === moduleId && pc.projectName === projectName
+    );
+
+    const compIds = pcEntry ? (pcEntry.competenceIds || []) : [];
+    const catalog = window._evalState.catalog || window._evalState.competences || [];
+
+    if (!compIds.length) {
+        competencesList.innerHTML = '<span class="fst-italic">Este proyecto no tiene competencias definidas todavía en Evaluación.</span>';
+        competencesCount.textContent = '0 competencias';
+        return;
+    }
+
+    const items = compIds.map(cid => {
+        const c = catalog.find(ec => String(ec.id) === String(cid));
+        const name = c ? c.name : `Competencia ${cid}`;
+        const area = c ? (c.area || '') : '';
+        return `<span class="badge bg-light text-dark border me-1 mb-1">
+            <i class="bi bi-award me-1 text-warning"></i>${escapeHtml(name)}
+            ${area ? `<span class="text-muted ms-1">${escapeHtml(area)}</span>` : ''}
+        </span>`;
+    }).join('');
+
+    competencesList.innerHTML = items || '<span class="fst-italic">Sin competencias definidas.</span>';
+    competencesCount.textContent = `${compIds.length} competencia${compIds.length !== 1 ? 's' : ''}`;
+}
+
+// Called by select change in the panel
+window.onVirtualClassroomProjectChange = function () {
+    updateVirtualClassroomCompetencesPreview();
+};
+
+async function saveVirtualClassroom(isActive) {
+    const selectEl = document.getElementById('vc-project-select');
+    const repoBaseEl = document.getElementById('vc-repo-base');
+    const briefingEl = document.getElementById('vc-briefing-url');
+    const statusBadge = document.getElementById('vc-status-badge');
+    const deactivateBtn = document.getElementById('vc-deactivate-btn');
+    const activateBtn = document.getElementById('vc-activate-btn');
+
+    if (!selectEl || !repoBaseEl || !briefingEl || !statusBadge || !deactivateBtn || !activateBtn) return;
+
+    const value = selectEl.value;
+    if (!value && isActive) {
+        showToast('Selecciona un proyecto antes de activar el Aula Virtual', 'danger');
+        return;
+    }
+
+    const [moduleId, projectName] = value ? value.split('__') : ['', ''];
+
+    // Derive project type from saved evaluations if exists (fallback: individual)
+    const savedEvaluations = window._evalState.savedEvaluations || [];
+    const existingEval = savedEvaluations.find(e => e.moduleId === moduleId && e.projectName === projectName);
+    const projectType = existingEval ? (existingEval.type || 'individual') : 'individual';
+
+    const body = {
+        virtualClassroom: {
+            isActive: !!isActive,
+            moduleId,
+            projectName,
+            projectType,
+            repoBaseUrl: repoBaseEl.value || '',
+            briefingUrl: briefingEl.value || ''
+        }
+    };
+
+    const token = localStorage.getItem('token');
+    activateBtn.disabled = true;
+    deactivateBtn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Error saving virtual classroom:', err);
+            showToast('Error al guardar la configuración del Aula Virtual', 'danger');
+            return;
+        }
+
+        const updated = await res.json();
+        window._evalState.virtualClassroom = updated.virtualClassroom || body.virtualClassroom;
+
+        if (body.virtualClassroom.isActive && moduleId && projectName) {
+            statusBadge.textContent = `Proyecto activo: ${projectName}`;
+            statusBadge.className = 'badge bg-success';
+            deactivateBtn.disabled = false;
+            activateBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Actualizar Aula Virtual';
+            showToast('Aula Virtual activada/actualizada correctamente', 'success');
+        } else {
+            statusBadge.textContent = 'Sin proyecto activo';
+            statusBadge.className = 'badge bg-secondary';
+            deactivateBtn.disabled = true;
+            activateBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Activar Aula Virtual';
+            showToast('Aula Virtual desactivada', 'success');
+        }
+    } catch (err) {
+        console.error('Error saving virtual classroom:', err);
+        showToast('Error de conexión al guardar Aula Virtual', 'danger');
+    } finally {
+        activateBtn.disabled = false;
+        if (window._evalState.virtualClassroom && window._evalState.virtualClassroom.isActive) {
+            deactivateBtn.disabled = false;
+        }
+    }
+}
+
+window.deactivateVirtualClassroom = function () {
+    saveVirtualClassroom(false);
+};
 
 function renderEvaluationTab() {
     const container = document.getElementById('evaluation-content');
@@ -8108,9 +8323,29 @@ function openEvaluationModal(mIdx, pIdx) {
                         ${memberNames.length ? `<span class="text-muted small ms-2 fst-italic">${memberNames.join(' · ')}</span>` : ''}
                     </div>
                     <div class="card-body pb-2">
-                        <div class="mb-2">
-                            <label class="form-label small fw-semibold"><i class="bi bi-award me-1"></i>Competencias</label>
-                            ${buildCompetencesHtml(grp.groupName, savedEval)}
+                        <div class="mb-2 d-flex justify-content-between align-items-start flex-wrap gap-2">
+                            <div class="flex-grow-1">
+                                <label class="form-label small fw-semibold mb-1"><i class="bi bi-award me-1"></i>Competencias</label>
+                                ${buildCompetencesHtml(grp.groupName, savedEval)}
+                            </div>
+                            ${(() => {
+                                const ge = (saved.evaluations || []).find(e => String(e.targetId) === String(grp.groupName));
+                                if (!ge) return '';
+                                const status = ge.submissionStatus || (ge.submissionLink ? 'Entregado' : 'Pendiente');
+                                const hasLink = !!ge.submissionLink;
+                                const badge = `<span class="badge ${status === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} ms-1">
+                                    <i class="bi bi-cloud-arrow-up${status === 'Entregado' ? '-fill' : ''} me-1"></i>${status}
+                                </span>`;
+                                const linkHtml = hasLink ? `<div class="small mt-1 text-end">
+                                    <a href="${escapeHtml(ge.submissionLink)}" target="_blank" class="text-decoration-none">
+                                        <i class="bi bi-git me-1"></i>Repositorio entregado
+                                    </a>
+                                </div>` : '';
+                                return `<div class="text-end small">
+                                    ${badge}
+                                    ${linkHtml}
+                                </div>`;
+                            })()}
                         </div>
                         <div class="mt-2">
                             <label class="form-label small fw-semibold"><i class="bi bi-chat-text me-1"></i>Feedback del grupo</label>
@@ -8143,14 +8378,25 @@ function openEvaluationModal(mIdx, pIdx) {
                             Nv.${c.level} ${c.competenceName}
                         </span>`
                     ).join('');
+                    const status = ev.submissionStatus || (ev.submissionLink ? 'Entregado' : 'Pendiente');
+                    const hasLink = !!ev.submissionLink;
+                    const statusBadge = `<span class="badge ${status === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} ms-1">
+                        <i class="bi bi-cloud-arrow-up${status === 'Entregado' ? '-fill' : ''} me-1"></i>${status}
+                    </span>`;
                     return `<div class="list-group-item list-group-item-action p-2 rounded border" id="saved-eval-${escapeHtml(String(ev.targetId))}">
                         <div class="d-flex align-items-start justify-content-between gap-2">
                             <div class="flex-grow-1">
                                 <div class="fw-semibold small mb-1">
                                     <i class="bi bi-person-check me-1 text-success"></i>${escapeHtml(stName)}
                                     ${ev.evaluatedAt ? `<span class="text-muted fw-normal ms-2" style="font-size:.7rem;">${new Date(ev.evaluatedAt).toLocaleDateString('es-ES')}</span>` : ''}
+                                    ${statusBadge}
                                 </div>
                                 ${compsHtml ? `<div class="mb-1">${compsHtml}</div>` : ''}
+                                ${hasLink ? `<div class="small mb-1">
+                                    <a href="${escapeHtml(ev.submissionLink)}" target="_blank" class="text-decoration-none">
+                                        <i class="bi bi-git me-1"></i>Repositorio entregado
+                                    </a>
+                                </div>` : ''}
                                 ${ev.feedback ? `<div class="text-muted small fst-italic">"${escapeHtml(ev.feedback)}"</div>` : ''}
                                 ${ev.studentComment ? `<div class="text-primary small mt-1"><i class="bi bi-chat-right-text me-1"></i>"${escapeHtml(ev.studentComment)}"</div>` : ''}
                             </div>

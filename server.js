@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -3398,11 +3398,11 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
     if (req.body.modulesPildoras) {
     }
 
-    const { schedule, team, resources, evaluation, pildoras, modulesPildoras, pildorasAssignmentOpen, competences,
+  const { schedule, team, resources, evaluation, pildoras, modulesPildoras, pildorasAssignmentOpen, competences,
             school, projectType, positiveExitStart, positiveExitEnd, totalHours,
             modality, presentialDays, materials, internships, funders, funderDeadlines,
             okrKpis, funderKpis, trainerDayOff, cotrainerDayOff, projectMeetings, teamMeetings,
-            approvalName, approvalRole, projectEvaluations, projectCompetences } = req.body;
+            approvalName, approvalRole, projectEvaluations, projectCompetences, virtualClassroom } = req.body;
 
     // Build a $set object with ONLY the fields that were explicitly sent in the request body.
     // This prevents partial saves (e.g. _persistEvaluations sending only projectEvaluations)
@@ -3439,6 +3439,7 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
     if (body.hasOwnProperty('approvalRole'))           $setFields.approvalRole = approvalRole || '';
     if (Array.isArray(projectEvaluations))             $setFields.projectEvaluations = projectEvaluations;
     if (Array.isArray(projectCompetences))             $setFields.projectCompetences = projectCompetences;
+  if (body.hasOwnProperty('virtualClassroom'))       $setFields.virtualClassroom = virtualClassroom || { isActive: false };
 
     const newInfo = await ExtendedInfo.findOneAndUpdate(
       { promotionId: req.params.promotionId },
@@ -3510,6 +3511,162 @@ app.put('/api/promotions/:promotionId/pildoras-self-assign', async (req, res) =>
     await extendedInfo.save();
     res.json({ message: 'Assignment updated successfully', pildora });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== AULA VIRTUAL (PUBLIC STUDENT VIEW) ====================
+
+// Public endpoint to expose current active Aula Virtual configuration for students
+app.get('/api/promotions/:promotionId/virtual-classroom', async (req, res) => {
+  try {
+    const promotionId = req.params.promotionId;
+    const ext = await ExtendedInfo.findOne({ promotionId }).lean();
+    if (!ext || !ext.virtualClassroom || !ext.virtualClassroom.isActive) {
+      return res.json({ active: false });
+    }
+
+    const vc = ext.virtualClassroom || {};
+    const promotion = await Promotion.findOne({ id: promotionId }).lean();
+    if (!promotion) {
+      return res.status(404).json({ error: 'Promotion not found' });
+    }
+
+    const modules = promotion.modules || [];
+    const module = modules.find(m => String(m.id || '') === String(vc.moduleId));
+    const project = module ? (module.projects || []).find(p => p.name === vc.projectName) : null;
+
+    // Resolve competences for this project from ExtendedInfo.projectCompetences + competences catalog
+    let competences = [];
+    if (Array.isArray(ext.projectCompetences) && Array.isArray(ext.competences)) {
+      const pcEntry = ext.projectCompetences.find(
+        pc => pc.moduleId === vc.moduleId && pc.projectName === vc.projectName
+      );
+      const compIds = pcEntry ? (pcEntry.competenceIds || []) : [];
+      competences = compIds.map(cid => {
+        const c = ext.competences.find(ec => String(ec.id) === String(cid));
+        return c ? { id: c.id, name: c.name, area: c.area || '' } : { id: cid, name: String(cid), area: '' };
+      });
+    }
+
+    // Resolve groups for grupal projects from projectEvaluations
+    let groups = [];
+    if (vc.projectType === 'grupal' && Array.isArray(ext.projectEvaluations)) {
+      const evalEntry = ext.projectEvaluations.find(
+        e => e.moduleId === vc.moduleId && e.projectName === vc.projectName
+      );
+      if (evalEntry && Array.isArray(evalEntry.groups)) {
+        groups = evalEntry.groups.map(g => ({
+          groupName: g.groupName,
+          studentIds: g.studentIds || []
+        }));
+      }
+    }
+
+    res.json({
+      active: true,
+      projectType: vc.projectType || 'individual',
+      repoBaseUrl: vc.repoBaseUrl || '',
+      briefingUrl: vc.briefingUrl || (project ? project.url || '' : ''),
+      project: {
+        moduleId: vc.moduleId || (module ? module.id : ''),
+        moduleName: module ? module.name : '',
+        projectName: vc.projectName || (project ? project.name : ''),
+      },
+      competences,
+      groups
+    });
+  } catch (error) {
+    console.error('[GET /api/promotions/:promotionId/virtual-classroom]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Public endpoint for students/teams to submit Aula Virtual repository links
+app.post('/api/promotions/:promotionId/virtual-classroom/submissions', async (req, res) => {
+  try {
+    const promotionId = req.params.promotionId;
+    const { type, studentId, groupName, repoName } = req.body;
+
+    if (!repoName || typeof repoName !== 'string' || !repoName.trim()) {
+      return res.status(400).json({ error: 'Repository name is required' });
+    }
+
+    const ext = await ExtendedInfo.findOne({ promotionId });
+    if (!ext || !ext.virtualClassroom || !ext.virtualClassroom.isActive) {
+      return res.status(400).json({ error: 'No active virtual classroom project for this promotion' });
+    }
+
+    const vc = ext.virtualClassroom;
+    const projectType = vc.projectType || 'individual';
+
+    if (projectType === 'individual') {
+      if (!studentId) return res.status(400).json({ error: 'studentId is required for individual projects' });
+    } else if (projectType === 'grupal') {
+      if (!groupName) return res.status(400).json({ error: 'groupName is required for group projects' });
+    }
+
+    const repoBaseUrl = vc.repoBaseUrl || '';
+    const fullUrl = repoBaseUrl ? `${repoBaseUrl.replace(/\/+$/,'')}/${repoName.trim()}` : repoName.trim();
+
+    if (!Array.isArray(ext.projectEvaluations)) {
+      ext.projectEvaluations = [];
+    }
+
+    const moduleId = vc.moduleId;
+    const projectName = vc.projectName;
+
+    let evalEntry = ext.projectEvaluations.find(
+      e => e.moduleId === moduleId && e.projectName === projectName
+    );
+    if (!evalEntry) {
+      evalEntry = {
+        moduleId,
+        moduleName: '',
+        projectName,
+        type: projectType,
+        groups: [],
+        evaluations: []
+      };
+      ext.projectEvaluations.push(evalEntry);
+    }
+
+    let targetId;
+    if (projectType === 'individual') {
+      targetId = String(studentId);
+    } else {
+      targetId = String(groupName);
+      if (!Array.isArray(evalEntry.groups)) evalEntry.groups = [];
+      if (!evalEntry.groups.some(g => g.groupName === targetId)) {
+        evalEntry.groups.push({ groupName: targetId, studentIds: [] });
+      }
+    }
+
+    if (!Array.isArray(evalEntry.evaluations)) {
+      evalEntry.evaluations = [];
+    }
+
+    let targetEval = evalEntry.evaluations.find(e => String(e.targetId) === String(targetId));
+    if (!targetEval) {
+      targetEval = {
+        targetId,
+        targetName: '',
+        competences: [],
+        feedback: '',
+        studentComment: ''
+      };
+      evalEntry.evaluations.push(targetEval);
+    }
+
+    targetEval.submissionLink = fullUrl;
+    targetEval.submissionStatus = 'Entregado';
+    targetEval.submittedAt = new Date().toISOString();
+
+    await ext.save();
+
+    res.json({ message: 'Entrega registrada correctamente', submissionLink: fullUrl });
+  } catch (error) {
+    console.error('[POST /api/promotions/:promotionId/virtual-classroom/submissions]', error);
     res.status(500).json({ error: error.message });
   }
 });

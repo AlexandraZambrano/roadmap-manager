@@ -104,7 +104,17 @@ const ExtendedInfoSchema = new mongoose.Schema({
         competenceIds: [mongoose.Schema.Types.Mixed], // number or string IDs
         competenceTools: { type: mongoose.Schema.Types.Mixed, default: {} } // { [competenceId]: [toolName, ...] }
     }],
-    projectEvaluations: { type: mongoose.Schema.Types.Mixed }
+    projectEvaluations: { type: mongoose.Schema.Types.Mixed },
+    // Aula Virtual – configuración del proyecto activo
+    virtualClassroom: {
+        isActive: { type: Boolean, default: false },
+        moduleId: String,
+        projectName: String,
+        projectType: { type: String, enum: ['individual', 'grupal'], default: 'individual' },
+        repoBaseUrl: String,
+        briefingUrl: String,
+        competenceIds: [mongoose.Schema.Types.Mixed]
+    }
 }, { timestamps: true });
 
 export default mongoose.model('ExtendedInfo', ExtendedInfoSchema);

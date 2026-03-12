@@ -631,13 +631,13 @@ function displaySections(sections) {
 function updateSidebar(sections) {
     const nav = document.getElementById('sidebar-nav');
     nav.innerHTML = `
-        <li class="nav-item"><a class="nav-link" href="#roadmap"><i class="bi bi-map me-2"></i>Roadmap</a></li>
+        <li class="nav-item"><a class="nav-link" href="#roadmap" onclick="closeAulaVirtualPage()"><i class="bi bi-map me-2"></i>Roadmap</a></li>
     `;
 
     sections.forEach(section => {
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = `<a class="nav-link" href="#${section.id}"><i class="bi bi-file-text me-2"></i>${escapeHtml(section.title)}</a>`;
+        li.innerHTML = `<a class="nav-link" href="#${section.id}" onclick="closeAulaVirtualPage()"><i class="bi bi-file-text me-2"></i>${escapeHtml(section.title)}</a>`;
         nav.appendChild(li);
     });
 
@@ -645,7 +645,7 @@ function updateSidebar(sections) {
 
     const li = document.createElement('li');
     li.className = 'nav-item';
-    li.innerHTML = '<a class="nav-link" href="#quick-links"><i class="bi bi-lightning-charge me-2"></i>Quick Links</a>';
+    li.innerHTML = '<a class="nav-link" href="#quick-links" onclick="closeAulaVirtualPage()"><i class="bi bi-lightning-charge me-2"></i>Quick Links</a>';
     nav.appendChild(li);
 }
 
@@ -695,12 +695,23 @@ function updateSidebarWithExtendedInfo(info) {
         pildorasLi.insertAdjacentElement('afterend', calendarLi);
     }
 
+    // Add Aula Virtual entry in sidebar (always visible)
+    const aulaLi = document.createElement('li');
+    aulaLi.className = 'nav-item';
+    aulaLi.innerHTML = '<a class="nav-link" href="#aula-virtual" onclick="openAulaVirtualPage(event)"><i class="bi bi-laptop me-2"></i>Aula Virtual</a>';
+
+    if (quickLinksItem) {
+        nav.insertBefore(aulaLi, quickLinksItem);
+    } else {
+        nav.appendChild(aulaLi);
+    }
+
     // Add other Program Info sections before Quick Links
     if (info.schedule && hasScheduleData(info.schedule)) {
         console.log('Adding schedule section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#horario"><i class="bi bi-clock me-2"></i>Horario</a>';
+        li.innerHTML = '<a class="nav-link" href="#horario" onclick="closeAulaVirtualPage()"><i class="bi bi-clock me-2"></i>Horario</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -713,7 +724,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding team section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#equipo"><i class="bi bi-people me-2"></i>Equipo</a>';
+        li.innerHTML = '<a class="nav-link" href="#equipo" onclick="closeAulaVirtualPage()"><i class="bi bi-people me-2"></i>Equipo</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -726,7 +737,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding evaluation section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#evaluacion"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
+        li.innerHTML = '<a class="nav-link" href="#evaluacion" onclick="closeAulaVirtualPage()"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -739,7 +750,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding resources section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#resources"><i class="bi bi-tools me-2"></i>Recursos</a>';
+        li.innerHTML = '<a class="nav-link" href="#resources" onclick="closeAulaVirtualPage()"><i class="bi bi-tools me-2"></i>Recursos</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -752,7 +763,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding competences section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#competences-section"><i class="bi bi-award me-2"></i>Competencias</a>';
+        li.innerHTML = '<a class="nav-link" href="#competences-section" onclick="closeAulaVirtualPage()"><i class="bi bi-award me-2"></i>Competencias</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -823,11 +834,257 @@ async function loadExtendedInfo() {
 
             displayExtendedInfo(info);
             displayPublicCompetences(info.competences || []);
+            await loadVirtualClassroom();
         } else {
             console.log('No extended info found or error loading:', response.status);
         }
     } catch (error) {
         console.error('Error loading extended info:', error);
+    }
+}
+
+// ==================== AULA VIRTUAL – VISTA PÚBLICA ====================
+
+let _virtualClassroomState = null;
+
+async function loadVirtualClassroom() {
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/virtual-classroom`);
+        if (!res.ok) {
+            console.error('Error loading virtual classroom:', res.status);
+            _virtualClassroomState = null;
+            return;
+        }
+        const data = await res.json();
+        if (!data.active) {
+            _virtualClassroomState = { active: false };
+            // Mantener la tarjeta en modo "sin proyecto activo"
+            return;
+        }
+
+        _virtualClassroomState = data;
+
+        // Preparar UI base (si la página ya estuviera abierta)
+        const prefixEl = document.getElementById('aula-virtual-repo-prefix');
+        if (prefixEl) {
+            const base = data.repoBaseUrl && data.repoBaseUrl.trim()
+                ? data.repoBaseUrl.trim().replace(/\/+$/, '') + '/'
+                : 'https://github.com/';
+            prefixEl.textContent = base;
+        }
+
+        const briefingEl = document.getElementById('aula-virtual-briefing');
+        if (briefingEl) {
+            const url = data.briefingUrl;
+            if (url) {
+                briefingEl.innerHTML = `<a href="${escapeHtml(url)}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>${escapeHtml(url)}
+                </a>`;
+            } else {
+                briefingEl.innerHTML = '<span class="text-muted small fst-italic">El formador no ha definido un briefing.</span>';
+            }
+        }
+
+        const compContainer = document.getElementById('aula-virtual-competences');
+        if (compContainer) {
+            const comps = Array.isArray(data.competences) ? data.competences : [];
+            if (!comps.length) {
+                compContainer.innerHTML = '<span class="text-muted small fst-italic">Este proyecto no tiene competencias asociadas.</span>';
+            } else {
+                compContainer.innerHTML = comps.map(c => `
+                    <span class="badge bg-light text-dark border me-1 mb-1">
+                        <i class="bi bi-award me-1 text-warning"></i>${escapeHtml(c.name || String(c.id))}
+                        ${c.area ? `<span class="text-muted ms-1">${escapeHtml(c.area)}</span>` : ''}
+                    </span>
+                `).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading virtual classroom:', error);
+        _virtualClassroomState = null;
+    }
+}
+
+function openAulaVirtualPage(event) {
+    if (event && event.preventDefault) event.preventDefault();
+
+    const page = document.getElementById('aula-virtual-page');
+    const emptyEl = document.getElementById('aula-virtual-empty');
+    const contentEl = document.getElementById('aula-virtual-content');
+    if (!page || !emptyEl || !contentEl) return;
+
+    // Ocultar secciones normales
+    const roadmap = document.getElementById('roadmap');
+    const calendar = document.getElementById('calendar');
+    const sectionsContainer = document.getElementById('sections-container');
+    const competencesSection = document.getElementById('competences-section');
+    const quickLinks = document.getElementById('quick-links');
+
+    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks].forEach(el => {
+        if (el) el.classList.add('d-none');
+    });
+
+    page.classList.remove('d-none');
+
+    // Configurar contenido según estado actual
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        emptyEl.classList.remove('d-none');
+        contentEl.classList.add('d-none');
+    } else {
+        emptyEl.classList.add('d-none');
+        contentEl.classList.remove('d-none');
+        populateAulaVirtualTargets();
+    }
+
+    // Scroll al inicio
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function closeAulaVirtualPage() {
+    const page = document.getElementById('aula-virtual-page');
+    if (page) page.classList.add('d-none');
+
+    const roadmap = document.getElementById('roadmap');
+    const calendar = document.getElementById('calendar');
+    const sectionsContainer = document.getElementById('sections-container');
+    const competencesSection = document.getElementById('competences-section');
+    const quickLinks = document.getElementById('quick-links');
+
+    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks].forEach(el => {
+        if (el) el.classList.remove('d-none');
+    });
+
+    const feedbackEl = document.getElementById('aula-virtual-feedback');
+    const suffixEl = document.getElementById('aula-virtual-repo-suffix');
+    if (feedbackEl) feedbackEl.textContent = '';
+    if (suffixEl) suffixEl.value = '';
+}
+
+async function populateAulaVirtualTargets() {
+    const select = document.getElementById('aula-virtual-target-select');
+    const label = document.getElementById('aula-virtual-target-label');
+    if (!select || !label) return;
+
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        select.innerHTML = '<option value="">No hay proyecto activo</option>';
+        return;
+    }
+
+    const type = _virtualClassroomState.projectType === 'grupal' ? 'grupal' : 'individual';
+
+    if (!window.publicStudents) {
+        await loadPublicStudents();
+    }
+    const students = Array.isArray(window.publicStudents) ? window.publicStudents : [];
+
+    let optionsHtml = '';
+    if (type === 'individual') {
+        label.textContent = 'Selecciona tu nombre';
+        optionsHtml = '<option value="">Selecciona tu nombre…</option>' +
+            students.map(st => `
+                <option value="student:${escapeHtml(String(st.id))}">
+                    ${escapeHtml(`${st.name || ''} ${st.lastname || ''}`.trim())}
+                </option>
+            `).join('');
+    } else {
+        label.textContent = 'Selecciona tu equipo';
+        const groups = Array.isArray(_virtualClassroomState.groups) ? _virtualClassroomState.groups : [];
+        const byId = {};
+        students.forEach(s => { byId[String(s.id)] = s; });
+
+        optionsHtml = '<option value="">Selecciona tu equipo…</option>' +
+            groups.map(g => {
+                const members = (g.studentIds || []).map(id => {
+                    const st = byId[String(id)];
+                    return st ? `${st.name || ''} ${st.lastname || ''}`.trim() : id;
+                }).filter(Boolean);
+                const membersLabel = members.slice(0, 3).join(', ') + (members.length > 3 ? '…' : '');
+                return `
+                    <option value="group:${escapeHtml(g.groupName)}">
+                        ${escapeHtml(g.groupName)}${membersLabel ? ` — ${escapeHtml(membersLabel)}` : ''}
+                    </option>
+                `;
+            }).join('');
+    }
+
+    select.innerHTML = optionsHtml;
+}
+
+async function submitVirtualClassroomDelivery() {
+    const btn = document.querySelector('#aula-virtual-page button[onclick*="submitVirtualClassroomDelivery"]');
+    const spinner = btn ? btn.querySelector('.spinner-border') : null;
+    const labelSpan = btn ? btn.querySelector('.btn-label') : null;
+    const select = document.getElementById('aula-virtual-target-select');
+    const suffixEl = document.getElementById('aula-virtual-repo-suffix');
+    const feedbackEl = document.getElementById('aula-virtual-feedback');
+
+    if (!select || !suffixEl || !feedbackEl) return;
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        feedbackEl.textContent = 'No hay proyecto activo para entregar.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    const targetVal = select.value;
+    const repoName = suffixEl.value.trim();
+
+    if (!targetVal) {
+        feedbackEl.textContent = 'Selecciona tu nombre o equipo antes de enviar.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    if (!repoName) {
+        feedbackEl.textContent = 'Escribe el nombre de tu repositorio.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    const [kind, id] = targetVal.split(':');
+    const body = {
+        type: _virtualClassroomState.projectType === 'grupal' ? 'grupal' : 'individual',
+        repoName
+    };
+    if (body.type === 'grupal') {
+        body.groupName = id;
+    } else {
+        body.studentId = id;
+    }
+
+    if (btn && spinner && labelSpan) {
+        btn.disabled = true;
+        spinner.classList.remove('d-none');
+        labelSpan.classList.add('d-none');
+    }
+    feedbackEl.textContent = '';
+
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/virtual-classroom/submissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            console.error('Error submitting virtual classroom delivery:', data);
+            feedbackEl.textContent = data.error || 'Error al registrar la entrega.';
+            feedbackEl.className = 'small text-danger';
+            return;
+        }
+
+        feedbackEl.textContent = 'Entrega registrada correctamente.';
+        feedbackEl.className = 'small text-success';
+        suffixEl.value = '';
+    } catch (error) {
+        console.error('Error submitting virtual classroom delivery:', error);
+        feedbackEl.textContent = 'Error de conexión al enviar la entrega.';
+        feedbackEl.className = 'small text-danger';
+    } finally {
+        if (btn && spinner && labelSpan) {
+            btn.disabled = false;
+            spinner.classList.add('d-none');
+            labelSpan.classList.remove('d-none');
+        }
     }
 }
 
