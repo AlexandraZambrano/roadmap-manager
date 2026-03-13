@@ -2341,6 +2341,12 @@ function switchTab(tabId) {
         loadOverviewCalendarId();
         loadOverviewPildoraAlert();
         loadOverviewAttendanceAlert();
+        
+        // Update progress info with current students
+        if (window.currentPromotion) {
+            const students = window.currentStudents || [];
+            updateProgressInfo(window.currentPromotion, students);
+        }
     }
 }
 
@@ -2357,29 +2363,7 @@ async function loadPromotion() {
             const _setTC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
             _setTC('promotion-title', promotion.name);
             _setTC('promotion-desc', promotion.description || '');
-            _setTC('promotion-duration', promotion.weeks || '-');
-            _setTC('promotion-start', promotion.startDate || '-');
-            _setTC('promotion-end', promotion.endDate || '-');
             _setTC('modules-count', (promotion.modules || []).length);
-            
-            // Set promotion status
-            const statusEl = document.getElementById('promotion-status');
-            if (statusEl) {
-                const now = new Date();
-                const startDate = new Date(promotion.startDate);
-                const endDate = new Date(promotion.endDate);
-                
-                if (now < startDate) {
-                    statusEl.textContent = 'Próximo';
-                    statusEl.className = 'badge bg-primary';
-                } else if (now > endDate) {
-                    statusEl.textContent = 'Finalizado';
-                    statusEl.className = 'badge bg-secondary';
-                } else {
-                    statusEl.textContent = 'Activo';
-                    statusEl.className = 'badge bg-success';
-                }
-            }
 
             // Load teaching content button
             if (promotion.teachingContentUrl) {
@@ -2392,6 +2376,10 @@ async function loadPromotion() {
 
             // Update course progress bar
             updateCourseProgressBar(promotion);
+            
+            // Update progress info with students if available
+            const students = window.currentStudents || [];
+            updateProgressInfo(promotion, students);
 
             // Check if current user is owner (to enable/disable collaborator management)
             if (isTeacherOrAdmin()) {
@@ -2465,7 +2453,7 @@ function updateCourseProgressBar(promotion) {
             progressBar.textContent = progressPercent > 10 ? progressPercent + '%' : '';
         }
         
-        // Update progress label
+        // Update progress label with remaining days
         const progressLabel = document.getElementById('progress-label');
         if (progressLabel) {
             if (now < startDate) {
@@ -2473,39 +2461,112 @@ function updateCourseProgressBar(promotion) {
             } else if (now > endDate) {
                 progressLabel.textContent = 'Curso finalizado';
             } else {
-                progressLabel.textContent = progressPercent + '% completado';
+                // Show remaining days
+                const daysText = remainingDays === 1 ? 'día' : 'días';
+                progressLabel.textContent = 'finaliza en ' + remainingDays + ' ' + daysText;
             }
         }
         
-        // Update date info
+        // Update date info (left) - start date
         const startInfo = document.getElementById('progress-start-info');
         if (startInfo) {
             startInfo.textContent = 'Inicio: ' + new Date(promotion.startDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
         }
-        
-        const weekInfo = document.getElementById('progress-week-info');
-        if (weekInfo) {
-            if (now < startDate) {
-                weekInfo.textContent = 'Total: ' + totalWeeks + ' semanas';
-            } else if (now > endDate) {
-                weekInfo.textContent = 'Finalizado';
-            } else {
-                weekInfo.textContent = 'Semana ' + currentWeek + ' de ' + totalWeeks;
-            }
-        }
-        
+
+        // Note: progress-week-info (center) is managed by updateProgressInfo() for student counts
+        // Update end date info (right)
         const endInfo = document.getElementById('progress-end-info');
         if (endInfo) {
-            if (now < startDate) {
-                endInfo.textContent = 'Fin: ' + new Date(promotion.endDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
-            } else if (now > endDate) {
-                endInfo.textContent = '';
-            } else {
-                endInfo.textContent = remainingDays + ' días restantes';
-            }
+            endInfo.textContent = 'Fin: ' + new Date(promotion.endDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
         }
     } catch (error) {
         console.error('Error updating course progress bar:', error);
+    }
+}
+
+/**
+ * Calculate student counts and statuses
+ * @param {Array} students - Array of student objects
+ * @returns {Object} Object with { active: number, withdrawn: number, total: number }
+ */
+function calculateStudentCounts(students) {
+    if (!Array.isArray(students)) {
+        return { active: 0, withdrawn: 0, total: 0 };
+    }
+    
+    const active = students.filter(s => !s.isWithdrawn).length;
+    const withdrawn = students.filter(s => s.isWithdrawn).length;
+    
+    return {
+        active: active,
+        withdrawn: withdrawn,
+        total: students.length
+    };
+}
+
+/**
+ * Format date to readable string (e.g., "12 Feb 2026")
+ * @param {string|Date} date - ISO date string or Date object
+ * @param {string} locale - Locale code (default: 'es-ES')
+ * @returns {string} Formatted date string
+ */
+function formatDateShort(date, locale = 'es-ES') {
+    if (!date) return '-';
+    
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    if (isNaN(dateObj.getTime())) return '-';
+    
+    return dateObj.toLocaleDateString(locale, {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+}
+
+/**
+ * Update progress info section with course dates and student counts
+ * @param {Object} promotion - Promotion object with startDate, endDate
+ * @param {Array} students - Array of student objects
+ */
+function updateProgressInfo(promotion, students) {
+    try {
+        if (!promotion) return;
+        
+        // Calculate student counts
+        const counts = calculateStudentCounts(students);
+        
+        // Update start date info (left side)
+        const startInfo = document.getElementById('progress-start-info');
+        if (startInfo) {
+            const startDate = formatDateShort(promotion.startDate);
+            startInfo.textContent = 'Inicio: ' + startDate;
+        }
+        
+        // Update student info (center)
+        const weekInfo = document.getElementById('progress-week-info');
+        if (weekInfo) {
+            if (counts.active > 0 || counts.withdrawn > 0) {
+                let infoText = counts.active + ' activ' + (counts.active === 1 ? 'o' : 'os');
+                
+                if (counts.withdrawn > 0) {
+                    infoText += ' · ' + counts.withdrawn + ' bajas';
+                }
+                
+                weekInfo.textContent = infoText;
+            } else {
+                weekInfo.textContent = '-';
+            }
+        }
+        
+        // Update end date info (right side)
+        const endInfo = document.getElementById('progress-end-info');
+        if (endInfo) {
+            const endDate = formatDateShort(promotion.endDate);
+            endInfo.textContent = 'Fin: ' + endDate;
+        }
+    } catch (error) {
+        console.error('Error updating progress info:', error);
     }
 }
 
@@ -4311,6 +4372,11 @@ async function loadStudents(retryCount = 0) {
         const searchInput = document.getElementById('student-search-input');
         if (searchInput) searchInput.value = '';
         displayStudents(window.currentStudents);
+        
+        // Update progress info with newly loaded students
+        if (window.currentPromotion) {
+            updateProgressInfo(window.currentPromotion, window.currentStudents);
+        }
     } catch (error) {
         console.error('Error loading students:', error);
         // Never show a blocking alert during page load — just display inline message
