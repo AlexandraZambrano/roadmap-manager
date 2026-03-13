@@ -3344,14 +3344,14 @@ app.get('/api/promotions/:promotionId/quick-links', async (req, res) => {
 
 app.post('/api/promotions/:promotionId/quick-links', verifyToken, async (req, res) => {
   try {
-    const { name, url } = req.body;
+    const { name, url, platform } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and URL are required' });
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url });
+    const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url, platform });
     res.status(201).json(quickLink);
   } catch (error) {
     res.status(500).json({ error: error.message });

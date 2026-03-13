@@ -442,6 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadPromotion();
     loadQuickLinks();
+    loadQuickActions();
     loadSections();
 
     if (isTeacherOrAdmin()) {
@@ -3198,6 +3199,88 @@ function displayQuickLinks(links) {
     });
 }
 
+// ==================== ACCIONES RÁPIDAS ====================
+// Widget para acceso rápido a herramientas: Zoom, Discord, Asana
+
+async function loadQuickActions() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/quick-links`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const links = await response.json();
+            displayQuickActions(links);
+        }
+    } catch (error) {
+        console.error('Error cargando acciones rápidas:', error);
+    }
+}
+
+function displayQuickActions(quickLinks) {
+    const container = document.getElementById('quick-actions-container');
+    if (!container) return;
+
+    // Buscar links por plataforma o por nombre (para compatibilidad con links antiguos)
+    const zoomLink = quickLinks.find(link => 
+        link.platform === 'zoom' || link.name?.toLowerCase().includes('zoom')
+    );
+    const discordLink = quickLinks.find(link => 
+        link.platform === 'discord' || link.name?.toLowerCase().includes('discord')
+    );
+
+    // Definir acciones
+    const actions = [
+        {
+            id: 'zoom-action',
+            icon: 'bi-camera-video',
+            label: 'Unirme a la clase',
+            color: '#2D8CFF',
+            url: zoomLink?.url,
+            title: 'Abrir reunión de Zoom'
+        },
+        {
+            id: 'discord-action',
+            icon: 'bi-discord',
+            label: 'Chat Estudiantes',
+            color: '#5865F2',
+            url: discordLink?.url,
+            title: 'Abrir canal de Discord'
+        }
+    ];
+
+    container.innerHTML = '';
+
+    actions.forEach(action => {
+        const isDisabled = !action.url;
+        const cardHTML = `
+            <div class="quick-action-card ${isDisabled ? 'disabled' : ''}" id="${action.id}">
+                <a href="${action.url || '#'}" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   title="${action.title}"
+                   onclick="${isDisabled ? 'return false;' : 'event.preventDefault(); window.open(this.href, \"_blank\");'}"
+                   class="quick-action-link"
+                   style="${isDisabled ? 'pointer-events: none; opacity: 0.5;' : ''}">
+                    <div class="quick-action-icon" style="color: ${action.color}; ${isDisabled ? 'opacity: 0.5;' : ''}">
+                        <i class="bi ${action.icon}"></i>
+                    </div>
+                    <div class="quick-action-label">${action.label}</div>
+                    ${isDisabled ? '<div class="quick-action-status">No configurado</div>' : '<i class="bi bi-box-arrow-up-right quick-action-arrow"></i>'}
+                </a>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', cardHTML);
+    });
+}
+
+function refreshQuickActions() {
+    if (typeof promotionId !== 'undefined') {
+        loadQuickActions();
+    }
+}
+
 async function loadSections() {
     const token = localStorage.getItem('token');
     try {
@@ -4000,6 +4083,7 @@ function setupForms() {
                 quickLinkModal.hide();
                 document.getElementById('quick-link-form').reset();
                 loadQuickLinks();
+                refreshQuickActions();
             }
         } catch (error) {
             console.error('Error adding quick link:', error);
@@ -4631,6 +4715,7 @@ async function deleteQuickLink(linkId) {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         loadQuickLinks();
+        refreshQuickActions();
     } catch (error) {
         console.error('Error deleting link:', error);
     }
