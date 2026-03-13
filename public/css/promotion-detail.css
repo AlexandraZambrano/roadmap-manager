@@ -2026,6 +2026,7 @@ progress-bar progress-bar-striped {
         font-size: 0.8rem;
     }
 
+
     .agenda-container {
         padding: 8px;
         max-height: 240px;
@@ -2034,4 +2035,54 @@ progress-bar progress-bar-striped {
     .agenda-container .ratio {
         --bs-aspect-ratio: 50%;
     }
+}
+
+/* ==================== TEACHER AREA SUB-TABS ==================== */
+#teacher-area-subtabs-content .tab-pane {
+    display: none;
+}
+
+#teacher-area-subtabs-content .tab-pane.active {
+    display: block;
+}
+
+#teacher-area-subtabs-content .tab-pane.show {
+    display: block;
+}
+
+#teacher-area-subtabs-content .tab-pane.show.active {
+    display: block;
+}
+
+/* Teacher Area Sub-tabs Styling */
+#teacher-area-subtabs {
+    border-bottom: 2px solid #e9ecef;
+}
+
+#teacher-area-subtabs .nav-link {
+    color: #666;
+    border-bottom: 3px solid transparent;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    padding-bottom: 0.75rem;
+    margin-bottom: -2px;
+}
+
+#teacher-area-subtabs .nav-link:hover:not(.active) {
+    color: #333;
+    background-color: transparent;
+}
+
+#teacher-area-subtabs .nav-link.active {
+    color: #ff4700;
+    border-bottom-color: #ff4700;
+    background-color: transparent;
+}
+
+#teacher-area-subtabs .nav-link i {
+    transition: transform 0.2s ease;
+}
+
+#teacher-area-subtabs .nav-link.active i {
+    color: #ff4700;
 }

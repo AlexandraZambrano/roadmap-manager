@@ -2416,6 +2416,58 @@ async function loadTeacherAreaOverview() {
     }
 }
 
+// ==================== TEACHER AREA SUB-TABS ====================
+// Handle switching between sub-sections in Área del Docente
+function switchTeacherAreaSubTab(tabName) {
+    const tabNameMap = {
+        'students':   { tabId: 'teacher-area-students',   buttonId: 'teacher-area-students-tab',   label: 'Lista de estudiantes' },
+        'attendance': { tabId: 'teacher-area-attendance', buttonId: 'teacher-area-attendance-tab', label: 'Asistencia' },
+        'evaluation': { tabId: 'teacher-area-evaluation', buttonId: 'teacher-area-evaluation-tab', label: 'Evaluación' }
+    };
+
+    const tab = tabNameMap[tabName];
+    if (!tab) return;
+
+    // Hide all sub-tabs
+    const allTabs = document.querySelectorAll('#teacher-area-subtabs-content .tab-pane');
+    allTabs.forEach(t => {
+        t.style.display = 'none';
+        t.classList.remove('show', 'active');
+    });
+
+    // Remove active class from all buttons
+    const allButtons = document.querySelectorAll('#teacher-area-subtabs .nav-link');
+    allButtons.forEach(btn => {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-selected', 'false');
+    });
+
+    // Show selected tab with animation
+    const selectedTab = document.getElementById(tab.tabId);
+    if (selectedTab) {
+        selectedTab.style.display = 'block';
+        // Trigger reflow to enable animation
+        void selectedTab.offsetHeight;
+        selectedTab.classList.add('show', 'active');
+    }
+
+    // Activate selected button
+    const selectedButton = document.getElementById(tab.buttonId);
+    if (selectedButton) {
+        selectedButton.classList.add('active');
+        selectedButton.setAttribute('aria-selected', 'true');
+    }
+
+    // Lazy-load data for each sub-tab
+    if (tabName === 'students') {
+        loadTeacherAreaStudents();
+    } else if (tabName === 'attendance') {
+        loadTeacherAreaAttendance();
+    } else if (tabName === 'evaluation') {
+        loadTeacherAreaEvaluation();
+    }
+}
+
 function displayTeacherAreaQuickActions(promotion) {
     const container = document.getElementById('teacher-area-quick-actions');
     if (!container) return;
@@ -2518,17 +2570,147 @@ async function loadTeacherAreaStudents() {
     if (!container) return;
 
     // Show loading state
-    container.innerHTML = '<p class="text-muted"><i class="bi bi-hourglass-split me-2"></i>Cargando estudiantes...</p>';
+    container.innerHTML = '<p class="text-muted text-center py-5"><i class="bi bi-hourglass-split me-2"></i>Cargando estudiantes...</p>';
 
-    // Call the existing loadStudents function which updates the main students tab
-    // Then copy its HTML to our container
-    loadStudents();
+    // Load students data
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-    // Copy the rendered students table from the main students-tab
-    const mainStudentsTab = document.getElementById('students-tab');
-    if (mainStudentsTab) {
-        container.innerHTML = mainStudentsTab.innerHTML;
+        if (response.ok) {
+            const students = await response.json();
+            
+            // Temporarily move teacher-area-students-content IDs to be the same as the main students table
+            // to reuse the rendering logic
+            const tempOriginalId = 'students-list';
+            const tempTeacherId = 'teacher-area-students-list-temp';
+            
+            // Get or create the list container
+            let listContainer = document.getElementById(tempOriginalId);
+            if (!listContainer) {
+                listContainer = document.createElement('tbody');
+                listContainer.id = tempOriginalId;
+                const table = document.querySelector('#students-table tbody') || container;
+                if (table.tagName === 'TBODY') {
+                    table.parentElement.appendChild(listContainer);
+                }
+            }
+
+            // Render students directly in container using the main students rendering logic
+            renderStudentsTableInContainer(container, students);
+        } else {
+            container.innerHTML = '<p class="text-danger text-center py-5">Error cargando estudiantes</p>';
+        }
+    } catch (error) {
+        console.error('Error loading students:', error);
+        container.innerHTML = '<p class="text-danger text-center py-5">Error: ' + error.message + '</p>';
     }
+}
+
+function renderStudentsTableInContainer(container, students) {
+    if (!students || students.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-5">No hay estudiantes</p>';
+        return;
+    }
+
+    // Build the complete structure like the main students tab
+    let html = `
+        <div class="mb-3">
+            <div class="input-group" style="max-width: 420px;">
+                <span class="input-group-text bg-white border-end-0">
+                    <i class="bi bi-search text-muted"></i>
+                </span>
+                <input type="text" class="form-control border-start-0 teacher-student-search"
+                    placeholder="Buscar por nombre, email, nacionalidad…"
+                    oninput="filterTeacherStudentsTable(this.value)">
+                <button class="btn btn-outline-secondary" type="button"
+                    onclick="this.previousElementSibling.value=''; filterTeacherStudentsTable('');"
+                    title="Limpiar búsqueda">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle teacher-students-table">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" class="form-check-input teacher-select-all-students-header"
+                                onchange="toggleAllTeacherStudents(this)">
+                        </th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Nacionalidad</th>
+                        <th>Profesión</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="teacher-students-list">
+    `;
+
+    students.forEach(student => {
+        const fullName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+        const nationality = student.nationality || '-';
+        const profession = student.profession || '-';
+        const email = student.email || '';
+
+        html += `
+            <tr class="student-row" data-student-id="${student.id}">
+                <td>
+                    <input type="checkbox" class="form-check-input teacher-student-checkbox" value="${student.id}">
+                </td>
+                <td>
+                    <span class="student-name-link fw-bold">${fullName}</span>
+                </td>
+                <td>${email}</td>
+                <td>${nationality}</td>
+                <td>${profession}</td>
+                <td class="text-end">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-primary" onclick="openStudentModal('${student.id}')">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger" onclick="if(confirm('¿Estás seguro?')) deleteStudent('${student.id}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function filterTeacherStudentsTable(searchTerm) {
+    const rows = document.querySelectorAll('.teacher-students-list .student-row');
+    searchTerm = searchTerm.toLowerCase();
+
+    rows.forEach(row => {
+        const name = row.querySelector('.student-name-link')?.textContent || '';
+        const email = row.cells[2]?.textContent || '';
+        const nationality = row.cells[3]?.textContent || '';
+        
+        const matches = name.toLowerCase().includes(searchTerm) || 
+                       email.toLowerCase().includes(searchTerm) || 
+                       nationality.toLowerCase().includes(searchTerm);
+        
+        row.style.display = matches ? '' : 'none';
+    });
+}
+
+function toggleAllTeacherStudents(checkbox) {
+    const checkboxes = document.querySelectorAll('.teacher-student-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
 }
 
 // Load attendance view in teacher area
@@ -2542,11 +2724,21 @@ async function loadTeacherAreaAttendance() {
     // Call the existing loadAttendance function
     loadAttendance();
 
-    // Copy the rendered attendance view from the main attendance-tab
-    const mainAttendanceTab = document.getElementById('attendance-tab');
-    if (mainAttendanceTab) {
-        container.innerHTML = mainAttendanceTab.innerHTML;
-    }
+    // Wait a moment for the main tab to render, then copy its HTML
+    setTimeout(() => {
+        const mainAttendanceTab = document.getElementById('attendance-tab');
+        if (mainAttendanceTab) {
+            // Copy the entire content
+            const children = mainAttendanceTab.querySelectorAll(':scope > div');
+            let html = '';
+            children.forEach(child => {
+                html += child.outerHTML;
+            });
+            if (html) {
+                container.innerHTML = html;
+            }
+        }
+    }, 1000);
 }
 
 // Load evaluation view in teacher area
@@ -2560,68 +2752,16 @@ async function loadTeacherAreaEvaluation() {
         <p class="mt-2">Cargando proyectos...</p>
     </div>`;
 
-    const token = localStorage.getItem('token');
-    try {
-        const [promoRes, extRes, studentsRes, catalogRes] = await Promise.all([
-            fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-            fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`),
-            fetch(`${API_URL}/api/promotions/${promotionId}/students`, { headers: { 'Authorization': `Bearer ${token}` } }),
-            fetch(`${API_URL}/api/competences`, { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
+    // Load the main evaluation content
+    loadEvaluation();
 
-        const promo = promoRes.ok ? await promoRes.json() : {};
-        const ext = extRes.ok ? await extRes.json() : {};
-        const studentsData = studentsRes.ok ? await studentsRes.json() : [];
-        const catalogRaw = catalogRes.ok ? await catalogRes.json() : [];
-
-        // Normalize the full catalog
-        const catalog = catalogRaw.map(comp => ({
-            id: comp.id,
-            name: comp.name,
-            area: (comp.areas && comp.areas[0]) ? comp.areas[0].name : (comp.area || ''),
-            description: comp.description || '',
-            levels: (comp.levels || []).map(l => ({
-                level: l.levelId,
-                description: l.levelName || `Nivel ${l.levelId}`,
-                indicators: (l.indicators || []).map(i => i.name || i)
-            })),
-            allTools: (comp.tools || []).map(t => t.name || t),
-            toolsWithIndicators: (comp.tools || []).map(t => ({
-                id: t.id,
-                name: t.name || '',
-                description: t.description || '',
-                indicators: (t.indicators || []).map(ind => ({
-                    id: ind.id,
-                    name: ind.name || '',
-                    description: ind.description || '',
-                    levelId: ind.levelId || 1
-                }))
-            })),
-            competenceIndicators: {
-                initial: (comp.indicators?.initial || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 1 })),
-                medio:   (comp.indicators?.medio   || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 2 })),
-                advance: (comp.indicators?.advance  || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 3 }))
-            }
-        }));
-
-        // Merge program competences with full catalog data
-        const programCompetences = (ext.programCompetences || []).map(pc => {
-            const catalogComp = catalog.find(c => c.id === pc.competenceId);
-            return { ...pc, ...catalogComp };
-        });
-
-        // Prepare evaluation data storage
-        window.evalCatalog = catalog;
-        window.evalProgramCompetences = programCompetences;
-        window.evalStudents = studentsData;
-        window.evalPromo = promo;
-
-        // Render evaluation view in teacher-area
-        renderTeacherAreaEvaluation(container, promo, programCompetences, studentsData);
-    } catch (error) {
-        console.error('Error loading teacher area evaluation:', error);
-        container.innerHTML = `<div class="alert alert-danger">Error cargando evaluación: ${error.message}</div>`;
-    }
+    // Wait for the main evaluation tab to render, then copy its content
+    setTimeout(() => {
+        const mainEvalTab = document.getElementById('evaluation-content');
+        if (mainEvalTab && mainEvalTab.innerHTML) {
+            container.innerHTML = mainEvalTab.innerHTML;
+        }
+    }, 2000);  // Wait 2 seconds for async evaluation data to load
 }
 
 function renderTeacherAreaEvaluation(container, promo, programCompetences, students) {
