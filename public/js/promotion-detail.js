@@ -2543,19 +2543,13 @@ function updateProgressInfo(promotion, students) {
             startInfo.textContent = 'Inicio: ' + startDate;
         }
         
-        // Update student info (center)
-        const weekInfo = document.getElementById('progress-week-info');
-        if (weekInfo) {
-            if (counts.active > 0 || counts.withdrawn > 0) {
-                let infoText = counts.active + ' activ' + (counts.active === 1 ? 'o' : 'os');
-                
-                if (counts.withdrawn > 0) {
-                    infoText += ' · ' + counts.withdrawn + ' bajas';
-                }
-                
-                weekInfo.textContent = infoText;
+        // Update student info (center/left)
+        const activeStudentsEl = document.getElementById('active-students-count');
+        if (activeStudentsEl) {
+            if (counts.active > 0) {
+                activeStudentsEl.textContent = counts.active + ' estudiante' + (counts.active === 1 ? '' : 's') + ' en curso';
             } else {
-                weekInfo.textContent = '-';
+                activeStudentsEl.textContent = '-';
             }
         }
         
