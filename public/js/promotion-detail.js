@@ -493,6 +493,17 @@ document.addEventListener('DOMContentLoaded', () => {
         setupForms();
     }
 
+    // ── Inicializar Bloc de Notas (Notes Manager) ─────────────────────────────
+    if (typeof NotesManager !== 'undefined' && typeof NotesUI !== 'undefined') {
+        const notesManager = new NotesManager('promotionNotes', promotionId);
+        const notesUI = new NotesUI(notesManager, 'notes-container');
+        notesUI.render();
+        window.notesManager = notesManager; // Exponer globalmente para debugging/acceso externo
+        window.notesUI = notesUI;
+        console.log('[Notes] Bloc de Notas inicializado para promoción:', promotionId);
+    }
+    // ── /Inicializar Bloc de Notas ────────────────────────────────────────────
+
     // Restore last active tab (or default to overview)
     // Guard against stale tab IDs (e.g. 'roadmap'/'calendar' that no longer exist as standalone sections)
     const validTabs = ['overview', 'info', 'students', 'attendance', 'collaborators', 'access-settings', 'evaluation'];

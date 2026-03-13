@@ -2185,3 +2185,278 @@ progress-bar progress-bar-striped {
 #withdrawn-students-container:hover {
     background-color: #FFC799 !important;
 }
+
+/* ================================================================================
+   BLOC DE NOTAS - ESTILOS
+   ================================================================================ */
+
+.notes-section {
+    width: 100%;
+}
+
+.notes-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Controles del bloc de notas */
+.notes-controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+
+.notes-input {
+    border: 1px solid #ddd !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.9rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.notes-input:focus {
+    border-color: var(--principal-1) !important;
+    box-shadow: 0 0 0 3px rgba(255, 71, 0, 0.1) !important;
+    outline: none !important;
+}
+
+.notes-input::placeholder {
+    color: #999;
+}
+
+.notes-category {
+    border: 1px solid #ddd !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.9rem !important;
+    background-color: #fff !important;
+    cursor: pointer;
+}
+
+.notes-category:focus {
+    border-color: var(--principal-1) !important;
+    outline: none !important;
+}
+
+/* Botón de añadir nota */
+#notes-add-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+#notes-add-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(255, 71, 0, 0.2);
+}
+
+/* Filtros de categoría - DEPRECADO (mantener para compatibilidad) */
+.notes-filters {
+    display: none;
+}
+
+.notes-filter-btn {
+    display: none;
+}
+
+.notes-filter-btn:hover {
+    display: none;
+}
+
+.notes-filter-btn.active {
+    display: none;
+}
+
+/* Lista de notas */
+.notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.notes-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.notes-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.notes-list::-webkit-scrollbar-thumb {
+    background: #ddd;
+    border-radius: 10px;
+}
+
+.notes-list::-webkit-scrollbar-thumb:hover {
+    background: #ccc;
+}
+
+/* Tarjeta de nota individual */
+.note-card {
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(135deg, #fff9f5 0%, #fffbf8 100%);
+    border: 1px solid #f0e6dd;
+    border-radius: 8px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.note-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--principal-1);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.note-card:hover {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+    border-color: var(--principal-1);
+    transform: translateY(-1px);
+}
+
+.note-card:hover::before {
+    opacity: 1;
+}
+
+/* Encabezado de la nota */
+.note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.note-category {
+    flex: 1;
+}
+
+.note-category-badge {
+    display: inline-block;
+    background-color: #fff0e6;
+    color: var(--principal-1);
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 71, 0, 0.2);
+}
+
+/* Acciones de la nota (editar/eliminar) */
+.note-actions {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.note-card:hover .note-actions {
+    opacity: 1;
+}
+
+.note-action-btn {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 0.25rem 0.35rem;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.note-action-btn:hover {
+    color: var(--principal-1);
+    transform: scale(1.15);
+}
+
+.note-delete-btn {
+    color: #dc3545 !important;
+}
+
+.note-delete-btn:hover {
+    color: #c82333 !important;
+    transform: scale(1.2);
+}
+
+/* Contenido de la nota */
+.note-content {
+    margin-bottom: 0.5rem;
+}
+
+.note-text {
+    color: #333;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin: 0;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+/* Pie de la nota */
+.note-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.note-date {
+    color: #999;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+/* Estado vacío */
+.notes-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+}
+
+/* Estilo responsive para pantallas pequeñas */
+@media (max-width: 768px) {
+    .notes-controls {
+        flex-direction: column;
+    }
+
+    .notes-controls .notes-input,
+    .notes-controls .notes-category,
+    .notes-controls #notes-add-btn {
+        width: 100%;
+    }
+
+    .notes-list {
+        max-height: 300px;
+    }
+
+    .note-actions {
+        opacity: 1;
+        gap: 0.5rem;
+    }
+
+    .note-action-btn {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.95rem;
+    }
+}
