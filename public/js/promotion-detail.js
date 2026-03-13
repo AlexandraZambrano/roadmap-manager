@@ -2670,6 +2670,15 @@ function renderStudentsTableInContainer(container, students) {
         return;
     }
 
+    // Sort: active students first, withdrawn at the bottom
+    const sorted = [...students].sort((a, b) => {
+        if (!!a.isWithdrawn === !!b.isWithdrawn) return (a.name || '').localeCompare(b.name || '');
+        return a.isWithdrawn ? 1 : -1;
+    });
+
+    const activeCount    = sorted.filter(s => !s.isWithdrawn).length;
+    const withdrawnCount = sorted.length - activeCount;
+
     // Build the complete structure like the main students tab
     let html = `
         <div class="mb-3">
@@ -2706,35 +2715,50 @@ function renderStudentsTableInContainer(container, students) {
                 <tbody class="teacher-students-list">
     `;
 
-    students.forEach(student => {
-        const fullName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
-        const nationality = student.nationality || '-';
-        const profession = student.profession || '-';
-        const email = student.email || '';
-
-        html += `
-            <tr class="student-row" data-student-id="${student.id}">
-                <td>
-                    <input type="checkbox" class="form-check-input teacher-student-checkbox" value="${student.id}">
-                </td>
-                <td>
-                    <span class="student-name-link fw-bold">${fullName}</span>
-                </td>
-                <td>${email}</td>
-                <td>${nationality}</td>
-                <td>${profession}</td>
-                <td class="text-end">
-                    <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-outline-primary" onclick="openStudentModal('${student.id}')">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-danger" onclick="if(confirm('¿Estás seguro?')) deleteStudent('${student.id}')">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
+    sorted.forEach((student, index) => {
+        const separator = (index === activeCount && withdrawnCount > 0)
+            ? `<tr class="table-danger"><td colspan="6" class="py-1 px-3 small fw-semibold text-danger"><i class="bi bi-person-x me-1"></i>Bajas oficiales (${withdrawnCount})</td></tr>`
+            : '';
+        const row = `<tr class="${student.isWithdrawn ? 'student-row-withdrawn' : ''}" data-student-id="${student.id}">
+            <td>
+                <input type="checkbox" class="form-check-input teacher-student-checkbox" 
+                       data-student-id="${student.id}" 
+                       onchange="updateSelectionState()"
+                       ${student.isWithdrawn ? 'disabled' : ''} value="${student.id}">
+            </td>
+            <td>
+                <div class="fw-bold">
+                    ${!student.isWithdrawn
+                        ? `<a href="#" class="student-name-link text-decoration-none text-dark"
+                            onclick="event.preventDefault(); window.StudentTracking?.openFicha('${student.id}')"
+                            title="Ver ficha de ${escapeHtml(studentFullName(student))}"
+                            >${student.name || student.lastname ? escapeHtml(studentFullName(student)) : 'N/A'}</a>`
+                        : (student.name || student.lastname ? escapeHtml(studentFullName(student)) : 'N/A')
+                    }
+                    ${student.isWithdrawn ? `<span class="badge bg-danger ms-2" style="font-size:.65rem;" title="Baja desde ${student.withdrawal?.date ? new Date(student.withdrawal.date).toLocaleDateString('es-ES') : ''}">BAJA</span>` : ''}
+                </div>
+            </td>
+            <td>${student.email || 'N/A'}</td>
+            <td>${student.nationality || 'N/A'}</td>
+            <td>${student.profession || 'N/A'}</td>
+            <td class="text-end">
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-success" onclick="window.StudentTracking?.openFicha('${student.id}')" title="Ficha de Seguimiento">
+                        <i class="bi bi-person-lines-fill"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTechnical('${student.id}', promotionId)" title="PDF Seguimiento Técnico">
+                        <i class="bi bi-file-earmark-bar-graph"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTransversal('${student.id}', promotionId)" title="PDF Seguimiento Transversal">
+                        <i class="bi bi-file-earmark-person"></i>
+                    </button>
+                    ${!student.isWithdrawn ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}', '${student.email}')" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>` : ''}
+                </div>
+            </td>
+        </tr>`;
+        html += separator + row;
     });
 
     html += `
@@ -2747,13 +2771,22 @@ function renderStudentsTableInContainer(container, students) {
 }
 
 function filterTeacherStudentsTable(searchTerm) {
-    const rows = document.querySelectorAll('.teacher-students-list .student-row');
+    const rows = document.querySelectorAll('.teacher-students-table tbody tr');
     searchTerm = searchTerm.toLowerCase();
 
     rows.forEach(row => {
-        const name = row.querySelector('.student-name-link')?.textContent || '';
-        const email = row.cells[2]?.textContent || '';
-        const nationality = row.cells[3]?.textContent || '';
+        // Skip separator rows
+        if (row.classList.contains('table-danger')) {
+            row.style.display = '';
+            return;
+        }
+
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 5) return;
+
+        const name = cells[1]?.textContent || '';
+        const email = cells[2]?.textContent || '';
+        const nationality = cells[3]?.textContent || '';
         
         const matches = name.toLowerCase().includes(searchTerm) || 
                        email.toLowerCase().includes(searchTerm) || 
