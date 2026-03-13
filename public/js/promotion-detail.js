@@ -2390,6 +2390,9 @@ async function loadPromotion() {
                 }
             }
 
+            // Update course progress bar
+            updateCourseProgressBar(promotion);
+
             // Check if current user is owner (to enable/disable collaborator management)
             if (isTeacherOrAdmin()) {
                 const isOwner = promotion.teacherId === currentUser.id;
@@ -2423,6 +2426,86 @@ async function loadModules() {
         }
     } catch (error) {
         console.error('Error loading modules:', error);
+    }
+}
+
+/**
+ * Calculate and display course progress based on start/end dates
+ * @param {Object} promotion - Promotion object with startDate and endDate
+ */
+function updateCourseProgressBar(promotion) {
+    try {
+        if (!promotion.startDate || !promotion.endDate) return;
+        
+        // Parse dates
+        const startDate = new Date(promotion.startDate);
+        const endDate = new Date(promotion.endDate);
+        const now = new Date();
+        
+        // Calculate progress percentage
+        const totalDuration = endDate - startDate;
+        const elapsed = now - startDate;
+        let progressPercent = Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
+        progressPercent = Math.round(progressPercent);
+        
+        // Calculate remaining days
+        const remainingMs = endDate - now;
+        const remainingDays = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
+        
+        // Calculate current week
+        const totalWeeks = Math.ceil(totalDuration / (1000 * 60 * 60 * 24 * 7));
+        const elapsedWeeks = Math.floor(elapsed / (1000 * 60 * 60 * 24 * 7)) + 1;
+        const currentWeek = Math.min(elapsedWeeks, totalWeeks);
+        
+        // Update progress bar
+        const progressBar = document.getElementById('progress-bar');
+        if (progressBar) {
+            progressBar.style.width = progressPercent + '%';
+            progressBar.setAttribute('aria-valuenow', progressPercent);
+            progressBar.textContent = progressPercent > 10 ? progressPercent + '%' : '';
+        }
+        
+        // Update progress label
+        const progressLabel = document.getElementById('progress-label');
+        if (progressLabel) {
+            if (now < startDate) {
+                progressLabel.textContent = 'Próximo a comenzar';
+            } else if (now > endDate) {
+                progressLabel.textContent = 'Curso finalizado';
+            } else {
+                progressLabel.textContent = progressPercent + '% completado';
+            }
+        }
+        
+        // Update date info
+        const startInfo = document.getElementById('progress-start-info');
+        if (startInfo) {
+            startInfo.textContent = 'Inicio: ' + new Date(promotion.startDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
+        }
+        
+        const weekInfo = document.getElementById('progress-week-info');
+        if (weekInfo) {
+            if (now < startDate) {
+                weekInfo.textContent = 'Total: ' + totalWeeks + ' semanas';
+            } else if (now > endDate) {
+                weekInfo.textContent = 'Finalizado';
+            } else {
+                weekInfo.textContent = 'Semana ' + currentWeek + ' de ' + totalWeeks;
+            }
+        }
+        
+        const endInfo = document.getElementById('progress-end-info');
+        if (endInfo) {
+            if (now < startDate) {
+                endInfo.textContent = 'Fin: ' + new Date(promotion.endDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
+            } else if (now > endDate) {
+                endInfo.textContent = '';
+            } else {
+                endInfo.textContent = remainingDays + ' días restantes';
+            }
+        }
+    } catch (error) {
+        console.error('Error updating course progress bar:', error);
     }
 }
 
