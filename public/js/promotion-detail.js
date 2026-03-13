@@ -2547,7 +2547,7 @@ function updateProgressInfo(promotion, students) {
         const activeStudentsEl = document.getElementById('active-students-count');
         if (activeStudentsEl) {
             if (counts.active > 0) {
-                activeStudentsEl.textContent = counts.active + ' estudiante' + (counts.active === 1 ? '' : 's') + ' en curso';
+                activeStudentsEl.textContent = counts.active + ' estudiante' + (counts.active === 1 ? '' : 's') + ' en activo';
             } else {
                 activeStudentsEl.textContent = '-';
             }
