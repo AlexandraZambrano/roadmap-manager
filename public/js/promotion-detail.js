@@ -3078,6 +3078,13 @@ function updateProgressInfo(promotion, students) {
             }
         }
         
+        // Update withdrawn students info
+        const withdrawnContainer = document.getElementById('withdrawn-students-container');
+        const withdrawnCountEl = document.getElementById('withdrawn-students-count');
+        if (withdrawnContainer && withdrawnCountEl) {
+            withdrawnCountEl.textContent = counts.withdrawn + ' baja' + (counts.withdrawn === 1 ? '' : 's');
+        }
+        
         // Update end date info (right side)
         const endInfo = document.getElementById('progress-end-info');
         if (endInfo) {

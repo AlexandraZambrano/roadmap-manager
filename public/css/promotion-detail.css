@@ -2163,3 +2163,25 @@ progress-bar progress-bar-striped {
         font-size: 1.4rem;
     }
 }
+
+/* ==================== WITHDRAWN STUDENTS STYLING ==================== */
+
+/* Withdrawn students container background */
+.bg-withdrawn {
+    background-color: #FFD9B3 !important;
+    border-radius: 6px !important;
+}
+
+/* Withdrawn students text color - naranja oscuro suave */
+.text-withdrawn {
+    color: #D97706 !important;
+}
+
+/* Optional: Add hover effect for better UX */
+#withdrawn-students-container {
+    transition: all 0.3s ease;
+}
+
+#withdrawn-students-container:hover {
+    background-color: #FFC799 !important;
+}
