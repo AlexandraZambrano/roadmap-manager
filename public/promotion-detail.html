@@ -72,6 +72,11 @@
                                 <i class="bi bi-people me-2"></i>Lista de estudiantes
                             </a>
                         </li>
+                        <li class="nav-item teacher-only">
+                            <a class="nav-link" href="#teacher-area" onclick="switchTab('teacher-area')">
+                                <i class="bi bi-book me-2"></i>Área del docente
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#attendance" onclick="switchTab('attendance')">
                                 <i class="bi bi-calendar-check me-2"></i>Asistencia
@@ -226,6 +231,25 @@
                         </div>
                     </div>
                     <!-- End Área Docente Section -->
+                </div>
+
+                <!-- Área del Docente Tab (New Sidebar Section) -->
+                <div id="teacher-area-tab" class="section-content hidden">
+                    <div class="my-4">
+                        <h1 id="teacher-area-title">Área del Docente</h1>
+                        <p id="teacher-area-desc" class="text-muted">Accesos rápidos a recursos docentes</p>
+                    </div>
+                    
+                    <!-- Teacher Quick Actions Widget -->
+                    <div class="mb-4">
+                        <h6 class="mb-3 text-dark">
+                            <i class="bi bi-lightning-charge text-warning me-2"></i>Accesos Rápidos
+                        </h6>
+                        <div id="teacher-area-quick-actions">
+                            <!-- Teacher quick actions will be loaded here -->
+                        </div>
+                    </div>
+                    <!-- End Teacher Quick Actions Widget -->
                 </div>
 
                 <!-- Students Tab -->

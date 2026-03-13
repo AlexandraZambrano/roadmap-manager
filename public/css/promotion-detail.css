@@ -1911,8 +1911,19 @@ progress-bar progress-bar-striped {
     gap: 12px;
 }
 
+#teacher-area-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
 @media (max-width: 576px) {
     #teacher-area-container {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+    }
+
+    #teacher-area-quick-actions {
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 10px;
     }

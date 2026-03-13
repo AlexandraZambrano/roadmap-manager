@@ -2328,6 +2328,10 @@ function switchTab(tabId) {
     if (tabId === 'collaborators') loadCollaborators();
     if (tabId === 'access-settings') loadAccessPassword();
     if (tabId === 'evaluation') loadEvaluation();
+    if (tabId === 'teacher-area') {
+        // Load teacher area with default overview tab
+        switchTeacherAreaTab('overview');
+    }
 
     // Update active state in sidebar
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -2348,6 +2352,336 @@ function switchTab(tabId) {
             const students = window.currentStudents || [];
             updateProgressInfo(window.currentPromotion, students);
         }
+    }
+
+    // Load teacher area when switching to it
+    if (tabId === 'teacher-area') {
+        loadTeacherAreaSection();
+    }
+}
+
+// ==================== TEACHER AREA SECTION ====================
+function loadTeacherAreaSection() {
+    // Load the first tab by default
+    switchTeacherAreaTab('overview');
+}
+
+function switchTeacherAreaTab(tabId) {
+    // Update active tab styling
+    document.querySelectorAll('#teacher-area-tabs .nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    document.getElementById(`teacher-area-${tabId}-tab`)?.classList.add('active');
+
+    // Hide all panes
+    document.querySelectorAll('#teacher-area-content .tab-pane').forEach(pane => {
+        pane.classList.remove('show', 'active');
+    });
+
+    // Show active pane
+    const activePane = document.getElementById(`teacher-area-${tabId}`);
+    if (activePane) {
+        activePane.classList.add('show', 'active');
+    }
+
+    // Load content based on tab
+    if (tabId === 'overview') {
+        loadTeacherAreaOverview();
+    } else if (tabId === 'students') {
+        loadTeacherAreaStudents();
+    } else if (tabId === 'attendance') {
+        loadTeacherAreaAttendance();
+    } else if (tabId === 'evaluation') {
+        loadTeacherAreaEvaluation();
+    }
+}
+
+// Load teacher quick actions overview
+async function loadTeacherAreaOverview() {
+    const container = document.getElementById('teacher-area-quick-actions');
+    if (!container) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const promotion = await response.json();
+            displayTeacherAreaQuickActions(promotion);
+        }
+    } catch (error) {
+        console.error('Error loading teacher area overview:', error);
+    }
+}
+
+function displayTeacherAreaQuickActions(promotion) {
+    const container = document.getElementById('teacher-area-quick-actions');
+    if (!container) return;
+
+    // Same teacher actions from Área Docente in Overview
+    const teacherActions = [
+        {
+            id: 'asana-promo-action',
+            icon: 'bi-kanban',
+            label: 'Asana Promo',
+            color: '#FF6B6B',
+            url: promotion.asanaWorkspaceUrl,
+            title: 'Abrir Asana (Promo)'
+        },
+        {
+            id: 'content-action',
+            icon: 'bi-book',
+            label: 'Contenido Docente',
+            color: '#0d6efd',
+            url: promotion.teachingContentUrl,
+            title: 'Abrir contenido docente'
+        },
+        {
+            id: 'dashboard-action',
+            icon: 'bi-eye',
+            label: 'Preview Roadmap',
+            color: '#6f42c1',
+            url: '#',
+            title: 'Vista previa del roadmap',
+            isButton: true,
+            onclick: 'previewPromotion()'
+        },
+        {
+            id: 'acta-action',
+            icon: 'bi-file-text',
+            label: 'Acta de Inicio',
+            color: '#198754',
+            url: '#',
+            title: 'Abrir acta de inicio',
+            isButton: true,
+            onclick: 'openActaModal()'
+        }
+    ];
+
+    container.innerHTML = '';
+
+    // Render using CSS Grid (same as quick actions)
+    const gridContainer = document.createElement('div');
+    gridContainer.style.cssText = `
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+    `;
+
+    teacherActions.forEach(action => {
+        if (action.isButton) {
+            const buttonHTML = `
+                <div class="quick-action-card" id="${action.id}">
+                    <button type="button"
+                            class="quick-action-link"
+                            style="background: none; border: none; cursor: pointer; width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;"
+                            onclick="${action.onclick}"
+                            title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                    </button>
+                </div>
+            `;
+            gridContainer.insertAdjacentHTML('beforeend', buttonHTML);
+        } else {
+            const isDisabled = !action.url;
+            const cardHTML = `
+                <div class="quick-action-card ${isDisabled ? 'disabled' : ''}" id="${action.id}">
+                    <a href="${action.url || '#'}" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       class="quick-action-link ${isDisabled ? 'disabled' : ''}"
+                       style="${isDisabled ? 'pointer-events: none; opacity: 0.5;' : ''}"
+                       title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                        ${isDisabled ? '<div class="quick-action-status">No configurado</div>' : ''}
+                    </a>
+                </div>
+            `;
+            gridContainer.insertAdjacentHTML('beforeend', cardHTML);
+        }
+    });
+
+    container.appendChild(gridContainer);
+}
+
+// Load students view in teacher area
+async function loadTeacherAreaStudents() {
+    const container = document.getElementById('teacher-area-students-content');
+    if (!container) return;
+
+    // Show loading state
+    container.innerHTML = '<p class="text-muted"><i class="bi bi-hourglass-split me-2"></i>Cargando estudiantes...</p>';
+
+    // Call the existing loadStudents function which updates the main students tab
+    // Then copy its HTML to our container
+    loadStudents();
+
+    // Copy the rendered students table from the main students-tab
+    const mainStudentsTab = document.getElementById('students-tab');
+    if (mainStudentsTab) {
+        container.innerHTML = mainStudentsTab.innerHTML;
+    }
+}
+
+// Load attendance view in teacher area
+async function loadTeacherAreaAttendance() {
+    const container = document.getElementById('teacher-area-attendance-content');
+    if (!container) return;
+
+    // Show loading state
+    container.innerHTML = '<p class="text-muted"><i class="bi bi-hourglass-split me-2"></i>Cargando asistencia...</p>';
+
+    // Call the existing loadAttendance function
+    loadAttendance();
+
+    // Copy the rendered attendance view from the main attendance-tab
+    const mainAttendanceTab = document.getElementById('attendance-tab');
+    if (mainAttendanceTab) {
+        container.innerHTML = mainAttendanceTab.innerHTML;
+    }
+}
+
+// Load evaluation view in teacher area
+async function loadTeacherAreaEvaluation() {
+    const container = document.getElementById('teacher-area-evaluation-content');
+    if (!container) return;
+
+    // Show loading state
+    container.innerHTML = `<div class="text-center text-muted py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2">Cargando proyectos...</p>
+    </div>`;
+
+    const token = localStorage.getItem('token');
+    try {
+        const [promoRes, extRes, studentsRes, catalogRes] = await Promise.all([
+            fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`),
+            fetch(`${API_URL}/api/promotions/${promotionId}/students`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${API_URL}/api/competences`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+
+        const promo = promoRes.ok ? await promoRes.json() : {};
+        const ext = extRes.ok ? await extRes.json() : {};
+        const studentsData = studentsRes.ok ? await studentsRes.json() : [];
+        const catalogRaw = catalogRes.ok ? await catalogRes.json() : [];
+
+        // Normalize the full catalog
+        const catalog = catalogRaw.map(comp => ({
+            id: comp.id,
+            name: comp.name,
+            area: (comp.areas && comp.areas[0]) ? comp.areas[0].name : (comp.area || ''),
+            description: comp.description || '',
+            levels: (comp.levels || []).map(l => ({
+                level: l.levelId,
+                description: l.levelName || `Nivel ${l.levelId}`,
+                indicators: (l.indicators || []).map(i => i.name || i)
+            })),
+            allTools: (comp.tools || []).map(t => t.name || t),
+            toolsWithIndicators: (comp.tools || []).map(t => ({
+                id: t.id,
+                name: t.name || '',
+                description: t.description || '',
+                indicators: (t.indicators || []).map(ind => ({
+                    id: ind.id,
+                    name: ind.name || '',
+                    description: ind.description || '',
+                    levelId: ind.levelId || 1
+                }))
+            })),
+            competenceIndicators: {
+                initial: (comp.indicators?.initial || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 1 })),
+                medio:   (comp.indicators?.medio   || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 2 })),
+                advance: (comp.indicators?.advance  || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 3 }))
+            }
+        }));
+
+        // Merge program competences with full catalog data
+        const programCompetences = (ext.programCompetences || []).map(pc => {
+            const catalogComp = catalog.find(c => c.id === pc.competenceId);
+            return { ...pc, ...catalogComp };
+        });
+
+        // Prepare evaluation data storage
+        window.evalCatalog = catalog;
+        window.evalProgramCompetences = programCompetences;
+        window.evalStudents = studentsData;
+        window.evalPromo = promo;
+
+        // Render evaluation view in teacher-area
+        renderTeacherAreaEvaluation(container, promo, programCompetences, studentsData);
+    } catch (error) {
+        console.error('Error loading teacher area evaluation:', error);
+        container.innerHTML = `<div class="alert alert-danger">Error cargando evaluación: ${error.message}</div>`;
+    }
+}
+
+function renderTeacherAreaEvaluation(container, promo, programCompetences, students) {
+    if (!promo.projects || promo.projects.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-5">No hay proyectos para evaluar.</p>';
+        return;
+    }
+
+    let html = `
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="mb-0">Evaluación de Proyectos</h5>
+        </div>
+        <div class="row g-3" id="eval-projects-grid">
+    `;
+
+    promo.projects.forEach((project, idx) => {
+        const evaluatedCount = (project.evaluations || []).length;
+        const totalStudents = students.length;
+        const progress = totalStudents > 0 ? Math.round((evaluatedCount / totalStudents) * 100) : 0;
+
+        html += `
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-sm h-100 eval-project-card" onclick="openTeacherAreaEvaluationDetail('${project.id}', '${project.name}')">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2">
+                            <i class="bi bi-laptop me-2" style="color: #FF4700;"></i>${project.name}
+                        </h6>
+                        <p class="text-muted small mb-3">${project.description || 'Sin descripción'}</p>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="text-muted">Evaluaciones</small>
+                                <small class="fw-bold">${evaluatedCount}/${totalStudents}</small>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" role="progressbar" 
+                                     style="width: ${progress}%; background: #FF4700;" 
+                                     aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100" 
+                                onclick="openTeacherAreaEvaluationDetail('${project.id}', '${project.name}'); return false;">
+                            <i class="bi bi-pencil me-1"></i>Evaluar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+function openTeacherAreaEvaluationDetail(projectId, projectName) {
+    // For now, open the main evaluation modal (can be customized later)
+    const project = window.evalPromo.projects.find(p => p.id === projectId);
+    if (project) {
+        openEvaluationModal(projectId, projectName);
     }
 }
 
@@ -3267,8 +3601,8 @@ function displayTeacherArea(promotion) {
         {
             id: 'content-action',
             icon: 'bi-book',
-            label: 'Contenido Docente',
-            color: '#0d6efd',
+            label: 'Contenido Didáctico',
+            color: 'var(--principal-1)',
             url: promotion.teachingContentUrl,
             title: 'Abrir contenido docente'
         },
