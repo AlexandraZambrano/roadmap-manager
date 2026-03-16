@@ -58,9 +58,6 @@ body {
     background-image: url("../img/Fondo-factoria-f5-color.png");
     background-size: 150px 150px;
     background-repeat: repeat;
-    /* background-color: var(--green-crok, #0a8950) !important;
-    border-bottom: 2px solid var(--green-crok, #0a8950); */
-    padding: 0.75rem 0 !important;
 }
 
 .navbar .container-fluid {
@@ -111,7 +108,6 @@ body {
 #navbarNav {
     flex: 0 0 auto;
     order: 4;
-    margin-left: 1.5rem !important;
 }
 
 .navbar-collapse {
@@ -160,13 +156,66 @@ body {
     }
 }
 
+/* ==================== DESKTOP COLLAPSIBLE SIDEBAR TOGGLE BUTTON ==================== */
+.sidebar-desktop-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 100px;
+    left: 8px;
+    z-index: 1000;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #ff4700;
+    background-color: #ffffffa0;
+    color: #ff4700;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-size: 1.1rem;
+    padding: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(4px);
+}
+
+.sidebar-desktop-toggle:hover {
+    background-color: #ffffff;
+    box-shadow: 0 4px 12px rgba(255, 71, 0, 0.2);
+    transform: scale(1.05);
+}
+
+.sidebar-desktop-toggle:active {
+    transform: scale(0.95);
+}
+
+.sidebar-desktop-toggle i {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Accessibility: screen reader only text */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
 .sidebar {
     position: fixed;
-    top: 80px;
+    top: 100px;
     bottom: 0;
     left: 0;
     z-index: 100;
-    padding: 20px 0;
+    padding: 40px 0;
     background-image: url("../img/Fondo-factoria-f5-color.png");
     background-size: 150px 150px;
     background-repeat: repeat;
@@ -176,7 +225,28 @@ body {
     display: flex;
     flex-direction: column;
     height: calc(100vh - 80px);
-    width: 220px;
+    width: 280px;
+    /* Custom scrollbar styling for all states */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 71, 0, 0.25) transparent;
+}
+
+/* Webkit browsers scrollbar styling - default state */
+.sidebar::-webkit-scrollbar {
+    width: 5px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 71, 0, 0.25);
+    border-radius: 2px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 71, 0, 0.45);
 }
 
 .sidebar-sticky {
@@ -277,7 +347,8 @@ body {
 main {
     margin-top: 0px;
     padding: 20px;
-    margin-left: 200px;
+    margin-left: 280px;
+    transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card {
@@ -800,20 +871,102 @@ main {
     opacity: 1;
 }
 
-/* ==================== SMALL/MEDIUM DESKTOP (768px - 1459px) ==================== */
+/* ==================== SMALL/MEDIUM DESKTOP (768px - 1459px) - COLLAPSIBLE SIDEBAR ==================== */
 @media (min-width: 768px) and (max-width: 1459px) {
-    /* Sidebar always visible but no hamburger */
+    /* Adjust navbar to not overlap sidebar */
+
+    /* Sidebar base state - collapsed by default, showing ~50px peek */
     .sidebar {
         position: fixed;
         top: 80px;
-        left: 0;
-        width: 220px;
+        left: -230px;
+        width: 280px;
         height: calc(100vh - 80px);
+        transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.12);
+        z-index: 99;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        /* Custom scrollbar styling */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 71, 0, 0.25) transparent;
+    }
+
+    /* Webkit browsers scrollbar styling */
+    .sidebar::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 71, 0, 0.25);
+        border-radius: 2px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(255, 71, 0, 0.45);
+    }
+
+    /* Sidebar expanded state */
+    .sidebar.sidebar-expanded {
+        left: 0;
+    }
+
+    /* Desktop toggle button - inside sidebar, always visible */
+    .sidebar-desktop-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 105px;
+        left: 10px;
+        width: 36px;
+        height: 36px;
+        border: none;
+        background-color: #ff4700;
+        color: #ffffff;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, transform 0.3s ease;
+        font-size: 1.1rem;
+        padding: 0;
+        z-index: 1001;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .sidebar-desktop-toggle:hover {
+        background-color: #d63900;
+        box-shadow: 0 4px 12px rgba(255, 71, 0, 0.3);
+    }
+
+    .sidebar-desktop-toggle:active {
+        transform: scale(0.95);
+    }
+
+    /* Toggle button when sidebar expanded */
+    .sidebar-desktop-toggle.sidebar-expanded {
+        left: 250px;
+    }
+
+    /* Toggle button icon rotation is handled by JavaScript */
+    .sidebar-desktop-toggle i {
+        transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     main {
-        margin-left: 220px;
+        margin-left: 0;
         padding: 20px;
+        padding-top: 100px;
+        transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     /* Hide hamburger button */
@@ -879,6 +1032,16 @@ main {
         width: 100%;
         margin-left: 0;
     }
+
+    /* Adjust navbar padding for mobile */
+    .navbar .container-fluid {
+        padding-right: 1rem !important;
+    }
+
+    /* Hide desktop toggle button on mobile */
+    .sidebar-desktop-toggle {
+        display: none !important;
+    }
 }
 
 /* ==================== LARGE DESKTOP (1460px and above) ==================== */
@@ -888,8 +1051,18 @@ main {
         position: fixed;
         top: 80px;
         left: 0;
-        width: 220px;
+        width: 280px;
         height: calc(100vh - 80px);
+    }
+
+    main {
+        margin-left: 280px;
+        padding: 20px;
+    }
+
+    /* Hide desktop toggle button on large desktop */
+    .sidebar-desktop-toggle {
+        display: none !important;
     }
 
     .sidebar.show {
@@ -908,6 +1081,11 @@ main {
 
     main {
         margin-left: 220px;
+    }
+
+    /* Reset navbar padding on large desktop (no toggle button) */
+    .navbar .container-fluid {
+        padding-right: 1rem !important;
     }
 }
 
