@@ -281,6 +281,10 @@
                                 aria-selected="false" onclick="switchTeacherAreaSubTab('evaluation')">
                                 <i class="bi bi-clipboard-check me-2"></i>Evaluación
                             </button>
+                            <button class="nav-link" id="teacher-area-accesos-tab" type="button" role="tab"
+                                aria-selected="false" onclick="switchTeacherAreaSubTab('accesos')">
+                                <i class="bi bi-lock me-2"></i>Accesos
+                            </button>
                         </nav>
 
                         <!-- Sub-sections Content -->
@@ -572,6 +576,142 @@
                                             <h4 class="mb-0 fw-bold">Evaluación Individual</h4>
                                         </div>
                                         <div id="student-eval-panel-body"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Accesos Tab (Área del Docente) -->
+                            <div class="tab-pane fade" id="teacher-area-accesos" role="tabpanel"
+                                aria-labelledby="teacher-area-accesos-tab">
+                                <div id="teacher-area-accesos-content">
+                                    <div class="d-flex justify-content-between align-items-center my-4">
+                                        <h2>Configuración de los Accesos</h2>
+                                    </div>
+
+                                    <div class="row g-4">
+                                        <!-- Student Access Password Card -->
+                                        <div class="col-lg-6">
+                                            <div class="card h-100 border-0 shadow-sm">
+                                                <div class="card-header bg-gradient"
+                                                    style="background: linear-gradient(135deg, var(--principal-1) 0%, var(--complementario-2) 100%);">
+                                                    <h6 class="mb-0 text-dark"><i class="bi bi-key me-2"></i>Acceso del estudiante</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <div class="mb-3">
+                                                        <label for="teacher-area-access-password-input"
+                                                            class="form-label small fw-bold">Contraseña</label>
+                                                        <div class="password-input-group">
+                                                            <input type="password" class="form-control form-control-sm"
+                                                                id="teacher-area-access-password-input" placeholder="Enter password">
+                                                            <button type="button" class="password-toggle"
+                                                                onclick="togglePasswordVisibility('teacher-area-access-password-input')">
+                                                                <i class="bi bi-eye"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <button class="btn btn-sm w-100"
+                                                        style="background-color: var(--green-f5); color: var(--principal-2); border: none; font-weight: 600;"
+                                                        onclick="updateAccessPassword('teacher-area')">
+                                                        <i class="bi bi-save me-1"></i>Actualizar
+                                                    </button>
+
+                                                    <div id="teacher-area-password-alert" class="alert alert-sm mt-2 mb-0 hidden p-2" role="alert"
+                                                        style="font-size: 0.85rem;">
+                                                    </div>
+                                                </div>
+                                                <div class="card-footer bg-light border-top p-2">
+                                                    <small class="text-muted d-block mb-2">Link generado:</small>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="text" class="form-control form-control-sm" id="teacher-area-student-access-link"
+                                                            readonly>
+                                                        <button class="btn btn-outline-secondary btn-sm" type="button"
+                                                            onclick="copyAccessLink('teacher-area')">
+                                                            <i class="bi bi-clipboard"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Teaching Content Card -->
+                                        <div class="col-lg-6">
+                                            <div class="card h-100 border-0 shadow-sm">
+                                                <div class="card-header bg-gradient"
+                                                    style="background: linear-gradient(135deg, var(--blue-light-f5) 0%, var(--green-f5) 100%);">
+                                                    <h6 class="mb-0 text-dark"><i class="bi bi-book me-2"></i>Planificador / Refactor</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <div class="mb-3">
+                                                        <label for="teacher-area-teaching-content-url" class="form-label small fw-bold">URL del contenido</label>
+                                                        <input type="url" class="form-control form-control-sm" id="teacher-area-teaching-content-url"
+                                                            placeholder="https://example.com" />
+                                                    </div>
+                                                    <button class="btn btn-sm w-100"
+                                                        style="background-color: var(--green-f5); color: var(--principal-2); border: none; font-weight: 600;"
+                                                        onclick="updateTeachingContent('teacher-area')">
+                                                        <i class="bi bi-save me-1"></i>Guardar
+                                                    </button>
+
+                                                    <div id="teacher-area-teaching-content-alert" class="alert alert-sm mt-2 mb-0 hidden p-2"
+                                                        role="alert" style="font-size: 0.85rem;">
+                                                    </div>
+                                                </div>
+                                                <div class="card-footer bg-light border-top p-2">
+                                                    <small class="text-muted d-block mb-2">Preview:</small>
+                                                    <div class="d-flex gap-1">
+                                                        <a id="teacher-area-teaching-content-preview-btn" href="#"
+                                                            class="btn btn-sm btn-outline-primary hidden" target="_blank">
+                                                            <i class="bi bi-book me-1"></i>Vista
+                                                        </a>
+                                                        <button class="btn btn-sm btn-outline-danger" onclick="removeTeachingContent('teacher-area')"
+                                                            id="teacher-area-remove-teaching-btn" style="display:none;">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                        <small class="text-muted align-self-center ms-1" id="teacher-area-no-content-message">No hay contenido</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Asana Workspace Card -->
+                                        <div class="col-lg-6">
+                                            <div class="card h-100 border-0 shadow-sm">
+                                                <div class="card-header bg-gradient"
+                                                    style="background: linear-gradient(135deg, #FF6B6B 0%, #F06595 100%);">
+                                                    <h6 class="mb-0 text-dark"><i class="bi bi-kanban me-2"></i>Asana</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <div class="mb-3">
+                                                        <label for="teacher-area-asana-workspace-url" class="form-label small fw-bold">URL del espacio de trabajo</label>
+                                                        <input type="url" class="form-control form-control-sm" id="teacher-area-asana-workspace-url"
+                                                            placeholder="https://app.asana.com/0/..." />
+                                                    </div>
+                                                    <button class="btn btn-sm w-100"
+                                                        style="background-color: #FF6B6B; color: white; border: none; font-weight: 600;"
+                                                        onclick="updateAsanaWorkspace('teacher-area')">
+                                                        <i class="bi bi-save me-1"></i>Guardar
+                                                    </button>
+
+                                                    <div id="teacher-area-asana-workspace-alert" class="alert alert-sm mt-2 mb-0 hidden p-2"
+                                                        role="alert" style="font-size: 0.85rem;">
+                                                    </div>
+                                                </div>
+                                                <div class="card-footer bg-light border-top p-2">
+                                                    <small class="text-muted d-block mb-2">Estado:</small>
+                                                    <div class="d-flex gap-1">
+                                                        <a id="teacher-area-asana-workspace-preview-btn" href="#"
+                                                            class="btn btn-sm btn-outline-danger hidden" target="_blank">
+                                                            <i class="bi bi-kanban me-1"></i>Abrir
+                                                        </a>
+                                                        <button class="btn btn-sm btn-outline-danger" onclick="removeAsanaWorkspace('teacher-area')"
+                                                            id="teacher-area-remove-asana-btn" style="display:none;">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                        <small class="text-muted align-self-center ms-1" id="teacher-area-no-asana-message">No configurado</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

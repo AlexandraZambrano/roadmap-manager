@@ -2414,7 +2414,8 @@ function switchTeacherAreaSubTab(tabName) {
         'overview': { tabId: 'teacher-area-overview', buttonId: 'teacher-area-overview-tab' },
         'students': { tabId: 'teacher-area-students', buttonId: 'teacher-area-students-tab' },
         'attendance': { tabId: 'teacher-area-attendance', buttonId: 'teacher-area-attendance-tab' },
-        'evaluation': { tabId: 'teacher-area-evaluation', buttonId: 'teacher-area-evaluation-tab' }
+        'evaluation': { tabId: 'teacher-area-evaluation', buttonId: 'teacher-area-evaluation-tab' },
+        'accesos': { tabId: 'teacher-area-accesos', buttonId: 'teacher-area-accesos-tab' }
     };
 
     const tab = tabNameMap[tabName];
@@ -2461,7 +2462,175 @@ function switchTeacherAreaSubTab(tabName) {
             loadAttendance();
         } else if (tabName === 'evaluation') {
             loadEvaluation();
+        } else if (tabName === 'accesos') {
+            loadAccessSettingsInTeacherArea();
         }
+    }
+}
+
+/**
+ * Load access settings for the Accesos tab in Área del docente
+ * Reuses the existing loadAccessPassword, loadTeachingContent, and loadAsanaWorkspace
+ * but syncs data to teacher-area specific input fields
+ */
+async function loadAccessSettingsInTeacherArea() {
+    if (!isTeacherOrAdmin()) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        // Load access password
+        const responseAccessPassword = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (responseAccessPassword.ok) {
+            const data = await responseAccessPassword.json();
+            const passwordInput = document.getElementById('teacher-area-access-password-input');
+            const accessLinkInput = document.getElementById('teacher-area-student-access-link');
+
+            if (passwordInput) {
+                passwordInput.value = data.accessPassword || '';
+            }
+
+            // Update the access link in teacher area
+            if (accessLinkInput) {
+                const baseUrl = window.location.origin;
+                const isGitHubPages = window.location.hostname.includes('github.io');
+
+                let path;
+                if (isGitHubPages) {
+                    const pathParts = window.location.pathname.split('/');
+                    const repoName = pathParts[1];
+                    path = `/${repoName}/public-promotion.html`;
+                } else {
+                    path = '/public-promotion.html';
+                }
+
+                let url = `${baseUrl}${path}?id=${promotionId}`;
+                accessLinkInput.value = url;
+            }
+        }
+
+        // Load teaching content and asana workspace in parallel
+        await Promise.all([
+            _loadTeachingContentInTeacherArea(),
+            _loadAsanaWorkspaceInTeacherArea()
+        ]);
+
+    } catch (error) {
+        console.error('Error loading access settings in teacher area:', error);
+    }
+}
+
+/**
+ * Load teaching content and display in teacher area accesos tab
+ */
+async function _loadTeachingContentInTeacherArea() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teaching-content`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            console.error('[_loadTeachingContentInTeacherArea] API error:', response.status);
+            return;
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('teacher-area-teaching-content-url');
+            const previewBtn = document.getElementById('teacher-area-teaching-content-preview-btn');
+            const noContentMsg = document.getElementById('teacher-area-no-content-message');
+            const removeBtn = document.getElementById('teacher-area-remove-teaching-btn');
+
+            if (data.teachingContentUrl) {
+                if (urlInput) {
+                    urlInput.value = data.teachingContentUrl;
+                }
+                if (previewBtn) {
+                    previewBtn.href = data.teachingContentUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'none';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'inline-block';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'inline';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'none';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading teaching content in teacher area:', error);
+    }
+}
+
+/**
+ * Load Asana workspace and display in teacher area accesos tab
+ */
+async function _loadAsanaWorkspaceInTeacherArea() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-workspace`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            console.error('[_loadAsanaWorkspaceInTeacherArea] API error:', response.status);
+            return;
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('teacher-area-asana-workspace-url');
+            const previewBtn = document.getElementById('teacher-area-asana-workspace-preview-btn');
+            const noAsanaMsg = document.getElementById('teacher-area-no-asana-message');
+            const removeBtn = document.getElementById('teacher-area-remove-asana-btn');
+
+            if (data.asanaWorkspaceUrl) {
+                if (urlInput) {
+                    urlInput.value = data.asanaWorkspaceUrl;
+                }
+                if (previewBtn) {
+                    previewBtn.href = data.asanaWorkspaceUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'none';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'inline-block';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'inline';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'none';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading Asana workspace in teacher area:', error);
     }
 }
 
@@ -5673,9 +5842,6 @@ async function loadAccessPassword() {
                 }
 
                 let url = `${baseUrl}${path}?id=${promotionId}`;
-                if (data.accessPassword) {
-                    url += `&pwd=${encodeURIComponent(data.accessPassword)}`;
-                }
                 accessLinkInput.value = url;
             }
         }
@@ -5690,12 +5856,15 @@ async function loadAccessPassword() {
     loadAsanaWorkspace();
 }
 
-async function updateAccessPassword() {
+async function updateAccessPassword(source = 'default') {
     if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
-    const passwordInput = document.getElementById('access-password-input');
-    const alertEl = document.getElementById('password-alert');
+    
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const passwordInput = document.getElementById(`${prefix}access-password-input`);
+    const alertEl = document.getElementById(`${prefix}password-alert`);
     const password = passwordInput ? passwordInput.value.trim() : '';
 
     try {
@@ -5732,7 +5901,7 @@ async function updateAccessPassword() {
             }
 
             // Update the access link
-            const accessLinkInput = document.getElementById('student-access-link');
+            const accessLinkInput = document.getElementById(`${prefix}student-access-link`);
             if (accessLinkInput) {
                 const baseUrl = window.location.origin;
                 const isGitHubPages = window.location.hostname.includes('github.io');
@@ -5747,9 +5916,6 @@ async function updateAccessPassword() {
                 }
 
                 let url = `${baseUrl}${path}?id=${promotionId}`;
-                if (password) {
-                    url += `&pwd=${encodeURIComponent(password)}`;
-                }
                 accessLinkInput.value = url;
             }
         } else {
@@ -5770,12 +5936,13 @@ async function updateAccessPassword() {
     }
 }
 
-function copyAccessLink() {
-    const accessLinkInput = document.getElementById('student-access-link');
+function copyAccessLink(source = 'default') {
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const accessLinkInput = document.getElementById(`${prefix}student-access-link`);
     if (accessLinkInput && accessLinkInput.value) {
         navigator.clipboard.writeText(accessLinkInput.value).then(() => {
             // Show success feedback
-            const copyBtn = document.querySelector('[onclick="copyAccessLink()"]');
+            const copyBtn = event.currentTarget;
             if (copyBtn) {
                 const originalText = copyBtn.innerHTML;
                 copyBtn.innerHTML = '<i class="bi bi-check me-2"></i>Copied!';
@@ -5867,12 +6034,15 @@ async function loadTeachingContent() {
     }
 }
 
-async function updateTeachingContent() {
+async function updateTeachingContent(source = 'default') {
     if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
-    const urlInput = document.getElementById('teaching-content-url');
-    const alertEl = document.getElementById('teaching-content-alert');
+    
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const urlInput = document.getElementById(`${prefix}teaching-content-url`);
+    const alertEl = document.getElementById(`${prefix}teaching-content-alert`);
     const url = urlInput ? urlInput.value.trim() : '';
 
     if (!url) {
@@ -5906,7 +6076,11 @@ async function updateTeachingContent() {
             }
 
             // Update the preview button
-            loadTeachingContent();
+            if (source === 'teacher-area') {
+                await _loadTeachingContentInTeacherArea();
+            } else {
+                loadTeachingContent();
+            }
         } else {
             const data = await response.json();
             if (alertEl) {
@@ -5925,7 +6099,7 @@ async function updateTeachingContent() {
     }
 }
 
-async function removeTeachingContent() {
+async function removeTeachingContent(source = 'default') {
     if (!isTeacherOrAdmin()) return;
 
     if (!confirm('Are you sure you want to remove the teaching content link?')) {
@@ -5940,7 +6114,8 @@ async function removeTeachingContent() {
         });
 
         if (response.ok) {
-            const alertEl = document.getElementById('teaching-content-alert');
+            const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+            const alertEl = document.getElementById(`${prefix}teaching-content-alert`);
             if (alertEl) {
                 alertEl.className = 'alert alert-success';
                 alertEl.textContent = 'Teaching content link removed successfully!';
@@ -5952,7 +6127,11 @@ async function removeTeachingContent() {
             }
 
             // Update the UI
-            loadTeachingContent();
+            if (source === 'teacher-area') {
+                await _loadTeachingContentInTeacherArea();
+            } else {
+                loadTeachingContent();
+            }
         } else {
             const data = await response.json();
             alert(data.error || 'Error removing teaching content');
@@ -6023,12 +6202,15 @@ async function loadAsanaWorkspace() {
 }
 
 // Save or update the Asana workspace URL
-async function updateAsanaWorkspace() {
+async function updateAsanaWorkspace(source = 'default') {
     if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
-    const urlInput = document.getElementById('asana-workspace-url');
-    const alertEl = document.getElementById('asana-workspace-alert');
+    
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const urlInput = document.getElementById(`${prefix}asana-workspace-url`);
+    const alertEl = document.getElementById(`${prefix}asana-workspace-alert`);
     const url = urlInput ? urlInput.value.trim() : '';
 
     if (!url) {
@@ -6072,7 +6254,11 @@ async function updateAsanaWorkspace() {
             }
 
             // Update the preview button and UI
-            loadAsanaWorkspace();
+            if (source === 'teacher-area') {
+                await _loadAsanaWorkspaceInTeacherArea();
+            } else {
+                loadAsanaWorkspace();
+            }
         } else {
             const data = await response.json();
             if (alertEl) {
@@ -6092,7 +6278,7 @@ async function updateAsanaWorkspace() {
 }
 
 // Remove the Asana workspace URL configuration
-async function removeAsanaWorkspace() {
+async function removeAsanaWorkspace(source = 'default') {
     if (!isTeacherOrAdmin()) return;
 
     if (!confirm('¿Estás seguro de que deseas eliminar el enlace de Asana?')) {
@@ -6107,7 +6293,8 @@ async function removeAsanaWorkspace() {
         });
 
         if (response.ok) {
-            const alertEl = document.getElementById('asana-workspace-alert');
+            const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+            const alertEl = document.getElementById(`${prefix}asana-workspace-alert`);
             if (alertEl) {
                 alertEl.className = 'alert alert-success';
                 alertEl.textContent = '¡Enlace de Asana eliminado exitosamente!';
@@ -6119,7 +6306,11 @@ async function removeAsanaWorkspace() {
             }
 
             // Update the UI
-            loadAsanaWorkspace();
+            if (source === 'teacher-area') {
+                await _loadAsanaWorkspaceInTeacherArea();
+            } else {
+                loadAsanaWorkspace();
+            }
         } else {
             const data = await response.json();
             alert(data.error || 'Error al eliminar el enlace de Asana');
