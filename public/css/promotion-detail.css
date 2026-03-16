@@ -172,10 +172,36 @@ body {
     background-repeat: repeat;
     border-right: 2px solid #ff4700;
     overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 80px);
+    width: 220px;
 }
 
 .sidebar-sticky {
     padding: 0 20px;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow-y: visible;
+    overflow-x: hidden;
+}
+
+.sidebar-nav {
+    flex: 0 0 auto;
+    overflow-y: visible;
+    overflow-x: hidden;
+}
+
+.sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem 0;
+    margin-top: 0;
+    border-top: 1px solid rgba(255, 71, 0, 0.2);
+    padding-top: 1.5rem;
 }
 
 .sidebar .nav-link {
@@ -185,19 +211,50 @@ body {
     border-radius: 5px;
     margin: 0.2rem;
     transition: all 0.3s ease;
+    list-style: none;
 }
 
 .sidebar .nav-link:hover {
     background-color: #ffffff;
     color: #ff4700;
     border-left: 3px solid #ff4700;
-
 }
 
 .sidebar .nav-link.active {
     background-color: #ffffff;
     color: #ff4700;
+}
 
+/* Delete button in sidebar footer - same style as other nav links */
+.sidebar-delete-btn {
+    background-color: #ffffffa0 !important;
+    color: #333333 !important;
+    border: none !important;
+    font-weight: 400 !important;
+    padding: 10px 15px !important;
+    margin: 0.2rem !important;
+}
+
+.sidebar-delete-btn:hover {
+    background-color: #ffffff !important;
+    color: #ff4700 !important;
+    border-left: 3px solid #ff4700 !important;
+    transform: none;
+}
+
+/* Logo container in sidebar footer */
+.sidebar-logo-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.sidebar-f5-logo {
+    width: 120px;
+    height: auto;
+    object-fit: contain;
+    transition: transform 0.3s ease;
 }
 
 /* Promotions button - orange style */
@@ -220,6 +277,7 @@ body {
 main {
     margin-top: 0px;
     padding: 20px;
+    margin-left: 200px;
 }
 
 .card {
@@ -432,25 +490,6 @@ main {
 
 .password-toggle:hover {
     color: #ff4700;
-}
-
-@media (max-width: 768px) {
-    .sidebar {
-        width: 100%;
-        height: auto;
-        position: static;
-        border-right: none;
-        border-bottom: 1px solid #e9ecef;
-        padding: 10px 0;
-    }
-
-    main {
-        margin-top: 0;
-    }
-
-    .navbar {
-        position: relative;
-    }
 }
 
 /* Attendance Table Styles */
@@ -740,165 +779,9 @@ main {
 
 }
 
-/* ==================== MOBILE RESPONSIVE - SIDEBAR HAMBURGER MENU ==================== */
+/* ==================== SIDEBAR & NAVIGATION MEDIA QUERIES TO BE RECODIFIED ==================== */
 
-@media (max-width: 992px) {
-    .sidebar {
-        position: fixed;
-        top: 80px;
-        left: -100%;
-        width: 250px;
-        height: calc(100vh - 80px);
-        transition: left 0.3s ease;
-        overflow-y: auto;
-        z-index: 1000;
-        border-right: 2px solid #ff4700;
-    }
-
-    .sidebar.show {
-        left: 0;
-    }
-
-    .sidebar-sticky {
-        padding: 0 20px;
-    }
-
-    main {
-        margin-top: 0;
-        padding: 20px;
-        width: 100%;
-    }
-
-    /* Hamburger button styling */
-    .navbar-toggler {
-        border: none;
-        padding: 0.25rem 0.5rem;
-
-    }
-
-    .navbar-toggler:focus {
-        box-shadow: none;
-    }
-
-    .navbar-toggler-icon {
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
-    }
-
-    /* Add overlay when sidebar is open */
-    .sidebar-overlay {
-        position: fixed;
-        top: 80px;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.5);
-        z-index: 999;
-        display: none;
-    }
-
-    .sidebar-overlay.show {
-        display: block;
-    }
-}
-
-@media (max-width: 768px) {
-    .page-title {
-        font-size: 30px;
-        margin-inline-start: 1rem;
-    }
-
-    main {
-        padding: 15px;
-    }
-
-    .card {
-        margin-bottom: 16px;
-    }
-
-    .sidebar .nav-link {
-        padding: 12px 15px;
-        margin: 0.5rem 0;
-        border-radius: 3px;
-    }
-
-    .sidebar .nav-link:hover {
-        border-left: none;
-        padding-left: 15px;
-    }
-
-    /* Reduce font sizes for mobile */
-    .card-title {
-        font-size: 1rem;
-    }
-
-    .promotion-card-title {
-        font-size: 1rem;
-    }
-
-    /* Adjust attendance month selector for tablet */
-    #month-selector {
-        order: 3;
-        width: 100%;
-        justify-content: center;
-    }
-
-    /* Adjust attendance stats for mobile */
-    #attendance-stats-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    #attendance-stats-container .col-lg-2 {
-        flex: 0 0 calc(25% - 0.375rem);
-        max-width: calc(25% - 0.375rem);
-    }
-
-    #attendance-stats-container .col-lg-4 {
-        flex: 0 0 100%;
-        max-width: 100%;
-    }
-
-    #attendance-stats-container .card {
-        margin-bottom: 0;
-    }
-
-    #attendance-stats-container .card-body {
-        padding: 0.75rem 0.5rem;
-    }
-
-    #attendance-stats-container h6 {
-        font-size: 0.7rem;
-    }
-
-    #attendance-stats-container h3 {
-        font-size: 1.2rem;
-    }
-
-    /* Adjust attendance table for mobile */
-    .attendance-cell {
-        width: 32px;
-        height: 32px;
-        font-size: 0.7rem;
-    }
-
-    .sticky-column {
-        min-width: 100px;
-    }
-
-    /* Mobile sidebar show */
-    .sidebar.show {
-        transform: translateX(0) !important;
-        left: 0 !important;
-    }
-
-    .sidebar-overlay.show {
-        display: block !important;
-        opacity: 1 !important;
-    }
-}
-
-/* Sidebar and Overlay Mobile Styles */
+/* Sidebar Overlay for Mobile */
 .sidebar-overlay {
     position: fixed;
     top: 80px;
@@ -917,22 +800,114 @@ main {
     opacity: 1;
 }
 
-@media (max-width: 768px) {
+/* ==================== SMALL/MEDIUM DESKTOP (768px - 1459px) ==================== */
+@media (min-width: 768px) and (max-width: 1459px) {
+    /* Sidebar always visible but no hamburger */
     .sidebar {
         position: fixed;
-        left: -100%;
         top: 80px;
-        width: 250px;
+        left: 0;
+        width: 220px;
         height: calc(100vh - 80px);
-        transform: translateX(-250px);
-        transition: all 0.3s ease;
-        z-index: 100;
-        border-radius: 0;
+    }
+
+    main {
+        margin-left: 220px;
+        padding: 20px;
+    }
+
+    /* Hide hamburger button */
+    .navbar-toggler {
+        display: none;
+    }
+
+    /* Hide overlay */
+    .sidebar-overlay {
+        display: none !important;
+    }
+}
+
+/* ==================== MOBILE RESPONSIVE - HAMBURGER MENU (up to 767px) ==================== */
+@media (max-width: 767px) {
+    /* Hide sidebar by default on mobile */
+    .sidebar {
+        position: fixed;
+        top: 80px;
+        left: -100%;
+        width: 220px;
+        height: calc(100vh - 80px);
+        transition: left 0.3s ease;
+        z-index: 1000;
+        border-right: 2px solid #ff4700;
+        overflow-y: auto;
+    }
+
+    /* Show sidebar when toggled */
+    .sidebar.show {
+        left: 0;
+    }
+
+    .sidebar-sticky {
+        padding: 0 20px;
+        height: auto;
+    }
+
+    /* Show overlay when sidebar is open */
+    .sidebar-overlay.show {
+        display: block;
+        opacity: 1;
+    }
+
+    /* Hamburger button styling */
+    .navbar-toggler {
+        border: none;
+        padding: 0.25rem 0.5rem;
+        display: block;
+    }
+
+    .navbar-toggler:focus {
+        box-shadow: none;
+    }
+
+    .navbar-toggler-icon {
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+    }
+
+    main {
+        margin-top: 0;
+        padding: 20px;
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/* ==================== LARGE DESKTOP (1460px and above) ==================== */
+@media (min-width: 1460px) {
+    /* Keep sidebar visible on large desktop */
+    .sidebar {
+        position: fixed;
+        top: 80px;
+        left: 0;
+        width: 220px;
+        height: calc(100vh - 80px);
     }
 
     .sidebar.show {
-        transform: translateX(0);
-        left: 0;
+        display: block;
+    }
+
+    /* Hide hamburger button on large desktop */
+    .navbar-toggler {
+        display: none;
+    }
+
+    /* Hide overlay on large desktop */
+    .sidebar-overlay {
+        display: none !important;
+    }
+
+    main {
+        margin-left: 220px;
     }
 }
 
@@ -2524,3 +2499,5 @@ progress-bar progress-bar-striped {
         display: none !important;
     }
 }
+
+/* ==================== SIDEBAR RESPONSIVE - TO BE RECODIFIED ==================== */
