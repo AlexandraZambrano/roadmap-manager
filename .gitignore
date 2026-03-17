@@ -3,3 +3,5 @@
 node_modules
 .env
 ./data
+./backend/Keys/public.pem
+backend/Keys/public.pem

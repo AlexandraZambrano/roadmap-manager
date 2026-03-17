@@ -63,7 +63,11 @@
     <div class="container-fluid ">
         <div class="row">
             <!-- Sidebar -->
-            <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar">
+            <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar" id="sidebar-desktop">
+                <!-- Desktop Collapsible Sidebar Toggle Button (inside sidebar) -->
+                <button class="sidebar-desktop-toggle" id="sidebar-desktop-toggle" title="Expandir/Contraer sidebar">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column sidebar-nav">
                         <li class="nav-item">
@@ -2672,6 +2676,7 @@ ISECR2 Finalizar cada programa con un máximo de bajas de 10%.</textarea>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/sidebar-desktop-toggle.js"></script>
     <script src="js/notes.js"></script>
     <script src="js/reports.js"></script>
     <script src="js/program-competences.js"></script>
