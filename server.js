@@ -374,6 +374,9 @@ async function evalApiGet(path, userToken) {
   const sep = baseUrl.includes('?') ? '&' : '?';
   const url = `${baseUrl}${sep}page_size=200`;
 
+  console.log(`[evalApiGet] 🔄 Fetching: ${url}`);
+  console.log(`[evalApiGet] Token (first 20 chars): ${userToken.substring(0, 20)}...`);
+
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${userToken}`, 'Content-Type': 'application/json' }
   });
@@ -381,7 +384,8 @@ async function evalApiGet(path, userToken) {
   if (!res.ok) {
     const errText = await res.text();
     // Log as info/debug, not error — this is expected when external API is unavailable
-    console.log(`[evalApiGet] External API ${path} returned ${res.status} (expected when API unavailable)`);
+    console.log(`[evalApiGet] ❌ External API ${path} returned ${res.status}`);
+    console.log(`[evalApiGet] Response body: ${errText.substring(0, 500)}`);
     throw new Error(`Eval API ${path} → ${res.status}`);
   }
 
@@ -432,14 +436,15 @@ async function evalApiGet(path, userToken) {
 //   id, name, description,
 //   areas: [{id, name, icon}],               ← built from area strings
 //   tools: [{id, name, description}],
-//   levels: [{levelId, levelName, levelDescription, indicators:[{id, name, description}]}]
+//   levels: [{levelId, levelName, levelDescription, indicators:[{id, name, description}]}],
+//   indicators: { initial: [...], medio: [...], advance: [...] }  ← competence indicators by level
 // }
 function normaliseEvalCompetence(comp) {
   // area is an array of strings in the real API
   const areaStrings = Array.isArray(comp.area) ? comp.area : [];
   const areas = areaStrings.map((name, idx) => ({ id: idx + 1, name, icon: '' }));
 
-  // tools array — extract tool objects (without indicators, just id/name/description)
+  // tools array — extract tool objects with their indicators (for tool-based evaluation)
   const toolsRaw = comp.tools || [];
   const tools = toolsRaw.map(t => ({ id: t.id, name: t.name, description: t.description || '' }));
 
@@ -467,6 +472,26 @@ function normaliseEvalCompetence(comp) {
   });
   const levels = Object.values(levelMap).sort((a, b) => a.levelId - b.levelId);
 
+  // Extract competence indicators grouped by level (initial/medio/advance)
+  // These come directly from comp.indicators and are used to determine competence level
+  const competenceIndicators = {
+    initial: (comp.indicators?.initial || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    })),
+    medio: (comp.indicators?.medio || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    })),
+    advance: (comp.indicators?.advance || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    }))
+  };
+
   return {
     id: comp.id,
     name: comp.name,
@@ -474,7 +499,8 @@ function normaliseEvalCompetence(comp) {
     areas,          // [{id, name, icon}] built from area string array
     areaNames: areaStrings,  // keep original string array for easy filtering
     tools,          // [{id, name, description}]
-    levels          // [{levelId, levelName, levelDescription, indicators:[...]}]
+    levels,         // [{levelId, levelName, levelDescription, indicators:[...]}]
+    indicators: competenceIndicators  // {initial: [...], medio: [...], advance: [...]} for competence level assessment
   };
 }
 
@@ -584,12 +610,23 @@ app.get('/api/competences', verifyToken, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     try {
+      console.log('[GET /api/competences] 🔄 Attempting to fetch from external API: https://evaluation.coderf5.es/v1/competences/');
       const rows = await evalApiGet('/competences/', token);
+      console.log('[GET /api/competences] ✓ Successfully fetched', rows.length, 'raw competences from external API');
       const normalised = rows.map(normaliseEvalCompetence);
-      console.log('[GET /api/competences] ✓ Fetched from external API:', normalised.length, 'competences');
+      console.log('[GET /api/competences] ✓ Normalised data includes:', normalised.length, 'competences with areas, tools, indicators');
+      if (normalised.length > 0) {
+        console.log('[GET /api/competences] ✓ Sample competence structure:', JSON.stringify({
+          id: normalised[0].id,
+          name: normalised[0].name,
+          areas: normalised[0].areas.slice(0, 1),
+          tools: normalised[0].tools.slice(0, 1),
+          indicators: normalised[0].indicators
+        }, null, 2));
+      }
       return res.json(normalised);
     } catch (evalErr) {
-      console.log('[GET /api/competences] Using local DB fallback (external API unavailable)');
+      console.log('[GET /api/competences] ⚠️ External API unavailable, using local DB fallback. Error:', evalErr.message);
     }
 
     // ── Local DB fallback (full enrichment) ──────────────────────────────────
