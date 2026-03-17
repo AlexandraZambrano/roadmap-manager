@@ -5173,7 +5173,7 @@ function displayStudents(students) {
                     <button class="btn btn-sm btn-outline-success" onclick="window.StudentTracking?.openFicha('${student.id}')" title="Ficha de Seguimiento">
                         <i class="bi bi-person-lines-fill"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTechnical('${student.id}', promotionId)" title="PDF Seguimiento Técnico">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="if(window.Reports){ window.Reports.printTechnical('${student.id}', promotionId) } else { alert('La librería de informes no está cargada.') }" title="PDF Seguimiento Técnico">
                         <i class="bi bi-file-earmark-bar-graph"></i>
                     </button>
                     ${!student.isWithdrawn ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}', '${student.email}')" title="Delete">
@@ -6448,6 +6448,23 @@ function updateSelectionState() {
     const bulkReportsDropdown = document.getElementById('bulk-reports-dropdown');
     if (bulkReportsDropdown) {
         bulkReportsDropdown.style.display = selectedCount > 0 ? 'inline-block' : 'none';
+        
+        // Always populate the dropdown menu when it's displayed to ensure correct handlers
+        const dropdownMenu = bulkReportsDropdown.querySelector('.dropdown-menu');
+        if (dropdownMenu) {
+            dropdownMenu.innerHTML = `
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportTechnical) { window._bulkReportTechnical() } else { console.error('_bulkReportTechnical not found') }">
+                    <i class="bi bi-file-earmark-person me-2"></i>Seguimiento Técnico
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportTransversal) { window._bulkReportTransversal() } else { console.error('_bulkReportTransversal not found') }">
+                    <i class="bi bi-file-earmark-check me-2"></i>Evaluación Transversal
+                </a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportByProject) { window._bulkReportByProject() } else { console.error('_bulkReportByProject not found') }">
+                    <i class="bi bi-folder me-2"></i>Informes por Proyecto
+                </a></li>
+            `;
+        }
     }
 
     // Toggle base action buttons (no selection vs with selection)
@@ -6487,19 +6504,36 @@ function _getSelectedStudentIds() {
         .map(cb => cb.dataset.studentId);
 }
 
-function _bulkReportTechnical() {
+window._bulkReportTechnical = function() {
+    console.log('[Reports] _bulkReportTechnical triggered');
     const ids = _getSelectedStudentIds();
-    if (!ids.length) { alert('Selecciona al menos un estudiante.'); return; }
-    window.Reports?.printBulkTechnical(ids, promotionId);
+    console.log('[Reports] Selected student IDs:', ids);
+    if (!ids.length) { 
+        alert('Selecciona al menos un estudiante.'); 
+        return; 
+    }
+    if (!window.Reports) {
+        console.error('[Reports] window.Reports library is not defined!');
+        alert('La librería de informes no está disponible. Por favor, recarga la página.');
+        return;
+    }
+    window.Reports.printBulkTechnical(ids, promotionId);
 }
 
-function _bulkReportTransversal() {
+window._bulkReportTransversal = function() {
+    console.log('[Reports] _bulkReportTransversal triggered');
     const ids = _getSelectedStudentIds();
     if (!ids.length) { alert('Selecciona al menos un estudiante.'); return; }
-    window.Reports?.printBulkTransversal(ids, promotionId);
+    if (!window.Reports) {
+        alert('La librería de informes no está disponible.');
+        return;
+    }
+    window.Reports.printBulkTransversal(ids, promotionId);
 }
 
-async function _bulkReportByProject() {
+window._bulkReportByProject = async function() {
+    // ... rest of the function remains the same but attached to window
+    // I'll just change the start of the function in SearchReplace
     // Remove any existing modal
     document.getElementById('_project-picker-modal')?.remove();
 

@@ -30,9 +30,10 @@
         h3 { font-size: 11pt; font-weight: 600; color: ${PRIMARY}; margin-top: 10pt; margin-bottom: 4pt; border-bottom: 1.5px solid ${PRIMARY}; padding-bottom: 2pt; }
         h4 { font-size: 10pt; font-weight: 600; color: ${SECONDARY}; margin-top: 8pt; margin-bottom: 3pt; }
         p  { margin-bottom: 5pt; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt; break-inside: auto; }
         th { background: ${DARK}; color: #fff; padding: 5pt 7pt; text-align: left; font-weight: 600; }
         td { padding: 5pt 7pt; border-bottom: 1px solid ${BORDER}; vertical-align: top; }
+        tr { break-inside: avoid; break-after: auto; }
         tr:nth-child(even) td { background: ${LIGHT_BG}; }
         .badge {
             display: inline-block; padding: 2pt 6pt; border-radius: 10pt;
@@ -52,18 +53,24 @@
             padding: 10pt 12pt; margin-bottom: 10pt;
             break-inside: avoid;
         }
+        .card {
+            border: 1px solid ${BORDER}; border-radius: 6pt;
+            padding: 10pt 12pt; margin-bottom: 10pt;
+            break-inside: avoid;
+        }
         .section-box.accent { border-left: 4px solid ${PRIMARY}; }
         .section-box.green  { border-left: 4px solid #198754; }
         .section-box.blue   { border-left: 4px solid #0d6efd; }
         .section-box.red    { border-left: 4px solid #dc3545; }
         .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
         .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10pt; }
-        .kv { margin-bottom: 3pt; }
+        .kv { margin-bottom: 3pt; break-inside: avoid; }
         .kv strong { color: ${SECONDARY}; }
         .empty-note { color: #aaa; font-style: italic; font-size: 9pt; }
         .pill-row { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 3pt; }
         .page-break { page-break-before: always; }
         .no-break { break-inside: avoid; }
+        h1, h2, h3, h4 { break-after: avoid; }
         `;
     }
 
@@ -119,36 +126,53 @@
      */
     function _renderToPdf(htmlContent, filename) {
         return new Promise((resolve, reject) => {
-            if (!window.html2canvas || !window.jspdf) {
-                reject(new Error('Librerías html2canvas / jsPDF no cargadas. Revisa tu conexión.'));
+            const html2canvas = window.html2canvas;
+            const jspdf = window.jspdf;
+            
+            if (!html2canvas || !jspdf) {
+                const msg = 'Librerías html2canvas / jsPDF no cargadas. Revisa tu conexión.';
+                console.error('[Reports]', msg);
+                reject(new Error(msg));
                 return;
             }
-            const { jsPDF } = window.jspdf;
+            
+            const jsPDF = jspdf.jsPDF || window.jsPDF;
+            if (!jsPDF) {
+                const msg = 'No se pudo encontrar el constructor jsPDF.';
+                console.error('[Reports]', msg);
+                reject(new Error(msg));
+                return;
+            }
 
             // Create a hidden iframe so the browser fully lays out the HTML
             const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;top:0;left:0;width:794px;height:1px;opacity:0;pointer-events:none;border:none;z-index:-1;';
+            // Make it "visible" but off-screen and non-interactive to ensure rendering
+            iframe.style.cssText = 'position:fixed;top:0;left:-2000px;width:794px;height:1000px;visibility:hidden;pointer-events:none;border:none;z-index:-1;';
             document.body.appendChild(iframe);
 
             // Write the full HTML document into the iframe
-            iframe.contentDocument.open();
-            iframe.contentDocument.write(_wrapHtml(htmlContent));
-            iframe.contentDocument.close();
+            const iDoc = iframe.contentDocument || iframe.contentWindow.document;
+            iDoc.open();
+            iDoc.write(_wrapHtml(htmlContent));
+            iDoc.close();
 
             // Give the browser time to finish layout/fonts
             const capture = () => {
-                const iDoc = iframe.contentDocument;
                 const body = iDoc.body;
                 // Expand iframe to full content height so nothing is clipped
                 const scrollH = Math.max(body.scrollHeight, body.offsetHeight, iDoc.documentElement.scrollHeight);
-                iframe.style.height = scrollH + 'px';
+                iframe.style.height = (scrollH + 100) + 'px';
 
-                // ── Collect bottom-edge of every <tr> in CSS px (from body top)
-                //    BEFORE html2canvas runs so the iframe is still live. ──
+                // ── Collect bottom-edge of elements that shouldn't be split ──
+                //    BEFORE html2canvas runs so the iframe is still live.
                 const bodyTop = body.getBoundingClientRect().top;
-                const rowBottomsPx = Array.from(iDoc.querySelectorAll('tr')).map(tr => {
-                    return tr.getBoundingClientRect().bottom - bodyTop;
+                const safeBreakSelectors = 'tr, h2, h3, .section-box, .no-break, .kv, .card';
+                const rowBottomsPx = Array.from(iDoc.querySelectorAll(safeBreakSelectors)).map(el => {
+                    return el.getBoundingClientRect().bottom - bodyTop;
                 }).filter(v => v > 0);
+
+                // Sort unique values to ensure logical slicing
+                const uniqueBottoms = [...new Set(rowBottomsPx)].sort((a, b) => a - b);
 
                 html2canvas(body, {
                     scale: 2,
@@ -176,10 +200,10 @@
                     const cssPxToMm = usableW / (canvas.width / 2);
                     const canvasMmH = (canvas.height / 2) * cssPxToMm;
 
-                    // Convert row bottoms from CSS px → mm
-                    const rowBottomsMm = rowBottomsPx.map(px => px * cssPxToMm);
+                    // Convert element bottoms from CSS px → mm
+                    const rowBottomsMm = uniqueBottoms.map(px => px * cssPxToMm);
 
-                    // ── Smart page-break: build slices that always end at a row boundary ──
+                    // ── Smart page-break: build slices that always end at an element boundary ──
                     const slices = [];
                     let yPos = 0;
                     while (yPos < canvasMmH - 0.5) {
@@ -209,7 +233,7 @@
                         ctx.drawImage(canvas, 0, pxStart, canvas.width, pxH, 0, 0, canvas.width, pxH);
 
                         pdf.addImage(
-                            sliceCanvas.toDataURL('image/jpeg', 0.97), 'JPEG',
+                            sliceCanvas.toDataURL('image/jpeg', 0.95), 'JPEG',
                             margin, margin,
                             canvasMmW, sh,
                             undefined, 'FAST'
@@ -219,24 +243,46 @@
                     pdf.setProperties({ title: filename || 'informe.pdf' });
                     resolve(pdf);
                 }).catch(err => {
-                    document.body.removeChild(iframe);
+                    if (iframe.parentNode) document.body.removeChild(iframe);
+                    console.error('[Reports] html2canvas error:', err);
                     reject(err);
                 });
             };
 
             // Wait for iframe load event, then a short extra tick for fonts
-            if (iframe.contentDocument.readyState === 'complete') {
-                setTimeout(capture, 300);
-            } else {
-                iframe.onload = () => setTimeout(capture, 300);
-            }
+            const checkLoad = () => {
+                if (iDoc.readyState === 'complete') {
+                    setTimeout(capture, 500);
+                } else {
+                    iframe.onload = () => setTimeout(capture, 500);
+                    // Backup timeout in case onload doesn't fire
+                    setTimeout(capture, 2000);
+                }
+            };
+            
+            checkLoad();
+            
+            // Safety timeout to avoid hanging the UI forever
+            setTimeout(() => {
+                if (iframe.parentNode) {
+                    document.body.removeChild(iframe);
+                    reject(new Error('Tiempo de espera agotado al generar el PDF.'));
+                }
+            }, 30000);
         });
     }
 
     /** Directly download a single PDF. Returns a Promise. */
     async function _savePdf(htmlContent, filename) {
-        const pdf = await _renderToPdf(htmlContent, filename);
-        pdf.save(filename || 'informe.pdf');
+        console.log('[Reports] _savePdf called for:', filename);
+        try {
+            const pdf = await _renderToPdf(htmlContent, filename);
+            console.log('[Reports] PDF rendered, saving now...');
+            pdf.save(filename || 'informe.pdf');
+        } catch (err) {
+            console.error('[Reports] _savePdf error:', err);
+            throw err;
+        }
     }
 
     /** Generate a PDF Blob without downloading it (for ZIP). Returns Promise<Blob>. */
@@ -390,15 +436,24 @@
      *   - null when the user cancels
      */
     function _askRazon(title) {
+        console.log('[Reports] Showing _askRazon modal for:', title);
         return new Promise(resolve => {
             // ── Hide any currently-open Bootstrap modal so they don't stack ──
             const openModalEl   = document.querySelector('.modal.show');
-            const openModalInst = openModalEl ? bootstrap.Modal.getInstance(openModalEl) : null;
-            if (openModalInst) openModalInst.hide();
+            const openModalInst = openModalEl ? (window.bootstrap?.Modal.getInstance(openModalEl) || null) : null;
+            if (openModalInst) {
+                console.log('[Reports] Hiding existing modal');
+                openModalInst.hide();
+            }
 
             // ── Build the modal DOM ──
             const id = '_razon-informe-modal';
-            document.getElementById(id)?.remove();
+            const existing = document.getElementById(id);
+            if (existing) {
+                const inst = window.bootstrap?.Modal.getInstance(existing);
+                if (inst) inst.hide();
+                existing.remove();
+            }
 
             const div = document.createElement('div');
             div.innerHTML = `
@@ -435,7 +490,12 @@
             document.body.appendChild(div.firstElementChild);
 
             const modalEl  = document.getElementById(id);
-            const modal    = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+            if (!window.bootstrap?.Modal) {
+                console.error('[Reports] Bootstrap Modal library not found!');
+                resolve(''); // Fallback to no reason if bootstrap is missing
+                return;
+            }
+            const modal    = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
             let   resolved = false;
 
             // ── Confirm ──
@@ -650,6 +710,66 @@
             _hideSaving();
             console.error('[Reports] printTechnical:', e);
             alert('Error generando el informe técnico: ' + e.message);
+        }
+    }
+
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 2. FICHA SEGUIMIENTO TRANSVERSAL
+    // ════════════════════════════════════════════════════════════════════════
+    async function printTransversal(studentId, promotionId) {
+        const token = localStorage.getItem('token');
+        try {
+            const [stuRes, promoRes] = await Promise.all([
+                fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
+            const s   = await stuRes.json();
+            const promo = promoRes.ok ? await promoRes.json() : {};
+            const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
+
+            _showSaving('Generando PDF…');
+            await _savePdf(_transPageHtml(s, promo), `transversal_${fullName.replace(/\s+/g,'-')}.pdf`);
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printTransversal:', e);
+            alert('Error generando el informe transversal: ' + e.message);
+        }
+    }
+
+    async function printBulkTransversal(studentIds, promotionId) {
+        if (!studentIds?.length) { alert('Selecciona al menos un estudiante.'); return; }
+        const token = localStorage.getItem('token');
+        try {
+            const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const promo = promoRes.ok ? await promoRes.json() : {};
+            const students = await Promise.all(studentIds.map(id => _fetchStudent(id, promotionId, token)));
+
+            if (students.length === 1) {
+                const s = students[0];
+                const fullName = `${s.name||''} ${s.lastname||''}`.trim();
+                _showSaving('Generando PDF…');
+                await _savePdf(_transPageHtml(s, promo), `transversal_${fullName.replace(/\s+/g,'-')}.pdf`);
+            } else {
+                const files = [];
+                for (let i = 0; i < students.length; i++) {
+                    const s = students[i];
+                    const fullName = `${s.name||''} ${s.lastname||''}`.trim();
+                    const fname = `transversal_${fullName.replace(/\s+/g,'-')}.pdf`;
+                    _showSaving(`Generando PDF ${i + 1} de ${students.length}: ${fullName}…`);
+                    const blob = await _getPdfBlob(_transPageHtml(s, promo), fname);
+                    files.push({ blob, filename: fname });
+                }
+                _showSaving(`Comprimiendo ${files.length} PDFs…`);
+                await _zipAndDownload(files, `seguimiento-transversal_${(promo.name||'promo').replace(/\s+/g,'-')}.zip`);
+            }
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printBulkTransversal:', e);
+            alert('Error generando los informes transversales: ' + e.message);
         }
     }
 
@@ -1926,7 +2046,7 @@ async function printActaInicio(promotionId) {
     }
 
     // ─── Public API ──────────────────────────────────────────────────────────
-    window.Reports = {
+    const Reports = {
         printTechnical,
         printTransversal,
         printActaInicio,
@@ -1938,5 +2058,9 @@ async function printActaInicio(promotionId) {
         printBulkByProject,
         printAllProjectsSummary
     };
+    
+    // Attach to window and log availability
+    window.Reports = Reports;
+    console.log('[Reports] Library initialized and attached to window.Reports');
 
 })(window);

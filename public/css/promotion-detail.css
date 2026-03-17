@@ -1675,6 +1675,7 @@ main {
     display: flex;
     flex-direction: column;
     background: #fff;
+    margin-left: 0;
 }
 
 .eval-right-empty {

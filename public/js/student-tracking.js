@@ -502,6 +502,24 @@
         _renderTeacherNotes();
     }
 
+    function _markUnsaved(section) {
+        _hasUnsavedTechnical = true;
+        const tabLink = document.querySelector(`a[href="#teacher-area"]`);
+        if (tabLink && !tabLink.querySelector('.unsaved-indicator')) {
+            const indicator = document.createElement('span');
+            indicator.className = 'unsaved-indicator';
+            indicator.textContent = ' *';
+            indicator.style.color = 'red';
+            tabLink.appendChild(indicator);
+        }
+    }
+
+    function _markSaved() {
+        _hasUnsavedTechnical = false;
+        const indicators = document.querySelectorAll('.unsaved-indicator');
+        indicators.forEach(i => i.remove());
+    }
+
     // ─── Renderizado: Equipos ─────────────────────────────────────────────────
 
     function _renderTeams() {
@@ -628,7 +646,7 @@
                             </a>` : ''}
                             <button class="btn btn-sm btn-outline-secondary py-0 px-1"
                                 title="Exportar PDF de este proyecto"
-                                onclick="window.Reports?.printProjectReport(${i}, window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId())">
+                                onclick="if(window.Reports){ window.Reports.printProjectReport(${i}, window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId()) } else { alert('La librería de informes no está cargada.') }">
                                 <i class="bi bi-file-earmark-pdf" style="font-size:.85rem;"></i>
                             </button>
                             <button class="btn btn-sm btn-outline-primary py-0 px-1"
@@ -1492,11 +1510,16 @@
 
         const totalModules = allModules.length;
         const completedModulesCount = _completedModules.filter(m => {
-            const projPct = m.progressPercent !== undefined ? parseInt(m.progressPercent) : null;
+            const projPct = (m.progressPercent !== undefined && m.progressPercent !== null) ? parseInt(m.progressPercent) : null;
             const roadmapModule = _promotionModules.find(rm => String(rm.id) === String(m.moduleId));
             const moduleCourses = roadmapModule ? (roadmapModule.courses || []) : [];
             const coursePct = moduleCourses.length ? Math.round(((m.completedCourses || []).length / moduleCourses.length) * 100) : null;
-            const combined = (projPct !== null && coursePct !== null) ? Math.round((projPct + coursePct) / 2) : (projPct ?? coursePct ?? 0);
+            
+            // If it has both projects and courses, average them. If only one, use that one.
+            const combined = (projPct !== null && coursePct !== null) 
+                ? Math.round((projPct + coursePct) / 2) 
+                : (projPct ?? coursePct ?? 0);
+            
             return combined >= 100;
         }).length;
 
@@ -1913,7 +1936,7 @@
                                 <i class="bi bi-pencil me-1"></i>Editar datos de baja
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-secondary"
-                                onclick="window.Reports?.printActaBaja(window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId())">
+                                onclick="if(window.Reports){ window.Reports.printActaBaja(window.StudentTracking._getCurrentStudentId(), window.StudentTracking._getPromotionId()) } else { alert('La librería de informes no está cargada.') }">
                                 <i class="bi bi-file-earmark-text me-1"></i>Descargar Acta de Baja
                             </button>
                             <button type="button" class="btn btn-sm btn-link text-secondary p-0 ms-auto align-self-center"
@@ -2126,7 +2149,7 @@
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
-            _markSaved('technical');
+            _markSaved();
             _showToast('Seguimiento técnico guardado ✓');
         } catch (e) {
             console.error('[StudentTracking] saveTechnical error:', e);
@@ -2168,8 +2191,6 @@
     window.StudentTracking = {
         init,
         openFicha,
-        _getCurrentStudentId: () => _currentStudentId,
-        _getPromotionId: () => _promotionId,
         _getTeam: (i) => _teams[i],
         _getCurrentStudent: () => _currentStudent,
         // Exponer internos necesarios por onclick en HTML generado dinámicamente
@@ -2180,7 +2201,9 @@
         _openCompetenceForm, _saveCompetence, _removeCompetence,
         _openModuleForm, _saveModule, _removeModule, _toggleCourse,
         _cancelInlineForm,
-        _saveTechnical,
+        saveTechnical: _saveTechnical,
+        _getCurrentStudentId: () => _currentStudentId,
+        _getPromotionId: () => _promotionId,
         _renderBajaSection, _openBajaForm, _saveWithdrawal, _cancelWithdrawal
     };
 
