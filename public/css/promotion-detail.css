@@ -35,37 +35,31 @@
 
 body {
     background-color: #ffffff;
-    /* background-color: rgba(244, 166, 150, 0.559);  */
+    min-height: 100vh;
+    overflow-x: hidden;
 }
 
-.page-title {
-    color: #ffffff;
-    margin-inline-start: 0;
-    font-family: 'Pacifico', serif;
-    font-size: 50px;
-    margin-bottom: 0;
-}
-
-.detail-card {
-    display: flex;
-}
-
-/* Navbar styling for promotion-detail */
+/* Navbar styling for promotion-detail - FIXED AT TOP */
 .navbar {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 101;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 80px;
+    z-index: 1050; /* Above sidebar */
     background-image: url("../img/Fondo-factoria-f5-color.png");
     background-size: 150px 150px;
     background-repeat: repeat;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
 .navbar .container-fluid {
+    height: 100%;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    min-height: 80px;
-    padding: 0.75rem 1rem !important;
+    padding: 0 1.5rem !important;
 }
 
 .navbar-brand {
@@ -156,46 +150,6 @@ body {
     }
 }
 
-/* ==================== DESKTOP COLLAPSIBLE SIDEBAR TOGGLE BUTTON ==================== */
-.sidebar-desktop-toggle {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    position: fixed;
-    top: 100px;
-    left: 8px;
-    z-index: 1000;
-    width: 36px;
-    height: 36px;
-    border: 1px solid #ff4700;
-    background-color: #ffffffa0;
-    color: #ff4700;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 1.1rem;
-    padding: 0;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(4px);
-}
-
-.sidebar-desktop-toggle:hover {
-    background-color: #ffffff;
-    box-shadow: 0 4px 12px rgba(255, 71, 0, 0.2);
-    transform: scale(1.05);
-}
-
-.sidebar-desktop-toggle:active {
-    transform: scale(0.95);
-}
-
-.sidebar-desktop-toggle i {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
 /* Accessibility: screen reader only text */
 .sr-only {
     position: absolute;
@@ -207,46 +161,6 @@ body {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border-width: 0;
-}
-
-.sidebar {
-    position: fixed;
-    top: 100px;
-    bottom: 0;
-    left: 0;
-    z-index: 100;
-    padding: 40px 0;
-    background-image: url("../img/Fondo-factoria-f5-color.png");
-    background-size: 150px 150px;
-    background-repeat: repeat;
-    border-right: 2px solid #ff4700;
-    overflow-y: auto;
-    overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 80px);
-    width: 280px;
-    /* Custom scrollbar styling for all states */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 71, 0, 0.25) transparent;
-}
-
-/* Webkit browsers scrollbar styling - default state */
-.sidebar::-webkit-scrollbar {
-    width: 5px;
-}
-
-.sidebar::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sidebar::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 71, 0, 0.25);
-    border-radius: 2px;
-}
-
-.sidebar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 71, 0, 0.45);
 }
 
 .sidebar-sticky {
@@ -344,13 +258,6 @@ body {
     color: var(--principal-1) !important;
 }
 
-main {
-    margin-top: 0px;
-    padding: 20px;
-    margin-left: 280px;
-    transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 .card {
     border: none;
     border-radius: 8px;
@@ -385,6 +292,7 @@ main {
 
 .section-content {
     display: block;
+    margin-top: 5rem;
 }
 
 .section-content.hidden {
@@ -850,7 +758,7 @@ main {
 
 }
 
-/* ==================== SIDEBAR & NAVIGATION MEDIA QUERIES TO BE RECODIFIED ==================== */
+/* ==================== SIDEBAR & NAVIGATION ==================== */
 
 /* Sidebar Overlay for Mobile */
 .sidebar-overlay {
@@ -871,25 +779,24 @@ main {
     opacity: 1;
 }
 
-/* ==================== SMALL/MEDIUM DESKTOP (768px - 1459px) - COLLAPSIBLE SIDEBAR ==================== */
-@media (min-width: 768px) and (max-width: 1459px) {
-    /* Adjust navbar to not overlap sidebar */
-
-    /* Sidebar base state - collapsed by default, showing ~50px peek */
+/* Base Desktop Sidebar Styles (>= 768px) */
+@media (min-width: 768px) {
     .sidebar {
         position: fixed;
         top: 80px;
-        left: -230px;
-        width: 280px;
-        height: calc(100vh - 80px);
-        transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.12);
-        z-index: 99;
-        display: flex;
-        flex-direction: column;
+        bottom: 0;
+        left: 0;
+        z-index: 1040; /* Just below navbar (1050) */
+        background-image: url("../img/Fondo-factoria-f5-color.png");
+        background-size: 150px 150px;
+        background-repeat: repeat;
+        border-right: 2px solid #ff4700;
         overflow-y: auto;
         overflow-x: hidden;
-        /* Custom scrollbar styling */
+        display: flex;
+        flex-direction: column;
+        width: 280px;
+        transition: width 0.3s ease, left 0.3s ease;
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 71, 0, 0.25) transparent;
     }
@@ -898,89 +805,63 @@ main {
     .sidebar::-webkit-scrollbar {
         width: 5px;
     }
-
     .sidebar::-webkit-scrollbar-track {
         background: transparent;
     }
-
     .sidebar::-webkit-scrollbar-thumb {
         background-color: rgba(255, 71, 0, 0.25);
         border-radius: 2px;
     }
-
     .sidebar::-webkit-scrollbar-thumb:hover {
         background-color: rgba(255, 71, 0, 0.45);
     }
 
-    /* Sidebar expanded state */
-    .sidebar.sidebar-expanded {
-        left: 0;
-    }
-
-    /* Desktop toggle button - inside sidebar, always visible */
-    .sidebar-desktop-toggle {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: fixed;
-        top: 105px;
-        left: 10px;
-        width: 36px;
-        height: 36px;
-        border: none;
-        background-color: #ff4700;
-        color: #ffffff;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, transform 0.3s ease;
-        font-size: 1.1rem;
-        padding: 0;
-        z-index: 1001;
-        flex-shrink: 0;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    }
-
-    .sidebar-desktop-toggle:hover {
-        background-color: #d63900;
-        box-shadow: 0 4px 12px rgba(255, 71, 0, 0.3);
-    }
-
-    .sidebar-desktop-toggle:active {
-        transform: scale(0.95);
-    }
-
-    /* Toggle button when sidebar expanded */
-    .sidebar-desktop-toggle.sidebar-expanded {
-        left: 250px;
-    }
-
-    /* Toggle button icon rotation is handled by JavaScript */
-    .sidebar-desktop-toggle i {
-        transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
     main {
-        margin-left: 0;
-        padding: 20px;
-        padding-top: 100px;
-        transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        margin-left: 280px;
+        margin-top: 0px; /* Offset for fixed navbar */
+        padding: 2rem;
+        transition: margin-left 0.3s ease;
+        min-height: calc(100vh - 80px);
     }
 
-    /* Hide hamburger button */
-    .navbar-toggler {
+    /* Collapsed State (Hidden Completely) */
+    body.sidebar-collapsed .sidebar {
+        transform: translateX(-100%);
+    }
+
+    body.sidebar-collapsed main {
+        margin-left: 0;
+    }
+
+    /* Navbar Toggle Button Styling */
+    #sidebar-desktop-toggle {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff !important;
+        margin-right: 15px;
+        position: relative;
+        z-index: 1060;
+    }
+
+    #sidebar-desktop-toggle:hover {
+        opacity: 0.7;
+    }
+
+    .sidebar-desktop-toggle {
         display: none;
     }
 
-    /* Hide overlay */
-    .sidebar-overlay {
-        display: none !important;
+    .sidebar-desktop-toggle:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateX(-50%) scale(1.1);
     }
 }
 
-/* ==================== MOBILE RESPONSIVE - HAMBURGER MENU (up to 767px) ==================== */
+/* Mobile Responsive - Hamburger Menu (up to 767px) */
 @media (max-width: 767px) {
     /* Hide sidebar by default on mobile */
     .sidebar {
@@ -1027,7 +908,7 @@ main {
     }
 
     main {
-        margin-top: 0;
+        margin-top: 80px; /* Still need offset for fixed navbar on mobile */
         padding: 20px;
         width: 100%;
         margin-left: 0;
@@ -1041,51 +922,6 @@ main {
     /* Hide desktop toggle button on mobile */
     .sidebar-desktop-toggle {
         display: none !important;
-    }
-}
-
-/* ==================== LARGE DESKTOP (1460px and above) ==================== */
-@media (min-width: 1460px) {
-    /* Keep sidebar visible on large desktop */
-    .sidebar {
-        position: fixed;
-        top: 80px;
-        left: 0;
-        width: 280px;
-        height: calc(100vh - 80px);
-    }
-
-    main {
-        margin-left: 280px;
-        padding: 20px;
-    }
-
-    /* Hide desktop toggle button on large desktop */
-    .sidebar-desktop-toggle {
-        display: none !important;
-    }
-
-    .sidebar.show {
-        display: block;
-    }
-
-    /* Hide hamburger button on large desktop */
-    .navbar-toggler {
-        display: none;
-    }
-
-    /* Hide overlay on large desktop */
-    .sidebar-overlay {
-        display: none !important;
-    }
-
-    main {
-        margin-left: 220px;
-    }
-
-    /* Reset navbar padding on large desktop (no toggle button) */
-    .navbar .container-fluid {
-        padding-right: 1rem !important;
     }
 }
 

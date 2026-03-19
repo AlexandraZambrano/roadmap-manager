@@ -19,11 +19,15 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
         <div class="container-fluid">
-                 <a class="navbar-brand" href="#">
+            <!-- Sidebar Toggle (Hamburger) -->
+            <button class="btn btn-link text-dark me-2" id="sidebar-desktop-toggle" title="Mostrar/Ocultar Menú">
+                <i class="bi bi-list fs-3"></i>
+            </button>
+            <a class="navbar-brand" href="#">
                 <img class="page-title" src="./img/bootcamp_manager_logotype_bold.png" height="60"/> 
             </a>
             <!-- Promotion Name Center -->
-            <div class="navbar-promotion-title d-none d-lg-flex position-absolute start-50 translate-middle-x">
+            <div class="navbar-promotion-title d-none d-lg-flex">
                 <h5 id="navbar-promotion-name" class="mb-0  fw-semibold" >
                     <!-- Promotion name will be inserted here -->
                 </h5>
@@ -60,71 +64,76 @@
     <!-- Sidebar Overlay for Mobile -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-    <div class="container-fluid ">
-        <div class="row">
-            <!-- Sidebar -->
-            <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar" id="sidebar-desktop">
-                <!-- Desktop Collapsible Sidebar Toggle Button (inside sidebar) -->
-                <button class="sidebar-desktop-toggle" id="sidebar-desktop-toggle" title="Expandir/Contraer sidebar">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
-                <div class="sidebar-sticky">
-                    <ul class="nav flex-column sidebar-nav">
-                        <li class="nav-item">
-                            <a class="nav-link nav-link-promotions mt-4" href="dashboard.html">
-                                <i class="bi bi-arrow-left me-2"></i>Promociones
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#overview" onclick="switchTab('overview')">
-                                <i class="bi bi-eye me-2"></i>Dashboard
-                            </a>
-                        </li>
-                        <li class="nav-item teacher-only">
-                            <a class="nav-link" href="#teacher-area" onclick="switchTab('teacher-area')">
-                                <i class="bi bi-book me-2"></i>Área del docente
-                            </a>
-                        </li>
-                        <li class="nav-item teacher-only">
-                            <a class="nav-link" href="#info" onclick="switchTab('info')">
-                                <i class="bi bi-info-circle me-2"></i>Contenido del Programa
-                            </a>
-                        </li>
-                        <li class="nav-item teacher-only">
-                            <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
-                                <i class="bi bi-person-plus me-2"></i>Collaboradores
-                            </a>
-                        </li>
-                    </ul>
-                    <!-- Sidebar Footer: Delete Button and Logo -->
-                    <div class="sidebar-footer">
-                        <div class="nav-item teacher-only w-100">
-                            <a type="button" class="nav-link sidebar-delete-btn"
-                                onclick="openDeletePromotionModal()">
-                                <i class="bi bi-trash me-2"></i>Eliminar promoción
-                            </a>
-                        </div>
-                        <div class="sidebar-logo-container">
-                            <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" class="sidebar-f5-logo"/>
-                        </div>
-                    </div>
+    <!-- Sidebar -->
+    <nav class="bg-light sidebar" id="sidebar-desktop">
+        <div class="sidebar-sticky">
+            <ul class="nav flex-column sidebar-nav">
+                <li class="nav-item">
+                    <a class="nav-link nav-link-promotions mt-4" href="dashboard.html">
+                        <i class="bi bi-arrow-left me-2"></i>Promociones
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#overview" onclick="switchTab('overview')">
+                        <i class="bi bi-eye me-2"></i>Dashboard
+                    </a>
+                </li>
+                <li class="nav-item teacher-only">
+                    <a class="nav-link" href="#teacher-area" onclick="switchTab('teacher-area')">
+                        <i class="bi bi-book me-2"></i>Área del docente
+                    </a>
+                </li>
+                <li class="nav-item teacher-only">
+                    <a class="nav-link" href="#info" onclick="switchTab('info')">
+                        <i class="bi bi-info-circle me-2"></i>Contenido del Programa
+                    </a>
+                </li>
+                <li class="nav-item teacher-only">
+                    <a class="nav-link" href="#collaborators" onclick="switchTab('collaborators')">
+                        <i class="bi bi-person-plus me-2"></i>Collaboradores
+                    </a>
+                </li>
+            </ul>
+            <!-- Sidebar Footer: Delete Button and Logo -->
+            <div class="sidebar-footer">
+                <div class="nav-item teacher-only w-100">
+                    <a type="button" class="nav-link sidebar-delete-btn"
+                        onclick="openDeletePromotionModal()">
+                        <i class="bi bi-trash me-2"></i>Eliminar promoción
+                    </a>
                 </div>
-            </nav>
+                <div class="sidebar-logo-container">
+                    <img src="./img/logo-factoria-b.svg" alt="FactoriaF5" class="sidebar-f5-logo"/>
+                </div>
+            </div>
+        </div>
+    </nav>
 
-            <!-- Main Content -->
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+    <!-- Main Content -->
+    <main id="main-content" class="px-md-4">
                 <!-- Overview Tab -->
                 <div id="overview-tab" class="section-content">
-                    <!-- Dynamic Greeting -->
-                    <div id="greeting-container" class="greeting-section mb-3">
-                        <!-- Greeting will be loaded dynamically here -->
-                    </div>
 
                     <div class="my-4">
                         <p id="promo-subtitle" class="promo-subtitle mb-2"></p>
                         <h1 id="promotion-title" class="promotion-title-styled">Loading...</h1>
                         <p id="promotion-desc" class="text-muted"></p>
                     </div>
+                    
+                    <!-- Quick Actions Widget -->
+                    <div class="mb-4">
+                        <h6 class="mb-3 text-dark">
+                            <i class="bi bi-lightning-charge text-warning me-2"></i>Acciones Rápidas
+                        </h6>
+                        <div id="quick-actions-container">
+                            <!-- Las tarjetas de acción rápida se cargarán aquí -->
+                        </div>
+                    </div>
+                    <!-- Dynamic Greeting -->
+                    <!-- <div id="greeting-container" class="greeting-section mb-3"> -->
+                        <!-- Greeting will be loaded dynamically here -->
+                    <!-- </div> -->
+
 
                     <!-- Course Progress Bar -->
                     <div class="mb-4">
@@ -158,16 +167,6 @@
                         <div class="d-flex justify-content-between mt-2" style="font-size: 0.85rem;">
                             <small class="text-muted" id="progress-start-info">-</small>
                             <small class="text-muted" id="progress-end-info">-</small>
-                        </div>
-                    </div>
-
-                    <!-- Quick Actions Widget -->
-                    <div class="mb-4">
-                        <h6 class="mb-3 text-dark">
-                            <i class="bi bi-lightning-charge text-warning me-2"></i>Acciones Rápidas
-                        </h6>
-                        <div id="quick-actions-container">
-                            <!-- Las tarjetas de acción rápida se cargarán aquí -->
                         </div>
                     </div>
                     <!-- End Quick Actions Widget -->
@@ -1426,8 +1425,6 @@
 
 
             </main>
-        </div>
-    </div>
 
     <!-- Evaluation Modal -->
     <div class="modal fade" id="evaluationModal" tabindex="-1" aria-hidden="true">

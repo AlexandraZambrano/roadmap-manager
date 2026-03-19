@@ -1,56 +1,63 @@
 # Agent Memory — Roadmap Manager
 
-## Descripción
-El proyecto es una aplicación web para generar y gestionar roadmaps formativos de manera automatizada. Está diseñada para ser accesible por el personal interno (docentes y coordinación) y visible para los alumnos, con un enfoque en la automatización y la eficiencia para optimizar los procesos académicos.
+## Overview
+Automated educational roadmap management system for Factoría F5. Designed for internal staff (teachers/coordinators) to manage cohorts and for students to view their progress.
 
-## Stack Tecnológico
-- **Frontend:** JavaScript Vanilla
-- **Backend:** Node.js con Express.js
-- **Base de datos:** MongoDB con Mongoose
-- **Autenticación:** JSON Web Tokens (JWT)
-- **Dependencias clave:**
-  - `bcryptjs`: para el hash de contraseñas.
-  - `body-parser`: para parsear los cuerpos de las peticiones.
-  - `cors`: para la gestión de Cross-Origin Resource Sharing.
-  - `dotenv`: para la gestión de variables de entorno.
-  - `jsonwebtoken`: para la creación y verificación de tokens de acceso.
-  - `mongoose`: como ODM para interactuar con MongoDB.
-  - `multer`: para la subida de archivos.
-  - `nodemailer`: para el envío de correos electrónicos.
-  - `xlsx`: para trabajar con archivos Excel.
+## Technology Stack
+- **Frontend:** Vanilla JavaScript, Bootstrap 5, Bi-icons.
+- **Backend:** Node.js, Express.js (Monolithic architecture).
+- **Database:** MongoDB with Mongoose ODM.
+- **Auth:** Dual system (Internal email/pass + External JWT RS256 integration).
+- **Key Libraries:** 
+  - `jspdf` & `html2canvas`: Client-side PDF generation.
+  - `jszip`: Bulk report compression.
+  - `xlsx`: Excel import/export.
+  - `nodemailer`: Automated notifications.
 
-## Arquitectura
-- **`backend/`**: Contiene la lógica del servidor.
-  - **`models/`**: Define los esquemas de Mongoose para las colecciones de la base de datos (ej. `Student.js`, `Promotion.js`, `Competence.js`).
-  - **`utils/`**: Utilidades reusables, como el envío de correos (`email.js`).
-  - **`keys/`**: Almacena las claves públicas para la verificación de tokens JWT externos.
-- **`public/`**: Contiene los archivos estáticos del frontend.
-  - **`css/`**: Hojas de estilo.
-  - **`js/`**: Lógica de cliente en JavaScript Vanilla, separada por vistas o funcionalidades (ej. `auth.js`, `dashboard.js`).
-  - **`img/`**: Imágenes y recursos gráficos.
-  - **Archivos HTML**: Vistas principales de la aplicación (`index.html`, `login.html`, `dashboard.html`, etc.).
-- **`server.js`**: Punto de entrada de la aplicación. Configura el servidor Express, la conexión a la base de datos, los middlewares y las rutas principales.
-- **`package.json`**: Define los metadatos del proyecto, las dependencias y los scripts.
+## Project Structure & File Roles
 
-## Convenciones
-- **Estilo de código:** El código backend utiliza módulos ES (`import`/`export`). El frontend es JavaScript Vanilla.
-- **Naming:** Los modelos de Mongoose siguen la convención de nombres en singular y con mayúscula inicial (ej. `Student`). Las rutas de la API parecen seguir un estilo RESTful.
-- **Patrones:** La aplicación sigue un patrón de servidor monolítico que sirve tanto la API como los archivos estáticos del frontend.
+### Frontend (`public/`)
+- **`promotion-detail.html`**: Core management view for a specific cohort. Loads all management scripts.
+- **`js/reports.js`**: 
+  - **Function:** Handles all PDF generation logic.
+  - **Key Logic:** Uses a hidden iframe technique to render HTML content, captures it via `html2canvas`, and slices it into A4 pages via `jsPDF`.
+  - **Important:** Implements "Smart Page Breaking" by tracking bottom coordinates of elements (`tr`, `.section-box`, `.card`, `h2`, `h3`) and ensuring they aren't split between pages using `break-inside: avoid`.
+  - **API:** Exposes `window.Reports` object.
+- **`js/student-tracking.js`**:
+  - **Function:** Manages the individual student tracking sheet (Ficha de Seguimiento).
+  - **Logic:** Handles CRUD for teacher notes, team assignments, and competence evaluations.
+  - **API:** Exposes `window.StudentTracking`.
+- **`js/promotion-detail.js`**:
+  - **Function:** Orchestrator for the cohort view. Handles student lists, selection states, and triggers for bulk PDF reports.
+  - **Note:** Populates bulk report dropdowns dynamically.
+- **`js/config.js`**: Centralized API URL configuration.
+- **`js/notes.js`**: Persistent notepad for teachers at the promotion level.
+- **`js/program-competences.js`**: Visualizes the competence roadmap for the bootcamp.
 
-## Decisiones Técnicas
-- **JavaScript Vanilla en el Frontend:** Se optó por no usar un framework de frontend moderno (como React, Vue o Angular) para mantener la simplicidad y reducir la sobrecarga, alineado con el objetivo de mantener un bajo coste.
-- **Node.js y Express en el Backend:** Una elección común y robusta para construir APIs RESTful, con un amplio ecosistema de librerías.
-- **MongoDB como Base de Datos:** Su naturaleza NoSQL y su flexibilidad son adecuadas para un proyecto en evolución donde los esquemas pueden cambiar.
-- **Autenticación dual:** El sistema soporta autenticación propia basada en email/contraseña y una autenticación externa mediante JWT (RS256), lo que sugiere integración con un sistema de usuarios centralizado.
+### Backend (`backend/`)
+- **`server.js`**: Main entry point. Contains API routes for promotions, students, attendance, and file uploads.
+- **`models/`**:
+  - `Promotion.js`: Cohort configuration (modules, projects, dates).
+  - `Student.js`: Personal data + `technicalTracking` (notes, teams, modules) + `transversalTracking`.
+  - `ExtendedInfo.js`: Extra metadata for cohorts (schedules, trainers, funders).
+- **`utils/email.js`**: Helper for sending system emails.
 
-## Estado Actual
-- La aplicación está en desarrollo y mejora continua.
-- Funcionalidades principales implementadas incluyen la generación de roadmaps, gestión de contenidos, y seguimiento de asistencia.
-- No hay un framework de testing configurado (`"test": "echo \"Error: no test specified\" && exit 1"`).
-- Existe una guía de migración (`MIGRATION_GUIDE.md`) y varios scripts de migración, lo que indica que la base de datos ha sufrido cambios estructurales.
+## Technical Conventions & Lessons Learned
 
-## Contexto para Cambios
-- Antes de realizar cambios, es crucial entender la separación entre la lógica de backend (Node.js) y la de frontend (JavaScript Vanilla).
-- Cualquier cambio en los modelos de la base de datos (`backend/models/`) puede requerir un script de migración si hay datos existentes.
-- La autenticación tiene dos flujos (interno y externo) que deben ser considerados al modificar el sistema de login o la seguridad de las rutas.
-- Dado que no hay tests automatizados, los cambios deben ser probados manualmente de forma exhaustiva.
+### PDF Generation
+- **Library Order:** Scripts must be loaded in this order: `html2canvas` -> `jspdf` -> `reports.js`.
+- **Visibility:** The rendering iframe must be technically "visible" (even if off-screen at `left: -2000px`) for some browsers to trigger full layout rendering.
+- **Consistency:** Always use `window.Reports` check before calling report functions to avoid `ReferenceError` if libraries fail to load from CDN.
+
+### State Management
+- Most frontend state is managed via global variables within IIFEs (e.g., `_currentStudentId` in `student-tracking.js`).
+- Dynamic UI elements (like modal contents) are often generated via template strings in JS.
+
+### Authentication
+- Internal auth uses `bcryptjs`.
+- External auth (from `users.coderf5.es`) uses public key verification (`backend/Keys/public.pem`).
+
+## Maintenance Notes
+- **Context Window Optimization:** When working on UI, focus on `promotion-detail.js` for list logic and `reports.js` for output logic. 
+- **Migrations:** Schema changes in `backend/models/` usually require checking `backend/migrate.js` or related scripts to prevent data loss.
+- **Styling:** PDF styles are isolated in `reports.js` (`_baseCss()`) to ensure consistent print output regardless of the app's main CSS.

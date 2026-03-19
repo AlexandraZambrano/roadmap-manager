@@ -75,7 +75,17 @@
     }
 
     // ─── Header banner ───────────────────────────────────────────────────────
-    function _header(title, subtitle, promotionName, date) {
+    function _header(title, subtitle, promotionName, date, promo) {
+        let periodHtml = '';
+        if (promo && (promo.startDate || promo.endDate)) {
+            const start = _fmtDate(promo.startDate) || '—';
+            const end   = _fmtDate(promo.endDate)   || '—';
+            periodHtml = `<div style="font-size:9pt; color:#666; margin-top:2pt;">
+                Período: <span style="color:${DARK}; font-weight:500;">${start}</span> 
+                al <span style="color:${DARK}; font-weight:500;">${end}</span>
+            </div>`;
+        }
+
         return `
         <div style="display:flex; justify-content:space-between; align-items:flex-start;
                     border-bottom: 3px solid ${PRIMARY}; padding-bottom: 10pt; margin-bottom: 14pt;">
@@ -87,6 +97,7 @@
                 <h1>${_esc(title)}</h1>
                 ${subtitle ? `<div style="font-size:11pt; color:${SECONDARY}; margin-top:3pt;">${_esc(subtitle)}</div>` : ''}
                 ${promotionName ? `<div style="font-size:9pt; color:#888; margin-top:3pt;">Promoción: <strong>${_esc(promotionName)}</strong></div>` : ''}
+                ${periodHtml}
             </div>
             <div style="text-align:right; font-size:9pt; color:#888; min-width:100pt;">
                 <div>${_esc(date)}</div>
@@ -573,7 +584,8 @@
                 'Ficha de Seguimiento Técnico',
                 fullName,
                 promo.name,
-                _today()
+                _today(),
+                promo
             );
 
             // ── Motivo del informe (right after header) ──
@@ -1205,7 +1217,8 @@ async function printActaInicio(promotionId) {
                 'Descripción Técnica de la Formación',
                 promo.name,
                 null,
-                _today()
+                _today(),
+                promo
             );
 
             // ── 1. Presentación ──
@@ -1527,7 +1540,7 @@ async function printActaInicio(promotionId) {
     function _techPageHtml(s, promo, razonInforme) {
         const tt = s.technicalTracking || {};
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-        let html = _header('Ficha de Seguimiento Técnico', fullName, promo.name, _today());
+        let html = _header('Ficha de Seguimiento Técnico', fullName, promo.name, _today(), promo);
 
         // ── Motivo del informe (right after header) ──
         html += _razonBlock(razonInforme || '');
@@ -1599,7 +1612,7 @@ async function printActaInicio(promotionId) {
     function _transPageHtml(s, promo) {
         const tr2 = s.transversalTracking || {};
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-        let html = _header('Ficha de Seguimiento Transversal', fullName, promo.name, _today());
+        let html = _header('Ficha de Seguimiento Transversal', fullName, promo.name, _today(), promo);
 
         html += `<div class="section-box accent row2">
             <div>
@@ -1738,7 +1751,7 @@ async function printActaInicio(promotionId) {
             // Helper: build HTML for a single student's project page
             const _buildStudentProjectHtml = (s) => {
                 const fullName = `${s.name||''} ${s.lastname||''}`.trim();
-                let sHtml = _header(`Proyecto: ${_esc(projectName)}`, fullName, promo.name, _today());
+                let sHtml = _header(`Proyecto: ${_esc(projectName)}`, fullName, promo.name, _today(), promo);
                 const projectTeams = (s.technicalTracking?.teams || []).filter(t =>
                     (t.teamName || '').toLowerCase() === projectName.toLowerCase()
                 );
@@ -1848,7 +1861,8 @@ async function printActaInicio(promotionId) {
                 'Resumen de Proyectos de la Promoción',
                 `${projectMap.size} proyectos · ${fullStudents.filter(Boolean).length} coders`,
                 promo.name,
-                _today()
+                _today(),
+                promo
             );
 
             // Overview table
@@ -1961,7 +1975,8 @@ async function printActaInicio(promotionId) {
                 'Acta de Baja',
                 fullName,
                 promo.name,
-                processedDate
+                processedDate,
+                promo
             );
 
             // ── Alert banner ──
