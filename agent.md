@@ -141,6 +141,7 @@ Sistema de gestión de roadmaps educativos para Factoría F5. Diseñado para que
 ### Asistencia (Attendance)
 - Los comentarios se guardan **por día, por alumno** (granularidad diaria).
 - La descarga Excel de asistencia mensual genera tabs separados por mes con estadísticas.
+- **Exportación a PDF Semanal:** Se ha añadido una descarga en PDF (`window.Reports.printWeeklyAttendance`) que renderiza la asistencia completa de inicio a fin del bootcamp, separada en tablas semanales de L-V. Incluye cómputos totales (Presente/Ausente/Retraso) y lista textualmente los **comentarios diarios** del estudiante por semana.
 - El selector de mes en el frontend está limitado a los meses dentro del rango de inicio/fin del programa.
 
 ### State Management

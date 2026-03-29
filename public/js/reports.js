@@ -538,6 +538,90 @@
         });
     }
 
+    /**
+     * Shows a Bootstrap modal to select a week from a list of options.
+     * Returns Promise<number|null>: the index of the selected option, or null if cancelled.
+     */
+    function _askWeekSelect(title, options) {
+        console.log('[Reports] Showing _askWeekSelect modal');
+        return new Promise(resolve => {
+            const openModalEl   = document.querySelector('.modal.show');
+            const openModalInst = openModalEl ? (window.bootstrap?.Modal.getInstance(openModalEl) || null) : null;
+            if (openModalInst) openModalInst.hide();
+
+            const id = '_week-select-modal';
+            const existing = document.getElementById(id);
+            if (existing) {
+                const inst = window.bootstrap?.Modal.getInstance(existing);
+                if (inst) inst.hide();
+                existing.remove();
+            }
+
+            let optHtml = '';
+            options.forEach((opt, idx) => {
+                optHtml += `<option value="${idx}">${_esc(opt.label)}</option>`;
+            });
+
+            const div = document.createElement('div');
+            div.innerHTML = `
+<div class="modal fade" id="${id}" tabindex="-1" aria-labelledby="${id}-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow">
+      <div class="modal-header" style="background:#1A1A2E;color:#fff;border-bottom:2px solid #FF6B35;">
+        <h5 class="modal-title" id="${id}-label" style="font-size:1rem;">
+          <i class="bi bi-calendar3 me-2" style="color:#FF6B35;"></i>${_esc(title || 'Seleccionar Semana')}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <label class="form-label fw-semibold mb-1" style="font-size:.875rem;color:#4A4A6A;">
+          Elige la semana a descargar
+        </label>
+        <select id="${id}-select" class="form-select" style="font-size:.875rem;">
+          ${optHtml}
+        </select>
+        <div class="form-text mt-1 text-muted">Solo se generará en PDF la semana elegida para mejorar el rendimiento y legibilidad.</div>
+      </div>
+      <div class="modal-footer pt-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+          <i class="bi bi-x me-1"></i>Cancelar
+        </button>
+        <button type="button" class="btn btn-sm" id="${id}-confirm"
+          style="background:#FF6B35;color:#fff;border:none;">
+          <i class="bi bi-file-earmark-pdf me-1"></i>Generar PDF
+        </button>
+      </div>
+    </div>
+  </div>
+</div>`;
+            document.body.appendChild(div.firstElementChild);
+
+            const modalEl  = document.getElementById(id);
+            if (!window.bootstrap?.Modal) return resolve(options.length ? 0 : null);
+            const modal    = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+            let   resolved = false;
+
+            document.getElementById(`${id}-confirm`).addEventListener('click', () => {
+                if (resolved) return;
+                resolved = true;
+                const val = parseInt(document.getElementById(`${id}-select`).value, 10);
+                modal.hide();
+                resolve(isNaN(val) ? 0 : val);
+            });
+
+            modalEl.addEventListener('hidden.bs.modal', () => {
+                modalEl.remove();
+                if (!resolved) {
+                    resolved = true;
+                    if (openModalInst) try { openModalInst.show(); } catch (_) {}
+                    resolve(null);
+                }
+            }, { once: true });
+
+            modal.show();
+        });
+    }
+
     // ─── Reason block HTML (injected right after the header) ─────────────────
     function _razonBlock(razonInforme) {
         if (!razonInforme) return '';
@@ -2060,6 +2144,199 @@ async function printActaInicio(promotionId) {
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // ASISTENCIA SEMANAL (PDF)
+    // ════════════════════════════════════════════════════════════════════════
+    async function printWeeklyAttendance(promotionId, monthFilter = null) {
+        const token = localStorage.getItem('token');
+        try {
+            _showSaving('Recopilando datos de asistencia...');
+            const [promoRes, stuRes] = await Promise.all([
+                fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}/students`, { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            
+            if (!promoRes.ok) throw new Error('No se pudo cargar la promoción');
+            const promo = await promoRes.json();
+            const students = await stuRes.json();
+            
+            // Get holidays
+            const holRes = await fetch(`${API_URL}/api/promotions/${promotionId}/holidays`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null);
+            const holidays = new Set((holRes && holRes.ok ? (await holRes.json()).holidays : []) || []);
+
+            // Determine date range for the weeks
+            let pStart = promo.startDate ? new Date(promo.startDate) : new Date();
+            let pEnd = promo.endDate ? new Date(promo.endDate) : new Date();
+
+            let currentDate = new Date(pStart);
+            while (currentDate.getDay() !== 1) currentDate.setDate(currentDate.getDate() - 1); // Rewind to Monday
+            
+            let actualEnd = new Date(pEnd);
+            actualEnd.setHours(23, 59, 59, 999);
+            
+            const allWeeks = [];
+            while (currentDate <= actualEnd) {
+                const weekDates = [];
+                for (let i = 0; i < 7; i++) {
+                    weekDates.push(new Date(currentDate));
+                    currentDate.setDate(currentDate.getDate() + 1);
+                }
+                if (weekDates[0] > actualEnd) break;
+                allWeeks.push(weekDates);
+            }
+
+            const formatLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+            // Filter weeks to match the selected month if monthFilter is given (e.g. "2026-03")
+            const filteredWeeks = [];
+            allWeeks.forEach((wdArray, index) => {
+                const wStart = wdArray[0];
+                const wEnd = wdArray[4]; // Friday
+                const startStr = formatLocal(wStart);
+                const endStr = formatLocal(wEnd);
+                const belongsToMonth = !monthFilter || startStr.startsWith(monthFilter) || endStr.startsWith(monthFilter);
+                if (new Date(`${endStr}T00:00:00`) >= pStart && new Date(`${startStr}T00:00:00`) <= pEnd && belongsToMonth) {
+                    filteredWeeks.push({
+                        label: `Semana ${index + 1}: ${_fmtDateEs(startStr)} al ${_fmtDateEs(endStr)}`,
+                        dates: wdArray,
+                        wIdx: index
+                    });
+                }
+            });
+
+            _hideSaving(); // Hide loading indicator before showing prompt
+
+            if (filteredWeeks.length === 0) {
+                alert('No se encontraron semanas laborables en el rango seleccionado.');
+                return;
+            }
+
+            // Ask user which week they want to download
+            const selectedOptIndex = await _askWeekSelect('Descargar Asistencia', filteredWeeks);
+            if (selectedOptIndex === null) return; // User cancelled
+
+            const selectedWeek = filteredWeeks[selectedOptIndex];
+
+            _showSaving('Descargando datos de la semana...');
+
+            // Fetch attendance data ONLY for the months that touch this week
+            const startStr = formatLocal(selectedWeek.dates[0]);
+            const endStr = formatLocal(selectedWeek.dates[4]);
+            const startMonth = startStr.substring(0, 7);
+            const endMonth = endStr.substring(0, 7);
+            
+            const monthsToFetch = new Set([startMonth, endMonth]);
+            let allAttendance = [];
+            for (const m of monthsToFetch) {
+                const aRes = await fetch(`${API_URL}/api/promotions/${promotionId}/attendance?month=${m}`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null);
+                if (aRes && aRes.ok) {
+                    const data = await aRes.json();
+                    if (Array.isArray(data)) allAttendance = allAttendance.concat(data);
+                }
+            }
+
+            // Organize by student and date
+            const attMap = {};
+            allAttendance.forEach(r => {
+                const sId = String(r.studentId?._id || r.studentId);
+                if (!attMap[sId]) attMap[sId] = {};
+                const dateKey = r.date.includes('T') ? r.date.split('T')[0] : r.date;
+                attMap[sId][dateKey] = r;
+            });
+
+            const stMap = { 'Presente': 'P', 'Ausente': 'A', 'Con retraso': 'T', 'Justificado': 'J', 'Sale antes': 'S' };
+
+            let html = _header('Informe de Asistencia Semanal', `Semana ${selectedWeek.wIdx + 1}`, promo.name, _today(), promo);
+
+            const workDays = selectedWeek.dates.slice(0, 5);
+            
+            html += `
+            <div class="no-break" style="margin-top:20px;">
+                <h3 style="background:#f1f3f5; padding:6px 10px; border-left:4px solid ${PRIMARY}; margin-bottom:10px;">
+                    Semana ${selectedWeek.wIdx + 1} (${_fmtDateEs(formatLocal(workDays[0]))} al ${_fmtDateEs(formatLocal(workDays[4]))})
+                </h3>
+                <table style="font-size:8.5pt;">
+                    <thead>
+                        <tr>
+                            <th style="width:20%">Estudiante</th>`;
+            workDays.forEach(wd => { html += `<th style="text-align:center;">${['Do','Lu','Ma','Mi','Ju','Vi','Sa'][wd.getDay()]} ${wd.getDate()}</th>`; });
+            html += `       <th style="text-align:center;" title="Presentes">P</th>
+                            <th style="text-align:center;" title="Ausentes">A</th>
+                            <th style="text-align:center;" title="Retrasos">T</th>
+                            <th style="width:25%">Comentarios</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            students.forEach(st => {
+                const stuId = String(st.id || st._id);
+                const stAtt = attMap[stuId] || {};
+                let p=0, a=0, r=0;
+                let marksHtml = '';
+                let comments = [];
+
+                workDays.forEach(wd => {
+                    const localDateStr = formatLocal(wd);
+                    const dateNum = wd.getDate();
+                    const isHoliday = holidays.has(localDateStr);
+
+                    if (isHoliday) {
+                        marksHtml += `<td style="text-align:center;color:#888;background:#f9f9f9;">F</td>`;
+                    } else {
+                        const rec = stAtt[localDateStr];
+                        let mark = '-';
+                        let col = '#000';
+                        if (rec) {
+                            mark = stMap[rec.status] || rec.status.charAt(0);
+                            if (mark === 'P') { col = '#198754'; p++; }
+                            else if (mark === 'A') { col = '#dc3545'; a++; }
+                            else if (mark === 'T') { col = '#fd7e14'; r++; }
+                            else if (mark === 'J') { col = '#6c757d'; }
+                            else if (mark === 'S') { col = '#fd7e14'; }
+                            
+                            if (rec.note) comments.push(`<strong>${dateNum}:</strong> ${_esc(rec.note)}`);
+                        }
+                        marksHtml += `<td style="text-align:center;font-weight:600;color:${col}">${mark}</td>`;
+                    }
+                });
+
+                const commentText = comments.length > 0 ? comments.join('<br>') : '<span style="color:#aaa;font-size:8pt;">Sin comentarios</span>';
+
+                html += `<tr>
+                    <td><strong>${_esc(st.name)} ${_esc(st.lastname)}</strong></td>
+                    ${marksHtml}
+                    <td style="text-align:center;font-weight:bold;color:#198754;">${p}</td>
+                    <td style="text-align:center;font-weight:bold;color:#dc3545;">${a}</td>
+                    <td style="text-align:center;font-weight:bold;color:#fd7e14;">${r}</td>
+                    <td style="font-size:7.5pt;line-height:1.2;">${commentText}</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div>`;
+
+            // Leyenda
+            html += `
+            <div style="margin-top:15px; font-size:8pt; color:#666; padding:10px; border:1px solid #ddd; border-radius:4px; display:inline-block;">
+                <strong>Leyenda:</strong> &nbsp;
+                <span style="color:#198754;font-weight:bold;">P</span> = Presente &nbsp;|&nbsp;
+                <span style="color:#dc3545;font-weight:bold;">A</span> = Ausente &nbsp;|&nbsp;
+                <span style="color:#fd7e14;font-weight:bold;">T</span> = Con retraso &nbsp;|&nbsp;
+                <span style="color:#6c757d;font-weight:bold;">J</span> = Justificado &nbsp;|&nbsp;
+                <span style="color:#fd7e14;font-weight:bold;">S</span> = Sale antes &nbsp;|&nbsp;
+                <span style="color:#888;">F</span> = Festivo / No laborable
+            </div>`;
+
+            const filename = `asistencia_semana_${selectedWeek.wIdx + 1}_${(promo.name || 'promo').replace(/\s+/g, '-')}.pdf`;
+            _showSaving('Generando PDF...');
+            await _savePdf(html, filename);
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printWeeklyAttendance:', e);
+            alert('Error generando el informe de asistencia semanal: ' + e.message);
+        }
+    }
+
     // ─── Public API ──────────────────────────────────────────────────────────
     const Reports = {
         printTechnical,
@@ -2071,7 +2348,8 @@ async function printActaInicio(promotionId) {
         printBulkTechnical,
         printBulkTransversal,
         printBulkByProject,
-        printAllProjectsSummary
+        printAllProjectsSummary,
+        printWeeklyAttendance
     };
     
     // Attach to window and log availability
