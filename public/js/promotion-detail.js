@@ -8739,6 +8739,34 @@ function _renderTeamHistoryBody(grupalProjects, allStudentIds, studentMap, stude
     });
     html += `</div></div>`;
 
+    // ── Actual teams per project ─────────────────────────────────────────────
+    html += `<h6 class="fw-semibold text-secondary mb-3 mt-4"><i class="bi bi-people me-1"></i>Listado de Equipos por Proyecto</h6>
+    <div class="row row-cols-1 row-cols-md-2 g-3 mb-4">`;
+    grupalProjects.forEach(gp => {
+        html += `<div class="col">
+            <div class="card h-100 border-0 shadow-sm" style="background:#fdfdfd; border:1px solid #eee !important;">
+                <div class="card-header border-0 py-2" style="background:rgba(232, 93, 38, 0.05);">
+                    <div class="fw-bold text-primary small" style="color:#E85D26 !important; font-size:0.75rem;">${escapeHtml(gp.modName)}</div>
+                    <div class="fw-bold" style="color:#1A1A2E;">${escapeHtml(gp.projName)}</div>
+                </div>
+                <div class="card-body p-2">
+                    <div class="list-group list-group-flush">`;
+        gp.groups.forEach((grp, gIdx) => {
+            const memberNames = (grp.studentIds || []).map(id => studentMap.get(String(id)) || id);
+            html += `<div class="list-group-item px-2 py-2 border-0 mb-1 rounded" style="background:#fff; border:1px solid #f0f0f0 !important;">
+                <div class="fw-bold text-muted mb-1" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px;">Equipo ${gIdx + 1}</div>
+                <div class="d-flex flex-wrap gap-1">
+                    ${memberNames.map(name => `<span class="badge border fw-normal text-dark" style="background:#f8f9fa; font-size:0.8rem; padding: 4px 8px;">${escapeHtml(name)}</span>`).join('')}
+                </div>
+            </div>`;
+        });
+        html += `   </div>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+
     // ── Per-student table ────────────────────────────────────────────────────
     const sortedStudentIds = Array.from(allStudentIds).sort((a, b) =>
         (studentMap.get(a) || a).localeCompare(studentMap.get(b) || b));
