@@ -7821,6 +7821,7 @@ async function loadEvaluation() {
         window._evalState.modules = promo.modules || [];
         window._evalState.competences = enrichedCompetences;
         window._evalState.catalog = catalog;  // full catalog for competence picker
+        window._evalState.allStudents = studentsData;
         window._evalState.students = studentsData.filter(s => !s.isWithdrawn);
         window._evalState.savedEvaluations = ext.projectEvaluations || [];
         console.log('[DEBUG] Loaded evaluations:', window._evalState.savedEvaluations);
@@ -8629,7 +8630,7 @@ function openTeamHistoryView() {
     historyPanel.classList.remove('hidden');
 
     // Build content
-    const { modules, savedEvaluations, students } = window._evalState;
+    const { modules, savedEvaluations, allStudents } = window._evalState;
 
     // Grupal projects with groups
     const grupalProjects = [];
@@ -8655,9 +8656,9 @@ function openTeamHistoryView() {
         });
     });
 
-    // Student map
+    // Student map (use allStudents to include withdrawn ones)
     const studentMap = new Map();
-    students.forEach(s => {
+    (allStudents || []).forEach(s => {
         const id = String(s.id || s._id);
         studentMap.set(id, ((s.name || '') + ' ' + (s.lastname || '')).trim());
     });
