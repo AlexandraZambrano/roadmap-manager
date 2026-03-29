@@ -9568,25 +9568,18 @@ function _buildEvalCompetencesHtmlForTarget(targetId, savedEval, projCompetences
         const safeTargetId = String(targetId).replace(/[^a-zA-Z0-9-]/g, '-');
         const prefix = `sv-${safeCompId}-${safeTargetId}`;
 
-        // Counts
+        // Counts: Only competenceIndicators (comp-* keys) affect the level
         const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
         const totalByLevel = { 1: 0, 2: 0, 3: 0 };
-        if (hasToolIndicators) {
-            activeToolsWithInds.forEach(tool => {
-                tool.indicators.forEach(ind => {
-                    if (totalByLevel[ind.levelId] !== undefined) totalByLevel[ind.levelId]++;
-                    const k = `tool-${tool.id}-${ind.id}`;
-                    if (checkedDataForComp[k] && checkedByLevel[ind.levelId] !== undefined) checkedByLevel[ind.levelId]++;
-                });
-            });
-        } else if (hasCompIndicators) {
+        if (hasCompIndicators) {
             [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
-                totalByLevel[lvl] = inds.length;
-                inds.forEach(ind => { if (checkedDataForComp[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+                totalByLevel[lvl] = (inds || []).length;
+                (inds || []).forEach(ind => { if (checkedDataForComp[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
             });
         }
+
         let autoLevel = 0;
-        if (hasToolIndicators || hasCompIndicators) {
+        if (hasCompIndicators) {
             if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
                 autoLevel = 1;
                 if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
@@ -9599,7 +9592,7 @@ function _buildEvalCompetencesHtmlForTarget(targetId, savedEval, projCompetences
                 if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
             }
         }
-        const displayLevel = (hasToolIndicators || hasCompIndicators) ? autoLevel : currentLevel;
+        const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
         const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
         const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
 
@@ -9982,25 +9975,19 @@ function openEvaluationModal(mIdx, pIdx) {
 
             // Count checked/total indicators to compute auto-level
             // (checkedData is already set above as the flat {indKey: bool} map)
+            // Level is calculated ONLY from competence indicators
             const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
             const totalByLevel = { 1: 0, 2: 0, 3: 0 };
-            if (hasToolIndicators) {
-                activeToolsWithInds.forEach(tool => {
-                    tool.indicators.forEach(ind => {
-                        if (totalByLevel[ind.levelId] !== undefined) totalByLevel[ind.levelId]++;
-                        const k = `tool-${tool.id}-${ind.id}`;
-                        if (checkedData[k] && checkedByLevel[ind.levelId] !== undefined) checkedByLevel[ind.levelId]++;
-                    });
-                });
-            } else if (hasCompIndicators) {
+
+            if (hasCompIndicators) {
                 [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
-                    totalByLevel[lvl] = inds.length;
-                    inds.forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+                    totalByLevel[lvl] = (inds || []).length;
+                    (inds || []).forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
                 });
             }
 
             let autoLevel = 0;
-            if (hasToolIndicators || hasCompIndicators) {
+            if (hasCompIndicators) {
                 if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
                     autoLevel = 1;
                     if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
@@ -10014,7 +10001,7 @@ function openEvaluationModal(mIdx, pIdx) {
                 }
             }
 
-            const displayLevel = (hasToolIndicators || hasCompIndicators) ? autoLevel : currentLevel;
+            const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
             const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
             const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
 
@@ -10521,26 +10508,17 @@ function _openStudentEvalSubModalFor(studentId) {
                 ).join('');
             }
 
-            // Calculate current level from checked indicators
+            // Calculate current level from checked COMPETENCE indicators only
+            // Tool indicators do NOT affect the competence level — same rule as updateEvalIndicator
             const checkedData = checkedDataForComp;
             const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
             const totalByLevel = { 1: 0, 2: 0, 3: 0 };
 
-            // Count total indicators per level (from visible tools or comp indicators)
-            if (hasToolIndicators) {
-                activeToolsWithInds.forEach(tool => {
-                    tool.indicators.forEach(ind => {
-                        if (totalByLevel[ind.levelId] !== undefined) totalByLevel[ind.levelId]++;
-                        const indKey = `tool-${tool.id}-${ind.id}`;
-                        if (checkedData[indKey] && checkedByLevel[ind.levelId] !== undefined) checkedByLevel[ind.levelId]++;
-                    });
-                });
-            } else if (hasCompIndicators) {
+            if (hasCompIndicators) {
                 [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
-                    totalByLevel[lvl] = inds.length;
-                    inds.forEach(ind => {
-                        const indKey = `comp-${ind.id}`;
-                        if (checkedData[indKey]) checkedByLevel[lvl]++;
+                    totalByLevel[lvl] = (inds || []).length;
+                    (inds || []).forEach(ind => {
+                        if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++;
                     });
                 });
             }
@@ -10548,7 +10526,7 @@ function _openStudentEvalSubModalFor(studentId) {
             // Auto-computed level: highest level where ALL indicators of that level are checked
             // (and all lower levels are also fully checked)
             let autoLevel = 0;
-            if (hasToolIndicators || hasCompIndicators) {
+            if (hasCompIndicators) {
                 if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
                     autoLevel = 1;
                     if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
@@ -10565,7 +10543,8 @@ function _openStudentEvalSubModalFor(studentId) {
                 }
             }
 
-            const displayLevel = (hasToolIndicators || hasCompIndicators) ? autoLevel : currentLevel;
+            const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
+
             const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
             const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
 
@@ -10733,7 +10712,8 @@ function updateEvalIndicator(targetId, compId, indKey, level, checked, compName)
 
     evalEntry.checkedIndicators[compId][indKey] = checked;
 
-    // Recalculate auto-level from all checked indicators for this comp
+    // Recalculate auto-level from all checked COMPETENCE indicators for this comp
+    // Tool indicators do NOT affect the competence level — they are saved for reports only
     const comp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(compId));
     if (!comp) return;
 
@@ -10741,28 +10721,19 @@ function updateEvalIndicator(targetId, compId, indKey, level, checked, compName)
     const compInds = comp.competenceIndicators || { initial: [], medio: [], advance: [] };
     const hasCompIndicators = compInds.initial.length || compInds.medio.length || compInds.advance.length;
 
-    // CHANGE: Nivel final de competencia se calcula SOLO a partir de competenceIndicators, no de toolIndicators
-    // Los indicadores de herramientas se guardan pero no afectan al nivel de la competencia
+    // Calculate level ONLY from competenceIndicators (comp-* keys), never from tool indicators
     const totalByLevel = { 1: 0, 2: 0, 3: 0 };
     const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
 
-    if (hasToolIndicators) {
-        activeToolsWithInds.forEach(tool => {
-            tool.indicators.forEach(ind => {
-                if (totalByLevel[ind.levelId] !== undefined) totalByLevel[ind.levelId]++;
-                const k = `tool-${tool.id}-${ind.id}`;
-                if (checkedData[k] && checkedByLevel[ind.levelId] !== undefined) checkedByLevel[ind.levelId]++;
-            });
-        });
-    } else if (hasCompIndicators) {
+    if (hasCompIndicators) {
         [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
-            totalByLevel[lvl] = inds.length;
-            inds.forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+            totalByLevel[lvl] = (inds || []).length;
+            (inds || []).forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
         });
     }
 
     let autoLevel = 0;
-    if (hasToolIndicators || hasCompIndicators) {
+    if (hasCompIndicators) {
         if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
             autoLevel = 1;
             if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
@@ -11006,51 +10977,69 @@ function _resolveTargetName(targetId) {
 }
 
 async function saveProjectEvaluation() {
-    const saved = window._evalCurrentSaved;
-    const { modules, savedEvaluations, students } = window._evalState;
-    const mIdx = window._evalState.currentModuleIdx;
-    const pIdx = window._evalState.currentProjectIdx;
-    if (saved == null || mIdx == null || pIdx == null) return;
+    const saveBtn = document.getElementById('eval-modal-save-btn');
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Guardando...`;
+    }
 
-    const mod = modules[mIdx];
-    const proj = mod.projects[pIdx];
-    const modId = mod.id || String(mIdx);
-
-    // Collect feedback from textareas
-    document.querySelectorAll('#eval-modal-body textarea[data-target-id]').forEach(ta => {
-        const targetId = ta.getAttribute('data-target-id');
-        if (!targetId) return;
-        // Skip the student-comment textarea — handled separately below
-        if (ta.getAttribute('data-student-comment') === 'true') return;
-
-        let evalEntry = (saved.evaluations || []).find(e => e.targetId === targetId);
-        if (!evalEntry) {
-            if (!saved.evaluations) saved.evaluations = [];
-            evalEntry = { targetId, targetName: _resolveTargetName(targetId), competences: [], feedback: '' };
-            saved.evaluations.push(evalEntry);
+    try {
+        const saved = window._evalCurrentSaved;
+        const { modules, savedEvaluations, students } = window._evalState;
+        const mIdx = window._evalState.currentModuleIdx;
+        const pIdx = window._evalState.currentProjectIdx;
+        if (saved == null || mIdx == null || pIdx == null) {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+            return;
         }
-        evalEntry.feedback = ta.value;
-        evalEntry.evaluatedAt = new Date().toISOString();
-    });
 
-    // Merge into savedEvaluations state
-    const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
-    if (existingIdx >= 0) {
-        window._evalState.savedEvaluations[existingIdx] = saved;
-    } else {
-        window._evalState.savedEvaluations.push(saved);
+        const mod = modules[mIdx];
+        const proj = mod.projects[pIdx];
+        const modId = mod.id || String(mIdx);
+
+        // Collect feedback from textareas
+        document.querySelectorAll('#eval-modal-body textarea[data-target-id]').forEach(ta => {
+            const targetId = ta.getAttribute('data-target-id');
+            if (!targetId) return;
+            // Skip the student-comment textarea — handled separately below
+            if (ta.getAttribute('data-student-comment') === 'true') return;
+
+            let evalEntry = (saved.evaluations || []).find(e => e.targetId === targetId);
+            if (!evalEntry) {
+                if (!saved.evaluations) saved.evaluations = [];
+                evalEntry = { targetId, targetName: _resolveTargetName(targetId), competences: [], feedback: '' };
+                saved.evaluations.push(evalEntry);
+            }
+            evalEntry.feedback = ta.value;
+            evalEntry.evaluatedAt = new Date().toISOString();
+        });
+
+        // Merge into savedEvaluations state
+        const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
+        if (existingIdx >= 0) {
+            window._evalState.savedEvaluations[existingIdx] = saved;
+        } else {
+            window._evalState.savedEvaluations.push(saved);
+        }
+
+        await _persistEvaluations();
+
+        // ── Sync individual evaluations → student technicalTracking ──────────────
+        if (saved.type === 'individual') {
+            await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('evaluationModal'))?.hide();
+        renderEvaluationTab();
+        showToast('Evaluación guardada correctamente', 'success');
+        
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+    } catch (err) {
+        console.error('[saveProjectEvaluation]', err);
+        showToast('Error al guardar la evaluación', 'danger');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
     }
-
-    await _persistEvaluations();
-
-    // ── Sync individual evaluations → student technicalTracking ──────────────
-    if (saved.type === 'individual') {
-        await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
-    }
-
-    bootstrap.Modal.getInstance(document.getElementById('evaluationModal'))?.hide();
-    renderEvaluationTab();
-    showToast('Evaluación guardada correctamente', 'success');
 }
 
 /**
