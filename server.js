@@ -3723,6 +3723,7 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
     if (body.hasOwnProperty('approvalRole'))           $setFields.approvalRole = approvalRole || '';
     if (Array.isArray(projectEvaluations))             $setFields.projectEvaluations = projectEvaluations;
     if (Array.isArray(projectCompetences))             $setFields.projectCompetences = projectCompetences;
+    if (body.hasOwnProperty('virtualClassroom'))       $setFields.virtualClassroom = virtualClassroom || {};
     // Final Update
     const newInfo = await ExtendedInfo.findOneAndUpdate(
       { promotionId: req.params.promotionId },
