@@ -20,15 +20,24 @@ const ExtendedInfoSchema = new mongoose.Schema({
         notes: String
     },
     team: [{
+        collaboratorId: String,
         name: String,
         role: String,
         email: String,
-        linkedin: String
+        linkedin: String,
+        moduleId: String,
+        moduleName: String
     }],
     resources: [{
+        externalId: mongoose.Schema.Types.Mixed,
         title: String,
         category: String,
-        url: String
+        url: String,
+        comments: String,
+        areas: [mongoose.Schema.Types.Mixed],
+        tools: [mongoose.Schema.Types.Mixed],
+        types: [mongoose.Schema.Types.Mixed],
+        providers: [mongoose.Schema.Types.Mixed]
     }],
     evaluation: { type: String, default: '' },
     pildoras: [{
