@@ -571,22 +571,49 @@ function displayQuickLinks(links) {
     const list = document.getElementById('quick-links-list');
     list.innerHTML = '';
 
-    if (links.length === 0) {
+    if (!links || links.length === 0) {
         document.getElementById('quick-links').classList.add('hidden');
         return;
     }
 
+    document.getElementById('quick-links').classList.remove('hidden');
+
     links.forEach(link => {
-        const col = document.createElement('div');
-        col.className = 'col-md-6 col-lg-3';
-        col.innerHTML = `
-            <div class="d-grid gap-2">
-                <a href="${escapeHtml(link.url)}" target="_blank" class="btn btn-outline-primary">
-                    <i class="bi bi-box-arrow-up-right me-2"></i> ${escapeHtml(link.name)}
-                </a>
-            </div>
+        // Determine icon and color based on platform or name
+        let icon = 'bi-box-arrow-up-right';
+        let color = 'var(--principal-1)';
+        const name = (link.name || '').toLowerCase();
+        const platform = (link.platform || '').toLowerCase();
+
+        if (platform === 'zoom' || name.includes('zoom')) {
+            icon = 'bi-camera-video';
+            color = '#2D8CFF';
+        } else if (platform === 'discord' || name.includes('discord')) {
+            icon = 'bi-discord';
+            color = '#5865F2';
+        } else if (platform === 'github' || name.includes('github')) {
+            icon = 'bi-github';
+            color = '#333';
+        } else if (name.includes('meet') || name.includes('google meet')) {
+            icon = 'bi-google';
+            color = '#ea4335';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'quick-action-card';
+        card.innerHTML = `
+            <a href="${escapeHtml(link.url)}" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               title="${escapeHtml(link.name)}"
+               class="quick-action-link">
+                <div class="quick-action-icon" style="color: ${color};">
+                    <i class="bi ${icon}"></i>
+                </div>
+                <div class="quick-action-label">${escapeHtml(link.name)}</div>
+            </a>
         `;
-        list.appendChild(col);
+        list.appendChild(card);
     });
 }
 
