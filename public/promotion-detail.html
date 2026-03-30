@@ -1999,16 +1999,19 @@
                             <input type="email" class="form-control bg-light" id="edit-team-email" readonly>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Módulos Asignados</label>
-                            <div id="edit-team-module-checklist" class="d-flex flex-column gap-2 border rounded p-2 bg-light" 
-                                style="max-height:180px; overflow-y:auto;">
+                            <label class="form-label fw-bold"><i class="bi bi-journal-check me-1 text-primary"></i>Participación en Módulos</label>
+                            <div id="edit-team-module-list" class="alert alert-light border rounded p-2 mb-1" 
+                                 style="font-size: 0.9rem; min-height: 40px; background-color: #fcfcfc;">
+                                <!-- Assigned modules as badges will be injected here -->
                                 <span class="text-muted small">Cargando módulos...</span>
                             </div>
-                            <div class="form-text small">Selecciona los módulos en los que el integrante participa.</div>
+                            <div class="form-text small text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Para cambiar los módulos de este integrante, debes hacerlo desde la pestaña de <strong>Colaboradores</strong>.
+                            </div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">LinkedIn</label>
-                            <input type="url" class="form-control" id="edit-team-linkedin">
+                            <label class="form-label">LinkedIn <span class="text-muted small">(opcional)</span></label>
+                            <input type="url" class="form-control" id="edit-team-linkedin" placeholder="https://linkedin.com/in/...">
                         </div>
                     </form>
                 </div>

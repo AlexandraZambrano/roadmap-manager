@@ -630,14 +630,36 @@ function displayTeam() {
     const tbody = document.getElementById('team-list-body');
     if (!tbody) return;
     tbody.innerHTML = '';
+
     (extendedInfoData.team || []).forEach((member, index) => {
-        const tr = document.createElement('tr');
-        const moduleCell = member.moduleName
-            ? `<span class="badge bg-light text-dark border">${escapeHtml(member.moduleName)}</span>`
+        // Find assigned modules from central state (currentPromotion)
+        let moduleIds = [];
+        const promo = window.currentPromotion || {};
+        const isOwner = promo.teacherId === member.collaboratorId;
+        
+        if (isOwner) {
+            moduleIds = promo.ownerModules || [];
+        } else {
+            const entry = (promo.collaboratorModules || []).find(m => m.teacherId === member.collaboratorId);
+            moduleIds = entry ? (entry.moduleIds || []) : [];
+        }
+
+        // Map to names
+        const modNames = [];
+        (moduleIds || []).forEach(mid => {
+            const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+            if (found) modNames.push(found.name);
+        });
+
+        const moduleCell = modNames.length > 0
+            ? modNames.map(name => `<span class="badge bg-light text-dark border me-1">${escapeHtml(name)}</span>`).join('')
             : '<span class="text-muted small">—</span>';
+
         const linkedinCell = member.linkedin
             ? `<a href="${escapeHtml(member.linkedin)}" target="_blank"><i class="bi bi-linkedin"></i></a>`
             : '<span class="text-muted small">—</span>';
+            
+        const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${escapeHtml(member.name)}</td>
             <td>${escapeHtml(member.role || '')}</td>
@@ -1381,24 +1403,34 @@ function openEditTeamModal(index) {
     document.getElementById('edit-team-email').value = member.email || '';
     document.getElementById('edit-team-linkedin').value = member.linkedin || '';
 
-    // Populate checklist
-    const modules = window.promotionModules || [];
-    const checklist = document.getElementById('edit-team-module-checklist');
-    checklist.innerHTML = '';
-    const selected = member.moduleIds || [];
-
-    if (modules.length === 0) {
-        checklist.innerHTML = '<span class="text-muted small">No hay módulos definidos.</span>';
+    // Find assigned modules from central state (currentPromotion)
+    let moduleIds = [];
+    const promo = window.currentPromotion || {};
+    const isOwner = promo.teacherId === member.collaboratorId;
+    
+    if (isOwner) {
+        moduleIds = promo.ownerModules || [];
     } else {
-        modules.forEach(mod => {
-            const checked = selected.some(sm => String(sm) === String(mod.id)) ? 'checked' : '';
-            const div = document.createElement('div');
-            div.className = 'form-check';
-            div.innerHTML = `
-                <input class="form-check-input" type="checkbox" value="${mod.id}" id="edit-team-mod-${mod.id}" ${checked}>
-                <label class="form-check-label" for="edit-team-mod-${mod.id}">${escapeHtml(mod.name)}</label>
-            `;
-            checklist.appendChild(div);
+        const entry = (promo.collaboratorModules || []).find(m => m.teacherId === member.collaboratorId);
+        moduleIds = entry ? (entry.moduleIds || []) : [];
+    }
+
+    // Populate read-only list
+    const modules = window.promotionModules || [];
+    const displayList = document.getElementById('edit-team-module-list');
+    displayList.innerHTML = '';
+    
+    if (moduleIds.length === 0) {
+        displayList.innerHTML = '<span class="text-muted small">Sin módulos asignados.</span>';
+    } else {
+        moduleIds.forEach(mid => {
+            const found = modules.find(m => String(m.id) === String(mid));
+            if (found) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-light text-dark border me-1';
+                badge.textContent = found.name;
+                displayList.appendChild(badge);
+            }
         });
     }
 
@@ -1412,19 +1444,7 @@ function updateTeamMember() {
     const member = extendedInfoData.team[index];
     if (!member) return;
 
-    // Get selected modules from checklist
-    const checkboxes = document.querySelectorAll('#edit-team-module-checklist .form-check-input:checked');
-    const moduleIds = Array.from(checkboxes).map(cb => cb.value);
-    
-    // Build module name string
-    const modNames = [];
-    moduleIds.forEach(mid => {
-        const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
-        if (found) modNames.push(found.name);
-    });
-
-    member.moduleIds = moduleIds;
-    member.moduleName = modNames.join(', ');
+    // We no longer get modules from here, they are automatic reflections of collaborators tab
     member.linkedin = document.getElementById('edit-team-linkedin').value.trim();
 
     displayTeam();
