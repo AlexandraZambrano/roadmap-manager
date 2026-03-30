@@ -5761,12 +5761,48 @@ async function saveCollaboratorModules() {
         });
         if (response.ok) {
             collaboratorModulesModal.hide();
-            location.reload();
+
+            // Update local list for instant render
+            const collabEntry = (_currentCollabModulesList || []).find(c => c.id === _currentCollabModulesId);
+            if (collabEntry) {
+                collabEntry.moduleIds = moduleIds;
+            }
+            displayCollaborators(_currentCollabModulesList || []);
+
+            // Re-fetch everything to ensure perfect sync
+            await loadCollaborators();
+
+            // Update main promotion object to reflect new assigned modules in GANNT, etc.
+            const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (promoRes.ok) {
+                const promo = await promoRes.json();
+                window.currentPromotion = promo;
+            }
+
+            // Sync with Team tab if this person is there
+            if (extendedInfoData && extendedInfoData.team) {
+                const modNames = [];
+                moduleIds.forEach(mid => {
+                    const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+                    if (found) modNames.push(found.name);
+                });
+
+                extendedInfoData.team.forEach(m => {
+                    if (m.collaboratorId === _currentCollabModulesId) {
+                        m.moduleIds = moduleIds;
+                        m.moduleName = modNames.join(', ');
+                    }
+                });
+                displayTeam();
+            }
         } else {
             const data = await response.json();
             alert(data.error || 'Error guardando módulos');
         }
     } catch (error) {
+        console.error('Error in saveCollaboratorModules:', error);
         alert('Error de conexión');
     }
 }
