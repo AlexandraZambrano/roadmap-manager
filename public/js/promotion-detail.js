@@ -2403,6 +2403,8 @@ function switchTab(tabId) {
         switchTeacherAreaSubTab('overview');
     }
 
+
+
     // Update active state in sidebar
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.remove('active');
@@ -2424,6 +2426,14 @@ function switchTab(tabId) {
         }
     }
 }
+
+function switchToVirtualClassroom() {
+    switchTab('info');
+    setTimeout(() => {
+        switchProgramDetailsTab('virtual-classroom');
+    }, 100);
+}
+
 
 // ==================== TEACHER AREA SECTION ====================
 // Consolidated handler for switching between sub-sections in Área del Docente
@@ -8073,7 +8083,10 @@ function renderEvaluationTab() {
 
     // ── Toolbar: Histórico de equipos button ────────────────────────────────
     const grupalCount = savedEvaluations.filter(e => e.type === 'grupal' && e.groups && e.groups.length > 0).length;
-    let html = `<div class="d-flex justify-content-end mb-3">
+    let html = `<div class="d-flex justify-content-end mb-3 gap-2">
+        <button class="btn btn-outline-info btn-sm" onclick="switchToVirtualClassroom()" title="Ir al Aula Virtual en Contenido del Programa">
+            <i class="bi bi-laptop me-2"></i>Aula Virtual (Activar Proyectos)
+        </button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openTeamHistoryModal()" title="Ver histórico de equipos entre proyectos grupales">
             <i class="bi bi-people-fill me-2"></i>Histórico de equipos
             ${grupalCount > 0 ? `<span class="badge bg-secondary ms-1">${grupalCount} grupal${grupalCount !== 1 ? 'es' : ''}</span>` : ''}
