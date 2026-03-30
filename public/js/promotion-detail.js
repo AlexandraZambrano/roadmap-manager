@@ -1263,17 +1263,8 @@ async function openTeamModal() {
     document.getElementById('team-form').reset();
     document.getElementById('team-collab-preview').classList.add('d-none');
 
-    // Populate module dropdown
-    const moduleSelect = document.getElementById('team-module');
-    moduleSelect.innerHTML = '<option value="">— No specific module —</option>';
-    (window.promotionModules || []).forEach(mod => {
-        const opt = document.createElement('option');
-        opt.value = mod.id;
-        opt.textContent = mod.name;
-        moduleSelect.appendChild(opt);
-    });
-
     // Populate collaborators dropdown (required — only collaborators can be added)
+
     const collabSelect = document.getElementById('team-from-collaborator');
     collabSelect.innerHTML = '<option value="">— Select a collaborator —</option>';
     collabSelect._collabData = {};
@@ -1340,20 +1331,6 @@ function fillTeamFromCollaborator() {
     }
 
     preview.classList.remove('d-none');
-
-    // Pre-select the collaborator's first assigned module if any in the dropdown
-    const moduleSelect = document.getElementById('team-module');
-    if (assignedModules.length > 0) {
-        // Select the first assigned module that exists in the dropdown (robust comparison)
-        for (const opt of moduleSelect.options) {
-            if (assignedModules.some(mid => String(mid) === String(opt.value))) {
-                moduleSelect.value = opt.value;
-                break;
-            }
-        }
-    } else {
-        moduleSelect.value = '';
-    }
 }
 
 function addTeamMember() {
@@ -1373,24 +1350,22 @@ function addTeamMember() {
     }
 
     const linkedin = document.getElementById('team-linkedin').value;
-    const moduleEl = document.getElementById('team-module');
-    const selectedModuleId = moduleEl.value;
-    const selectedModuleName = selectedModuleId ? moduleEl.options[moduleEl.selectedIndex].text : '';
 
-    // DEFAULT to collaborator's pre-assigned modules if no manual override is selected
-    let finalModuleId = selectedModuleId;
-    let finalModuleName = selectedModuleName;
-
+    // AUTOMATICALLY aggregate all pre-assigned module names from collaborator
     const assignedModules = collab.moduleIds || [];
-    if (!finalModuleId && assignedModules.length > 0) {
+    let finalModuleId = '';
+    let finalModuleName = '';
+    
+    if (assignedModules.length > 0) {
         const modNames = [];
         assignedModules.forEach(mid => {
-            const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
-            if (found) modNames.push(found.name);
+           // We use String comparison to avoid issues with number vs string IDs
+           const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+           if (found) modNames.push(found.name);
         });
         if (modNames.length > 0) {
             finalModuleName = modNames.join(', ');
-            finalModuleId = String(assignedModules[0]); // Keep one ID for legacy field compatibility
+            finalModuleId = String(assignedModules[0]); // Legacy field compatibility
         }
     }
 
