@@ -1977,6 +1977,35 @@ async function saveExtendedInfo() {
         });
     }
     extendedInfoData.pildoras = allPildoras;
+    
+    // ── Sync Virtual Classroom state ──────────────────────────────────────────
+    // Ensure we don't overwrite the virtualClassroom with stale data if it was updated in its own tab
+    const vcSelectEl = document.getElementById('vc-project-select');
+    const vcStatusBadge = document.getElementById('vc-status-badge');
+    if (vcSelectEl && vcStatusBadge) {
+        const val = vcSelectEl.value;
+        const [vMid, vPname] = val ? val.split('__') : ['', ''];
+        const vRepo = document.getElementById('vc-repo-base')?.value || '';
+        const vBrief = document.getElementById('vc-briefing-url')?.value || '';
+        const vActive = vcStatusBadge.classList.contains('bg-success');
+        
+        // Find project type for the selected project
+        const savedEvaluations = window._evalState?.savedEvaluations || [];
+        const existingEval = savedEvaluations.find(e => e.moduleId === vMid && e.projectName === vPname);
+        const vType = existingEval ? (existingEval.type || 'individual') : 'individual';
+
+        extendedInfoData.virtualClassroom = {
+            isActive: vActive,
+            moduleId: vMid,
+            projectName: vPname,
+            projectType: vType,
+            repoBaseUrl: vRepo,
+            briefingUrl: vBrief
+        };
+    } else if (window._evalState && window._evalState.virtualClassroom) {
+        // Fallback to memory state if DOM is not present 
+        extendedInfoData.virtualClassroom = window._evalState.virtualClassroom;
+    }
 
     console.log('Saving extended info for promotion:', promotionId);
     console.log('Data to save:', extendedInfoData);
@@ -7837,8 +7866,8 @@ function switchProgramDetailsTab(tabName) {
         if (!window._evalState || !(window._evalState.modules || []).length) {
             loadEvaluation();
         } else {
-            const extInfo = window.publicPromotionExtendedInfo || {};
-            const promoData = window.publicPromotionData || {};
+            const extInfo = (typeof extendedInfoData !== 'undefined') ? extendedInfoData : (window.publicPromotionExtendedInfo || {});
+            const promoData = (window.currentPromotion || window.publicPromotionData || {});
             initVirtualClassroomPanel(extInfo, promoData);
         }
     }
@@ -8153,6 +8182,11 @@ async function saveVirtualClassroom(isActive) {
 
         const updated = await res.json();
         window._evalState.virtualClassroom = updated.virtualClassroom || body.virtualClassroom;
+        
+        // Sync with global extendedInfoData to prevent stale overwrites on next "Guardar Todos los Cambios"
+        if (typeof extendedInfoData !== 'undefined') {
+            extendedInfoData.virtualClassroom = window._evalState.virtualClassroom;
+        }
 
         if (body.virtualClassroom.isActive && moduleId && projectName) {
             statusBadge.textContent = `Proyecto activo: ${projectName}`;
