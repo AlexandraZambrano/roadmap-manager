@@ -861,7 +861,7 @@ async function loadExtendedInfo() {
             }
 
             displayExtendedInfo(info);
-            displayPublicCompetences(info.competences || []);
+            displayPublicCompetences(info);
             await loadVirtualClassroom();
         } else {
             console.log('No extended info found or error loading:', response.status);
@@ -1243,8 +1243,16 @@ async function loadPublicStudents() {
 // ─── Competencias públicas ────────────────────────────────────────────────────
 let _publicCompetencesAll = [];
 
-function displayPublicCompetences(competences) {
-    _publicCompetencesAll = Array.isArray(competences) ? competences : [];
+function displayPublicCompetences(info) {
+    const usedCompIds = new Set();
+    if (Array.isArray(info.projectCompetences)) {
+        info.projectCompetences.forEach(pc => {
+            (pc.competenceIds || []).forEach(cid => usedCompIds.add(String(cid)));
+        });
+    }
+
+    const competences = info.competences || [];
+    _publicCompetencesAll = competences.filter(c => usedCompIds.has(String(c.id)));
     const section = document.getElementById('competences-section');
     if (!section) return;
 

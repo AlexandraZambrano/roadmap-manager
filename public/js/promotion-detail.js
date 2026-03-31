@@ -581,12 +581,20 @@ Evaluación Global al Final del Bootcamp
                 assignmentToggle.checked = !!extendedInfoData.pildorasAssignmentOpen;
             }
 
-            // Init Competencias module in view-only mode (competences are now defined per-project in Evaluation)
+            // Init Competencias module in view-only mode (only showing those used in projects)
             if (window.ProgramCompetences) {
+                const usedCompIds = new Set();
+                if (Array.isArray(extendedInfoData.projectCompetences)) {
+                    extendedInfoData.projectCompetences.forEach(pc => {
+                        (pc.competenceIds || []).forEach(cid => usedCompIds.add(String(cid)));
+                    });
+                }
+                const filteredComps = (extendedInfoData.competences || []).filter(c => usedCompIds.has(String(c.id)));
+
                 if (window.ProgramCompetences.initViewOnly) {
-                    window.ProgramCompetences.initViewOnly(extendedInfoData.competences || []);
+                    window.ProgramCompetences.initViewOnly(filteredComps);
                 } else {
-                    window.ProgramCompetences.init(extendedInfoData.competences || []);
+                    window.ProgramCompetences.init(filteredComps);
                 }
             }
 
@@ -7985,6 +7993,7 @@ async function loadEvaluation() {
         catalog.forEach(c => { if (!extIds.has(String(c.id))) enrichedCompetences.push(c); });
 
         window._evalState.modules = promo.modules || [];
+        window._evalState.programCompetences = enrichedCompetences.filter(c => extIds.has(String(c.id)));
         window._evalState.competences = enrichedCompetences;
         window._evalState.catalog = catalog;  // full catalog for competence picker
         window._evalState.allStudents = studentsData;
@@ -8252,7 +8261,8 @@ async function saveVirtualClassroom(isActive) {
     const projectType = existingEval ? (existingEval.type || 'individual') : 'individual';
 
     // Prepare current enriched competences from _evalState to sync with DB
-    const syncComps = (window._evalState.competences || []).map(c => ({
+    // IMPORTANT: Only sync the actual program competences (preventing the full catalog save)
+    const syncComps = (window._evalState.programCompetences || []).map(c => ({
         id: c.id, name: c.name, area: c.area, description: c.description || '',
         levels: c.levels || [], allTools: c.allTools || [],
         selectedTools: Array.from(c.selectedTools || []),
