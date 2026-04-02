@@ -178,13 +178,130 @@ window.verifyPromotionPassword = async function () {
     }
 };
 
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchPublicTab(tab) {
+    const progresoPanel = document.getElementById('tab-progreso');
+    const infoPanel = document.getElementById('tab-info');
+    const progresoBtn = document.getElementById('tab-progreso-btn');
+    const infoBtn = document.getElementById('tab-info-btn');
+
+    if (tab === 'progreso') {
+        progresoPanel?.classList.remove('d-none');
+        infoPanel?.classList.add('d-none');
+        progresoBtn?.classList.add('active');
+        infoBtn?.classList.remove('active');
+    } else {
+        infoPanel?.classList.remove('d-none');
+        progresoPanel?.classList.add('d-none');
+        infoBtn?.classList.add('active');
+        progresoBtn?.classList.remove('active');
+    }
+}
+
+// ── Progress bar ───────────────────────────────────────────────────────────
+function renderProgressBar() {
+    const promotion = window.publicPromotionData;
+    const students = Array.isArray(window.publicStudents) ? window.publicStudents : [];
+
+    const activeStudents = students.filter(s => !s.isWithdrawn && !s.withdrawn).length || students.length;
+
+    let pct = 0, weeksDone = 0, weeksLeft = 0, totalWeeks = 0;
+
+    if (promotion) {
+        totalWeeks = promotion.weeks || 0;
+        if (totalWeeks > 0 && promotion.startDate) {
+            const start = new Date(promotion.startDate);
+            const today = new Date();
+            const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+            weeksDone = Math.max(0, Math.min(totalWeeks, Math.floor((today - start) / msPerWeek)));
+            weeksLeft = Math.max(0, totalWeeks - weeksDone);
+            pct = Math.round((weeksDone / totalWeeks) * 100);
+        }
+    }
+
+    // Helper to update one set of bar + stats
+    function _update(barId, totalId, doneId, leftId, totalWeeksId) {
+        const bar = document.getElementById(barId);
+        if (bar) {
+            bar.style.width = pct + '%';
+            bar.setAttribute('aria-valuenow', pct);
+            bar.textContent = pct + '%';
+        }
+        const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        setVal(totalId, activeStudents || '—');
+        setVal(doneId, weeksDone || '—');
+        setVal(leftId, weeksLeft !== undefined ? weeksLeft : '—');
+        setVal(totalWeeksId, totalWeeks || '—');
+    }
+
+    _update('pp-progress-bar',      'pp-stat-total',      'pp-stat-weeks-done',      'pp-stat-weeks-left',      'pp-stat-weeks-total');
+    _update('pp-progress-bar-info', 'pp-info-stat-total', 'pp-info-stat-weeks-done', 'pp-info-stat-weeks-left', 'pp-info-stat-weeks-total');
+}
+
+// ── Next-Pildora notice ────────────────────────────────────────────────────
+function _renderNextPildoraNotice(info) {
+    const bodyEl = document.getElementById('pp-next-pildora-body');
+    if (!bodyEl) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let nextPildora = null;
+    let nextDate = null;
+
+    // Module-based
+    const modulesWithActualPildoras = Array.isArray(info.modulesPildoras)
+        ? info.modulesPildoras.filter(mp => Array.isArray(mp.pildoras) && mp.pildoras.length > 0)
+        : [];
+
+    const allPildoras = modulesWithActualPildoras.length > 0
+        ? modulesWithActualPildoras.flatMap(mp => mp.pildoras)
+        : (Array.isArray(info.pildoras) ? info.pildoras : []);
+
+    allPildoras.forEach(p => {
+        if (!p.date || !p.date.trim()) return;
+        const d = new Date(p.date);
+        d.setHours(0, 0, 0, 0);
+        if (d >= today && (!nextDate || d < nextDate)) {
+            nextDate = d;
+            nextPildora = p;
+        }
+    });
+
+    if (!nextPildora) {
+        bodyEl.innerHTML = '<em>Sin píldoras próximas.</em>';
+        return;
+    }
+
+    const students = Array.isArray(nextPildora.students) && nextPildora.students.length
+        ? nextPildora.students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
+        : '<em class="text-muted">Desierta — ¡apúntate!</em>';
+
+    bodyEl.innerHTML = `
+        <p class="mb-1"><strong>${escapeHtml(nextPildora.title || 'Píldora')}</strong></p>
+        <p class="mb-1 small"><i class="bi bi-calendar2-event me-1"></i>${escapeHtml(nextPildora.date)}</p>
+        ${nextPildora.mode ? `<p class="mb-1 small"><i class="bi bi-broadcast me-1"></i>${escapeHtml(nextPildora.mode)}</p>` : ''}
+        <p class="mb-0 small"><i class="bi bi-person me-1"></i>${students}</p>
+    `;
+}
+
+// ── Date helper ────────────────────────────────────────────────────────────
+function _formatDateShort(dateStr) {
+    if (!dateStr) return '';
+    try {
+        return new Date(dateStr).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return dateStr; }
+}
+
 async function loadPromotionContent() {
     await loadPromotion();
     // await loadModules(); // loadPromotion already calls generateGanttChart
     await loadQuickLinks();
     await loadSections();
     await loadCalendar();
+    await loadPublicStudents(); // needed for progress bar and pildoras self-assign
     await loadExtendedInfo(); // Load Program Info after main promotion data
+    renderProgressBar(); // render after both promotion and students are loaded
 }
 
 async function loadPromotion() {
@@ -198,6 +315,26 @@ async function loadPromotion() {
 
             // Store promotion data globally for module access
             window.publicPromotionData = promotion;
+
+            // Populate banner subtitles and info-tab title
+            const titleEl = document.getElementById('promotion-title');
+            if (titleEl) titleEl.textContent = `¡Hola Coder! 👋 - ${promotion.name}`;
+
+            const infoTitle = document.getElementById('pp-info-title');
+            if (infoTitle) infoTitle.textContent = promotion.name;
+
+            const sub = promotion.startDate && promotion.endDate
+                ? `${_formatDateShort(promotion.startDate)} → ${_formatDateShort(promotion.endDate)}`
+                : '';
+            const subEl = document.getElementById('pp-banner-sub');
+            if (subEl) subEl.textContent = sub;
+            const infoSub = document.getElementById('pp-info-sub');
+            if (infoSub) infoSub.textContent = sub;
+
+            document.title = `${promotion.name} - Bootcamp`;
+
+            // Store promotion data globally for module access
+            // window.publicPromotionData already set above
 
             generateGanttChart(promotion);
         }
@@ -703,7 +840,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding pildoras section to sidebar right after roadmap');
         const pildorasLi = document.createElement('li');
         pildorasLi.className = 'nav-item';
-        pildorasLi.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
+        pildorasLi.innerHTML = '<a class="nav-link" href="#pildoras-wrapper" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
 
         if (roadmapItem) {
             roadmapItem.insertAdjacentElement('afterend', pildorasLi);
@@ -717,7 +854,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding calendar section to sidebar right after pildoras');
         const calendarLi = document.createElement('li');
         calendarLi.className = 'nav-item';
-        calendarLi.innerHTML = '<a class="nav-link" href="#calendar"><i class="bi bi-calendar me-2"></i>Calendario</a>';
+        calendarLi.innerHTML = '<a class="nav-link" href="#calendar" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-calendar me-2"></i>Calendario</a>';
 
         pildorasLi.insertAdjacentElement('afterend', calendarLi);
     }
@@ -739,7 +876,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding schedule section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#horario" onclick="closeAulaVirtualPage()"><i class="bi bi-clock me-2"></i>Horario</a>';
+        li.innerHTML = '<a class="nav-link" href="#horario-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-clock me-2"></i>Horario</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -752,7 +889,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding team section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#equipo" onclick="closeAulaVirtualPage()"><i class="bi bi-people me-2"></i>Equipo</a>';
+        li.innerHTML = '<a class="nav-link" href="#equipo-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-people me-2"></i>Equipo</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -765,7 +902,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding evaluation section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#evaluacion" onclick="closeAulaVirtualPage()"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
+        li.innerHTML = '<a class="nav-link" href="#evaluacion-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -778,7 +915,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding resources section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#resources" onclick="closeAulaVirtualPage()"><i class="bi bi-tools me-2"></i>Recursos</a>';
+        li.innerHTML = '<a class="nav-link" href="#recursos-wrapper" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-tools me-2"></i>Recursos</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -791,7 +928,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding competences section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#competences-section" onclick="closeAulaVirtualPage()"><i class="bi bi-award me-2"></i>Competencias</a>';
+        li.innerHTML = '<a class="nav-link" href="#competences-section" onclick="switchPublicTab(\'info\')"><i class="bi bi-award me-2"></i>Competencias</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -807,9 +944,10 @@ async function loadCalendar() {
 
         if (response.ok) {
             const calendar = await response.json();
-            const calendarCard = document.getElementById('calendar').querySelector('.card');
-            calendarCard.classList.remove('hidden');
-            document.getElementById('calendar-iframe').src = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calendar.googleCalendarId)}&ctz=Europe/Madrid`;
+            const calendarCard = document.getElementById('calendar-card');
+            if (calendarCard) calendarCard.classList.remove('hidden');
+            const iframe = document.getElementById('calendar-iframe');
+            if (iframe) iframe.src = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calendar.googleCalendarId)}&ctz=Europe/Madrid`;
         }
     } catch (error) {
         console.error('Error loading calendar:', error);
@@ -853,12 +991,7 @@ async function loadExtendedInfo() {
             const info = await response.json();
             console.log('Extended info loaded:', info);
             console.log('Self-assignment status:', info.pildorasAssignmentOpen);
-
-            // If self-assignment is open, fetch students list
-            if (info.pildorasAssignmentOpen) {
-                console.log('Self-assignment is open, loading students...');
-                await loadPublicStudents();
-            }
+            // Students are already loaded by loadPromotionContent before this call
 
             displayExtendedInfo(info);
             displayPublicCompetences(info);
@@ -1040,19 +1173,13 @@ function openAulaVirtualPage(event) {
     const contentEl = document.getElementById('aula-virtual-content');
     if (!page || !emptyEl || !contentEl) return;
 
-    // Ocultar secciones normales (incluyendo píldoras y resto de bloques de contenido del programa)
-    const roadmap = document.getElementById('roadmap');
-    const calendar = document.getElementById('calendar');
-    const sectionsContainer = document.getElementById('sections-container');
-    const competencesSection = document.getElementById('competences-section');
-    const quickLinks = document.getElementById('quick-links');
-    const pildoras = document.getElementById('pildoras');
-    const horario = document.getElementById('horario');
-    const equipo = document.getElementById('equipo');
-    const resources = document.getElementById('resources');
-    const evaluacion = document.getElementById('evaluacion');
+    // Hide both tab panels and tab nav
+    const tabProgreso = document.getElementById('tab-progreso');
+    const tabInfo = document.getElementById('tab-info');
+    const tabNav = document.getElementById('pp-main-tabs');
+    const banner = document.querySelector('.pp-banner');
 
-    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks, pildoras, horario, equipo, resources, evaluacion].forEach(el => {
+    [tabProgreso, tabInfo, tabNav, banner].forEach(el => {
         if (el) el.classList.add('d-none');
     });
 
@@ -1076,20 +1203,21 @@ function closeAulaVirtualPage() {
     const page = document.getElementById('aula-virtual-page');
     if (page) page.classList.add('d-none');
 
-    const roadmap = document.getElementById('roadmap');
-    const calendar = document.getElementById('calendar');
-    const sectionsContainer = document.getElementById('sections-container');
-    const competencesSection = document.getElementById('competences-section');
-    const quickLinks = document.getElementById('quick-links');
-    const pildoras = document.getElementById('pildoras');
-    const horario = document.getElementById('horario');
-    const equipo = document.getElementById('equipo');
-    const resources = document.getElementById('resources');
-    const evaluacion = document.getElementById('evaluacion');
+    // Restore tab panels and nav
+    const tabNav = document.getElementById('pp-main-tabs');
+    const banner = document.querySelector('.pp-banner');
+    if (tabNav) tabNav.classList.remove('d-none');
+    if (banner) banner.classList.remove('d-none');
 
-    [roadmap, calendar, sectionsContainer, competencesSection, quickLinks, pildoras, horario, equipo, resources, evaluacion].forEach(el => {
-        if (el) el.classList.remove('d-none');
-    });
+    // Show whichever tab was active
+    const progresoBtn = document.getElementById('tab-progreso-btn');
+    if (progresoBtn && progresoBtn.classList.contains('active')) {
+        document.getElementById('tab-progreso')?.classList.remove('d-none');
+        document.getElementById('tab-info')?.classList.add('d-none');
+    } else {
+        document.getElementById('tab-info')?.classList.remove('d-none');
+        document.getElementById('tab-progreso')?.classList.add('d-none');
+    }
 
     const feedbackEl = document.getElementById('aula-virtual-feedback');
     const suffixEl = document.getElementById('aula-virtual-repo-suffix');
@@ -1257,11 +1385,11 @@ function displayPublicCompetences(info) {
     if (!section) return;
 
     if (!_publicCompetencesAll.length) {
-        section.style.display = 'none';
+        section.classList.add('d-none');
         return;
     }
 
-    section.style.display = '';
+    section.classList.remove('d-none');
 
     // Build area filter options
     const areaFilter = document.getElementById('public-competences-area-filter');
@@ -1381,40 +1509,59 @@ function _renderPublicCompetences(filterArea) {
 
 // Display Program Info sections
 function displayExtendedInfo(info) {
-    const sectionsContainer = document.getElementById('sections-container');
-    const roadmapSection = document.getElementById('roadmap');
-
     // Store extended info globally for píldoras navigation
     window.publicPromotionExtendedInfo = info;
 
     // Clear existing extended info sections to avoid duplicates on reload
-    document.querySelectorAll('#pildoras, #horario, #equipo, #recursos, #evaluacion').forEach(el => el.remove());
+    ['#pildoras-wrapper', '#recursos-wrapper', '#horario-wrapper', '#evaluacion-wrapper', '#equipo-wrapper'].forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) el.innerHTML = '';
+    });
+    // Also remove any old IDs that may have been injected
+    document.querySelectorAll('#pildoras, #horario, #equipo, #recursos, #evaluacion, #resources').forEach(el => {
+        if (!['pildoras-wrapper','recursos-wrapper','horario-wrapper','evaluacion-wrapper','equipo-wrapper'].includes(el.id)) {
+            el.remove();
+        }
+    });
 
     // Create Program Info sections
     const programInfoSections = createProgramInfoSections(info);
 
-    // Find píldoras section and insert it right after roadmap
-    const pildorasSection = programInfoSections.find(section => section.id === 'pildoras');
-    if (pildorasSection && roadmapSection) {
-        // Insert píldoras right after roadmap
-        roadmapSection.insertAdjacentElement('afterend', pildorasSection);
+    programInfoSections.forEach(section => {
+        const sectionId = section.id;
 
-        // Remove píldoras from the regular sections array
-        const otherSections = programInfoSections.filter(section => section.id !== 'pildoras');
-
-        // Add remaining sections to sections container
-        otherSections.forEach(section => {
-            sectionsContainer.appendChild(section);
-        });
-    } else {
-        // If no píldoras section, add all sections normally
-        programInfoSections.forEach(section => {
-            sectionsContainer.appendChild(section);
-        });
-    }
+        if (sectionId === 'pildoras') {
+            // Píldoras → "En progreso" tab
+            const wrapper = document.getElementById('pildoras-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'resources') {
+            // Recursos → "En progreso" tab
+            const wrapper = document.getElementById('recursos-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'horario') {
+            // Horario → "Info General" tab
+            const wrapper = document.getElementById('horario-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'evaluacion') {
+            // Evaluación → "Info General" tab
+            const wrapper = document.getElementById('evaluacion-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'equipo') {
+            // Equipo → "Info General" tab
+            const wrapper = document.getElementById('equipo-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else {
+            // Fallback: put into sections-container
+            const container = document.getElementById('sections-container');
+            if (container) container.appendChild(section);
+        }
+    });
 
     // Update sidebar to include the new sections
     updateSidebarWithExtendedInfo(info);
+
+    // Populate next-pildora notice card
+    _renderNextPildoraNotice(info);
 
     console.log('Extended info sections displayed:', programInfoSections.length);
 }
