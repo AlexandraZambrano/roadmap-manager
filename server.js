@@ -3,6 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { readFileSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -34,7 +35,7 @@ import CompetenceIndicator from './backend/models/CompetenceIndicator.js';
 import CompetenceTool from './backend/models/CompetenceTool.js';
 import CompetenceArea from './backend/models/CompetenceArea.js';
 import CompetenceResource from './backend/models/CompetenceResource.js';
-import { sendPasswordEmail } from './backend/utils/email.js';
+import { sendPasswordEmail, sendReportEmail } from './backend/utils/email.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,17 +45,45 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bootcamp-manager';
 
+// External auth base URL — driven by NODE_ENV in .env
+// NODE_ENV=development → uses EXTERNAL_AUTH_URL_DEV (local Symfony)
+// NODE_ENV=production  → uses EXTERNAL_AUTH_URL_PROD (users.coderf5.es)
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const EXTERNAL_AUTH_BASE = IS_PRODUCTION
+  ? (process.env.EXTERNAL_AUTH_URL_PROD || 'https://users.coderf5.es')
+  : (process.env.EXTERNAL_AUTH_URL_DEV  || 'http://localhost:8000');
+
+console.log(`[config] NODE_ENV=${process.env.NODE_ENV || 'development'} → EXTERNAL_AUTH_BASE=${EXTERNAL_AUTH_BASE}`);
+
+// Public key of the external auth server (https://users.coderf5.es) — used to verify RS256 tokens
+let EXTERNAL_JWT_PUBLIC_KEY = null;
+try {
+  // Try both lowercase and uppercase paths for cross-platform compatibility
+  let keyPath = join(__dirname, 'backend', 'keys', 'public.pem');
+  try {
+    EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
+  } catch {
+    // Try with uppercase Keys folder (Windows case sensitivity issue)
+    keyPath = join(__dirname, 'backend', 'Keys', 'public.pem');
+    EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
+  }
+  console.log('[auth] Loaded external JWT public key from ' + keyPath);
+} catch (e) {
+  console.warn('[auth] Could not load public key — external tokens will be rejected:', e.message);
+  console.warn('[auth] Make sure the file exists at backend/keys/public.pem or update EXTERNAL_AUTH_BASE in .env');
+}
+
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
   .then(async () => {
-    console.log('Connected to MongoDB');
     // Initialize default templates
     await initializeDefaultTemplates();
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Middleware
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -82,7 +111,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5500',
-  'http://127.0.0.1:5500',
+  'http://localhost:5500',
   'https://alexandrazambrano.github.io',
   'https://roadmap-manager-latest.onrender.com'
 ];
@@ -92,7 +121,6 @@ app.use(cors({
     // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
-      console.log('CORS Blocked Origin:', origin);
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
     }
@@ -103,6 +131,15 @@ app.use(cors({
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// Public config endpoint — exposes safe runtime variables to the frontend
+// Never put secrets here, only public URLs
+app.get('/api/config', (req, res) => {
+  res.json({
+    externalAuthUrl: EXTERNAL_AUTH_BASE,
+    env: IS_PRODUCTION ? 'production' : 'development'
+  });
+});
 
 // Serve static files from public directory
 app.use(express.static(join(__dirname, 'public')));
@@ -165,7 +202,6 @@ async function initializeTestAccounts() {
         email: acc.email,
         password: hashedPassword
       });
-      console.log(`Test ${acc.role} account created: ${acc.email}`);
     }
   }
 }
@@ -174,14 +210,73 @@ initializeTestAccounts();
 
 // --- Auth Middleware ---
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
+  // 1. Try verifying with the external RS256 public key (tokens from users.coderf5.es)
+  if (EXTERNAL_JWT_PUBLIC_KEY) {
+    try {
+      const decoded = jwt.verify(token, EXTERNAL_JWT_PUBLIC_KEY, { algorithms: ['RS256'] });
+      // Map external payload to our internal user shape:
+      // External: { userId, email, roles: ['ROLE_USER'] }
+      // Internal: { id, email, role }
+      const roles = decoded.roles || [];
+      let role = 'teacher'; // default for external users
+      if (roles.includes('ROLE_SUPER_ADMIN') || roles.includes('ROLE_SUPERADMIN')) role = 'superadmin';
+      else if (roles.includes('ROLE_ADMIN') && roles.includes('ROLE_USER')) role = 'superadmin'; // ROLE_ADMIN+ROLE_USER → admin button
+      else if (roles.includes('ROLE_ADMIN')) role = 'teacher'; // ROLE_ADMIN alone → teacher only
+      else if (roles.includes('ROLE_STUDENT')) role = 'student';
+
+      // External token may store email under different field names
+      const externalEmail = decoded.email || decoded.sub || decoded.username || decoded.mail || null;
+
+      // Resolve local MongoDB teacher id by email so existing promotion references keep working.
+      // The external userId is different from the local UUID stored in Teacher.id / teacherId.
+      try {
+        if (!externalEmail) throw new Error(`No email field found in token. Token keys: ${JSON.stringify(Object.keys(decoded))}`);
+
+        let localTeacher = await Teacher.findOne({ email: externalEmail.toLowerCase() });
+        if (!localTeacher) {
+          // Auto-provision: create a minimal teacher record so the user can see/create promotions
+          const tempPw = await bcrypt.hash(uuidv4(), 10); // random unusable password
+          localTeacher = await Teacher.create({
+            id: uuidv4(),
+            name: decoded.name || decoded.username || externalEmail.split('@')[0],
+            email: externalEmail.toLowerCase(),
+            password: tempPw
+          });
+        }
+        req.user = {
+          id: localTeacher.id, // ← local UUID, matches teacherId / collaborators fields
+          email: externalEmail.toLowerCase(),
+          role,
+          _externalToken: true
+        };
+      } catch (dbErr) {
+        console.error('[verifyToken] DB lookup failed, using external id as fallback:', dbErr.message);
+        req.user = {
+          id: String(decoded.userId || decoded.sub || decoded.id),
+          email: externalEmail || '',
+          role,
+          _externalToken: true
+        };
+      }
+      return next();
+    } catch (err) {
+      console.error('[verifyToken] RS256 verification failed:', err.message);
+      // Not a valid external token — fall through to internal check
+    }
+  } else {
+    console.warn('[verifyToken] EXTERNAL_JWT_PUBLIC_KEY not loaded, skipping external token verification');
+  }
+
+  // 2. Try verifying with our internal HS256 secret (admin / student local accounts)
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (error) {
+    console.error('[verifyToken] Token verification failed - both external RS256 and internal HS256 failed:', error.message);
     res.status(401).json({ error: 'Invalid token' });
   }
 };
@@ -191,33 +286,355 @@ const canEditPromotion = (promotion, userId) => {
   return promotion.teacherId === userId || (promotion.collaborators && promotion.collaborators.includes(userId));
 };
 
+// ==================== EVALUATION API PROXY ====================
+// Proxies requests to https://evaluation.coderf5.es/v1/ forwarding the user's JWT token.
+// Supported: GET /api/eval/competences, /api/eval/areas, /api/eval/tools,
+//            /api/eval/indicators, /api/eval/levels, /api/eval/resources
+// Also supports query params and sub-paths (e.g. /api/eval/competences/search?query=x)
+
+const EVAL_API_BASE = 'https://evaluation.coderf5.es/v1';
+
+async function proxyToEvalApi(req, res, evalPath) {
+  try {
+    const token = req.headers.authorization; // pass through as-is (Bearer <token>)
+    const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    const targetUrl = `${EVAL_API_BASE}${evalPath}${qs}`;
+
+    const fetchOpts = {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json', Authorization: token || '' }
+    };
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOpts.body = JSON.stringify(req.body);
+    }
+
+    const extRes = await fetch(targetUrl, fetchOpts);
+    const text = await extRes.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+
+    // For GET requests that return paginated DRF responses, aggregate all pages and return flat array
+    if (req.method === 'GET' && data && !Array.isArray(data) && data.results && data.next) {
+      let allResults = [...data.results];
+      let nextUrl = data.next;
+      while (nextUrl) {
+        const nextRes = await fetch(nextUrl, { headers: { Authorization: token || '' } });
+        if (!nextRes.ok) break;
+        const nextJson = await nextRes.json();
+        allResults = allResults.concat(nextJson.results || []);
+        nextUrl = nextJson.next || null;
+      }
+      return res.status(extRes.status).json({ count: data.count, results: allResults, next: null, previous: null });
+    }
+
+    res.status(extRes.status).json(data);
+  } catch (err) {
+    console.error('[eval proxy] Error:', err.message);
+    res.status(502).json({ error: 'Evaluation API unreachable', detail: err.message });
+  }
+}
+
+// Mount eval proxy routes (verifyToken ensures only authenticated users can call them)
+app.get('/api/eval/competences*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/competences', '') || '/';
+  proxyToEvalApi(req, res, `/competences${sub === '/' ? '/' : sub}`);
+});
+app.get('/api/eval/areas*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/areas', '') || '/';
+  proxyToEvalApi(req, res, `/areas${sub === '/' ? '/' : sub}`);
+});
+app.get('/api/eval/tools*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/tools', '') || '/';
+  proxyToEvalApi(req, res, `/tools${sub === '/' ? '/' : sub}`);
+});
+app.get('/api/eval/indicators*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/indicators', '') || '/';
+  proxyToEvalApi(req, res, `/indicators${sub === '/' ? '/' : sub}`);
+});
+app.get('/api/eval/levels*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/levels', '') || '/';
+  proxyToEvalApi(req, res, `/levels${sub === '/' ? '/' : sub}`);
+});
+app.get('/api/eval/resources*', verifyToken, (req, res) => {
+  const sub = req.path.replace('/api/eval/resources', '') || '/';
+  proxyToEvalApi(req, res, `/resources${sub === '/' ? '/' : sub}`);
+});
+
 // ==================== COMPETENCES CATALOG ====================
 
-// Get all areas from DB
+// Helper: call evaluation API using the authenticated user's token.
+// The token is the RS256 JWT issued by users.coderf5.es — the same one the user
+// logged in with. It is valid for evaluation.coderf5.es as both services share
+// the same auth provider.
+// Supports Django REST pagination — fetches all pages automatically.
+async function evalApiGet(path, userToken) {
+  if (!userToken) throw new Error('No user token available for eval API call');
+
+  const baseUrl = `${EVAL_API_BASE}${path}`;
+  // Add page_size=200 to get all results in one shot (avoids pagination for small catalogs)
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  const url = `${baseUrl}${sep}page_size=200`;
+
+  console.log(`[evalApiGet] 🔄 Fetching: ${url}`);
+  console.log(`[evalApiGet] Token (first 20 chars): ${userToken.substring(0, 20)}...`);
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${userToken}`, 'Content-Type': 'application/json' }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    // Log as info/debug, not error — this is expected when external API is unavailable
+    console.log(`[evalApiGet] ❌ External API ${path} returned ${res.status}`);
+    console.log(`[evalApiGet] Response body: ${errText.substring(0, 500)}`);
+    throw new Error(`Eval API ${path} → ${res.status}`);
+  }
+
+  const json = await res.json();
+  console.log(`[evalApiGet] ✓ Successfully fetched ${path} from Eval API`);
+
+  // Handle Django REST paginated response: { count, next, results: [] }
+  if (!Array.isArray(json) && json.results) {
+    let allResults = [...json.results];
+
+    // Fetch remaining pages if any
+    let nextUrl = json.next;
+    while (nextUrl) {
+      const nextRes = await fetch(nextUrl, {
+        headers: { Authorization: `Bearer ${userToken}`, 'Content-Type': 'application/json' }
+      });
+      if (!nextRes.ok) break;
+      const nextJson = await nextRes.json();
+      allResults = allResults.concat(nextJson.results || []);
+      nextUrl = nextJson.next || null;
+    }
+
+    return allResults;
+  }
+
+  // Plain array response
+  const rows = Array.isArray(json) ? json : [];
+  return rows;
+}
+
+// Normalise a raw competence object from the external Eval API into the internal shape
+// expected by program-competences.js / promotion-detail.js.
+//
+// Real API shape (evaluation.coderf5.es/v1/competences/):
+// {
+//   id, name, description,
+//   area: ["Fullstack", "IA", ...],          ← array of strings, NOT objects
+//   tools: [{
+//     id, name, description,
+//     indicators: [{id, name, description, levelId}],  ← levelId is a number
+//     referents: [...],
+//     resources: [...]
+//   }]
+// }
+//
+// Internal shape expected by frontend:
+// {
+//   id, name, description,
+//   areas: [{id, name, icon}],               ← built from area strings
+//   tools: [{id, name, description}],
+//   levels: [{levelId, levelName, levelDescription, indicators:[{id, name, description}]}],
+//   indicators: { initial: [...], medio: [...], advance: [...] }  ← competence indicators by level
+// }
+function normaliseEvalCompetence(comp) {
+  // area is an array of strings in the real API
+  const areaStrings = Array.isArray(comp.area) ? comp.area : [];
+  const areas = areaStrings.map((name, idx) => ({ id: idx + 1, name, icon: '' }));
+
+  // tools array — extract tool objects with their indicators (for tool-based evaluation)
+  const toolsRaw = comp.tools || [];
+  console.log('❌❌😉😉💜💜💜📌📌  toolsRaw:', toolsRaw);
+  const tools = toolsRaw.map(t => ({ id: t.id, name: t.name, description: t.description, indicators: t.indicators, referents: t.referents, resources: t.resources|| '' }));
+
+  // Build levels by collecting indicators from ALL tools and grouping by levelId
+  // Each tool has its own indicators with a numeric levelId field
+  const levelMap = {};
+  toolsRaw.forEach(tool => {
+    (tool.indicators || []).forEach(ind => {
+      const lvlId = ind.levelId ?? ind.level_id ?? ind.level ?? 0;
+      const lvlName = lvlId === 1 ? 'Inicial' : lvlId === 2 ? 'Medio' : lvlId === 3 ? 'Avanzado' : `Nivel ${lvlId}`;
+      if (!levelMap[lvlId]) {
+        levelMap[lvlId] = { levelId: lvlId, levelName: lvlName, levelDescription: '', indicators: [] };
+      }
+      // Avoid duplicate indicators (same indicator may appear in multiple tools)
+      const alreadyAdded = levelMap[lvlId].indicators.some(i => i.id === ind.id);
+      if (!alreadyAdded) {
+        levelMap[lvlId].indicators.push({
+          id: ind.id,
+          name: ind.name,
+          description: ind.description || '',
+          toolName: tool.name  // track which tool this indicator belongs to
+        });
+      }
+    });
+  });
+  const levels = Object.values(levelMap).sort((a, b) => a.levelId - b.levelId);
+
+  // Extract competence indicators grouped by level (initial/medio/advance)
+  // These come directly from comp.indicators and are used to determine competence level
+  const competenceIndicators = {
+    initial: (comp.indicators?.initial || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    })),
+    medio: (comp.indicators?.medio || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    })),
+    advance: (comp.indicators?.advance || []).map(ind => ({
+      id: ind.id,
+      name: ind.name || '',
+      description: ind.description || ''
+    }))
+  };
+
+  return {
+    id: comp.id,
+    name: comp.name,
+    description: comp.description || '',
+    areas,          // [{id, name, icon}] built from area string array
+    areaNames: areaStrings,  // keep original string array for easy filtering
+    tools,          // [{id, name, description}]
+    levels,         // [{levelId, levelName, levelDescription, indicators:[...]}]
+    indicators: competenceIndicators  // {initial: [...], medio: [...], advance: [...]} for competence level assessment
+  };
+}
+
+// GET /api/areas — tries external evaluation API first, falls back to local DB
 app.get('/api/areas', verifyToken, async (req, res) => {
   try {
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      const rows = await evalApiGet('/areas/', token);
+      console.log('[GET /api/areas] ✓ Fetched from external API:', rows.length, 'areas');
+      return res.json(rows);
+    } catch (evalErr) {
+      console.log('[GET /api/areas] Using local DB fallback (external API unavailable)');
+    }
+    // Fallback to local database
     const areas = await Area.find({}).sort({ id: 1 }).lean();
-    console.log(`[GET /api/areas] Found ${areas.length} areas:`, areas.map(a => `${a.id}:${a.name}`));
+    console.log('[GET /api/areas] ✓ Fallback returned', areas.length, 'areas from local DB');
     res.json(areas);
   } catch (error) {
-    console.error('[GET /api/areas] Error:', error);
+    console.error('[GET /api/areas] Server error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get all competences enriched with areas, indicators (grouped by level) and tools
+// GET /api/tools — tries external evaluation API first, falls back to local DB
+app.get('/api/tools', verifyToken, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      const rows = await evalApiGet('/tools/', token);
+      console.log('[GET /api/tools] ✓ Fetched from external API:', rows.length, 'tools');
+      return res.json(rows);
+    } catch (evalErr) {
+      console.log('[GET /api/tools] Using local DB fallback (external API unavailable)');
+    }
+    const tools = await Tool.find({}).sort({ id: 1 }).lean();
+    console.log('[GET /api/tools] ✓ Fallback returned', tools.length, 'tools from local DB');
+    res.json(tools);
+  } catch (error) {
+    console.error('[GET /api/tools] Server error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/indicators — tries external evaluation API first, falls back to local DB
+app.get('/api/indicators', verifyToken, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      const rows = await evalApiGet('/indicators/', token);
+      console.log('[GET /api/indicators] ✓ Fetched from external API:', rows.length, 'indicators');
+      return res.json(rows);
+    } catch (evalErr) {
+      console.log('[GET /api/indicators] Using local DB fallback (external API unavailable)');
+    }
+    const indicators = await Indicator.find({}).lean();
+    console.log('[GET /api/indicators] ✓ Fallback returned', indicators.length, 'indicators from local DB');
+    res.json(indicators);
+  } catch (error) {
+    console.error('[GET /api/indicators] Server error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/levels — tries external evaluation API first, falls back to local DB
+app.get('/api/levels', verifyToken, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      const rows = await evalApiGet('/levels/', token);
+      console.log('[GET /api/levels] ✓ Fetched from external API:', rows.length, 'levels');
+      return res.json(rows);
+    } catch (evalErr) {
+      console.log('[GET /api/levels] Using local DB fallback (external API unavailable)');
+    }
+    const levels = await Level.find({}).lean();
+    console.log('[GET /api/levels] ✓ Fallback returned', levels.length, 'levels from local DB');
+    res.json(levels);
+  } catch (error) {
+    console.error('[GET /api/levels] Server error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/resources — tries external evaluation API first, falls back to local DB
+app.get('/api/resources', verifyToken, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      const rows = await evalApiGet('/resources/', token);
+      console.log('[GET /api/resources] ✓ Fetched from external API:', rows.length, 'resources');
+      return res.json(rows);
+    } catch (evalErr) {
+      console.log('[GET /api/resources] Using local DB fallback (external API unavailable)');
+    }
+    const resources = await Resource.find({}).lean();
+    console.log('[GET /api/resources] ✓ Fallback returned', resources.length, 'resources from local DB');
+    res.json(resources);
+  } catch (error) {
+    console.error('[GET /api/resources] Server error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/competences — tries external evaluation API first (normalised), falls back to local DB
 app.get('/api/competences', verifyToken, async (req, res) => {
   try {
-    // Fetch all reference data in parallel
+    const token = req.headers.authorization?.split(' ')[1];
+    try {
+      console.log('[GET /api/competences] 🔄 Attempting to fetch from external API: https://evaluation.coderf5.es/v1/competences/');
+      const rows = await evalApiGet('/competences/', token);
+      console.log('[GET /api/competences] ✓ Successfully fetched', rows, 'raw competences from external API');
+      const normalised = rows.map(normaliseEvalCompetence);
+      console.log('❌❌😉😉💜💜💜📌📌[GET /api/competences] ✓ Normalised data includes:', normalised[0].tools, 'competences with areas, tools, indicators');
+      if (normalised.length > 0) {
+        console.log('[GET /api/competences] ✓ Sample competence structure:', JSON.stringify({
+          id: normalised[0].id,
+          name: normalised[0].name,
+          areas: normalised[0].areas.slice(0, 1),
+          tools: normalised[0].tools.slice(0, 1),
+          indicators: normalised[0].indicators
+        }, null, 2));
+      }
+      return res.json(normalised);
+    } catch (evalErr) {
+      console.log('[GET /api/competences] ⚠️ External API unavailable, using local DB fallback. Error:', evalErr.message);
+    }
+
+    // ── Local DB fallback (full enrichment) ──────────────────────────────────
     const [
-      competences,
-      indicators,
-      tools,
-      areas,
-      levels,
-      compIndicators,
-      compTools,
-      compAreas
+      competences, indicators, tools, areas, levels,
+      compIndicators, compTools, compAreas
     ] = await Promise.all([
       Competence.find({}).sort({ id: 1 }).lean(),
       Indicator.find({}).lean(),
@@ -229,82 +646,44 @@ app.get('/api/competences', verifyToken, async (req, res) => {
       CompetenceArea.find({}).lean()
     ]);
 
-    console.log(`[GET /api/competences] Raw counts — competences:${competences.length} indicators:${indicators.length} tools:${tools.length} areas:${areas.length} levels:${levels.length} compIndicators:${compIndicators.length} compTools:${compTools.length} compAreas:${compAreas.length}`);
-    console.log('[GET /api/competences] Areas in DB:', areas.map(a => `${a.id}:${a.name}`));
-    console.log('[GET /api/competences] First 5 compAreas docs:', compAreas.slice(0, 5));
-    console.log('[GET /api/competences] First 5 compIndicators docs:', compIndicators.slice(0, 5));
-    console.log('[GET /api/competences] First 5 compTools docs:', compTools.slice(0, 5));
+    console.log('[GET /api/competences] Local DB fallback:', competences.length, 'competences');
 
-    // Build lookup maps
     const indicatorMap = Object.fromEntries(indicators.map(i => [i.id, i]));
-    const toolMap = Object.fromEntries(tools.map(t => [t.id, t]));
-    const areaMap = Object.fromEntries(areas.map(a => [a.id, a]));
-    const levelMap = Object.fromEntries(levels.map(l => [l.id, l]));
+    const toolMap      = Object.fromEntries(tools.map(t => [t.id, t]));
+    const areaMap      = Object.fromEntries(areas.map(a => [a.id, a]));
+    const levelMap     = Object.fromEntries(levels.map(l => [l.id, l]));
 
-    // Group relations by id_competence (DB field names use snake_case)
-    const indsByComp = {};
-    compIndicators.forEach(ci => {
-      if (!indsByComp[ci.id_competence]) indsByComp[ci.id_competence] = [];
-      indsByComp[ci.id_competence].push(ci.id_indicator);
-    });
+    const indsByComp  = {};
+    compIndicators.forEach(ci => { (indsByComp[ci.id_competence] ??= []).push(ci.id_indicator); });
     const toolsByComp = {};
-    compTools.forEach(ct => {
-      if (!toolsByComp[ct.id_competence]) toolsByComp[ct.id_competence] = [];
-      toolsByComp[ct.id_competence].push(ct.id_tool);
-    });
+    compTools.forEach(ct => { (toolsByComp[ct.id_competence] ??= []).push(ct.id_tool); });
     const areasByComp = {};
-    compAreas.forEach(ca => {
-      if (!areasByComp[ca.id_competence]) areasByComp[ca.id_competence] = [];
-      areasByComp[ca.id_competence].push(ca.id_area);
-    });
+    compAreas.forEach(ca => { (areasByComp[ca.id_competence] ??= []).push(ca.id_area); });
 
-    console.log('[GET /api/competences] areasByComp (competenceId → areaIds):', JSON.stringify(areasByComp));
-    console.log('[GET /api/competences] areaMap keys:', Object.keys(areaMap));
-
-    // Build enriched competences
     const enriched = competences.map(comp => {
-      // Areas
       const compAreasList = (areasByComp[comp.id] || [])
-        .map(aId => areaMap[aId])
-        .filter(Boolean)
+        .map(aId => areaMap[aId]).filter(Boolean)
         .map(a => ({ id: a.id, name: a.name, icon: a.icon }));
 
-      // Indicators grouped by level
-      const rawIndicators = (indsByComp[comp.id] || [])
-        .map(iId => indicatorMap[iId])
-        .filter(Boolean);
-
+      const rawIndicators = (indsByComp[comp.id] || []).map(iId => indicatorMap[iId]).filter(Boolean);
       const indicatorsByLevel = {};
       rawIndicators.forEach(ind => {
         const lvl = ind.levelId || 0;
         if (!indicatorsByLevel[lvl]) {
-          indicatorsByLevel[lvl] = {
-            levelId: lvl,
-            levelName: levelMap[lvl]?.name || `Nivel ${lvl}`,
-            levelDescription: levelMap[lvl]?.description || '',
-            indicators: []
-          };
+          indicatorsByLevel[lvl] = { levelId: lvl, levelName: levelMap[lvl]?.name || `Nivel ${lvl}`, levelDescription: levelMap[lvl]?.description || '', indicators: [] };
         }
         indicatorsByLevel[lvl].indicators.push({ id: ind.id, name: ind.name, description: ind.description });
       });
       const levels_grouped = Object.values(indicatorsByLevel).sort((a, b) => a.levelId - b.levelId);
 
-      // Tools
       const compToolsList = (toolsByComp[comp.id] || [])
-        .map(tId => toolMap[tId])
-        .filter(Boolean)
+        .map(tId => toolMap[tId]).filter(Boolean)
         .map(t => ({ id: t.id, name: t.name, description: t.description }));
 
-      return {
-        id: comp.id,
-        name: comp.name,
-        description: comp.description,
-        areas: compAreasList,
-        levels: levels_grouped,
-        tools: compToolsList
-      };
+      return { id: comp.id, name: comp.name, description: comp.description, areas: compAreasList, levels: levels_grouped, tools: compToolsList };
     });
 
+    console.log(`[GET /api/competences] Returning ${enriched.length} competences from local DB fallback`);
     res.json(enriched);
   } catch (error) {
     console.error('[GET /api/competences] Error:', error);
@@ -321,6 +700,7 @@ app.get('/api/promotions/:promotionId/access-password', verifyToken, async (req,
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
+    console.log('[GET access-password] Promotion found:', promotion.id, 'Password:', promotion.accessPassword);
     res.json({ accessPassword: promotion.accessPassword || null });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -453,6 +833,57 @@ app.delete('/api/promotions/:promotionId/teaching-content', verifyToken, async (
     await promotion.save();
 
     res.json({ message: 'Teaching content URL removed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== ASANA WORKSPACE ACCESS ====================
+// Configuration for Asana workspace link (follows same pattern as Teaching Content)
+
+// Get Asana workspace URL for this promotion
+app.get('/api/promotions/:promotionId/asana-workspace', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    res.json({ asanaWorkspaceUrl: promotion.asanaWorkspaceUrl || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Set Asana workspace URL (teacher only)
+app.post('/api/promotions/:promotionId/asana-workspace', verifyToken, async (req, res) => {
+  try {
+    const { asanaWorkspaceUrl } = req.body;
+    if (!asanaWorkspaceUrl) return res.status(400).json({ error: 'Asana workspace URL is required' });
+
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    promotion.asanaWorkspaceUrl = asanaWorkspaceUrl;
+    await promotion.save();
+
+    res.json({ message: 'Asana workspace URL updated', asanaWorkspaceUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove Asana workspace URL (teacher only)
+app.delete('/api/promotions/:promotionId/asana-workspace', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    promotion.asanaWorkspaceUrl = undefined;
+    await promotion.save();
+
+    res.json({ message: 'Asana workspace URL removed' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -735,7 +1166,6 @@ async function initializeDefaultTemplates() {
       { $set: template },
       { upsert: true, strict: false, runValidators: false, returnDocument: 'after' }
     );
-    console.log(`[initTemplates] ${template.id}: modules=${result?.modules?.length || 0}, competences=${result?.competences?.length || 0}`);
   }
 }
 
@@ -800,11 +1230,13 @@ app.delete('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    if (!template.isCustom) {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+    if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot delete system templates' });
     }
 
-    if (template.createdBy !== req.user.id) {
+    if (!isAdmin && template.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -824,11 +1256,13 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    if (!template.isCustom) {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+    if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot edit system templates' });
     }
 
-    if (template.createdBy !== req.user.id) {
+    if (!isAdmin && template.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -858,65 +1292,143 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
 
 // ==================== AUTHENTICATION ====================
 
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    if (!email || !password || !name) return res.status(400).json({ error: 'Email, password, and name are required' });
-
-    const existing = await Teacher.findOne({ email });
-    if (existing) return res.status(400).json({ error: 'Email already registered' });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword });
-    const token = jwt.sign({ id: teacher.id, email: teacher.email, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ message: 'Teacher registered successfully', token, user: { id: teacher.id, name: teacher.name, email: teacher.email, role: 'teacher' } });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
+// Proxy to external auth API — avoids CORS issues when called from the browser
+app.post('/api/auth/external-login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-    let user = null;
-    let userRole = null;
+    const extRes = await fetch(`${EXTERNAL_AUTH_BASE}/infouser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
 
-    // Try Admin first
-    user = await Admin.findOne({ email });
-    if (user && (await bcrypt.compare(password, user.password))) {
-      userRole = 'admin';
+    // Read as text first — Symfony may return an HTML debug page instead of JSON
+    // (e.g. when APP_DEBUG=true and a dump() call is present in the controller)
+    const rawText = await extRes.text();
+    let extData = {};
+    try {
+      extData = JSON.parse(rawText);
+    } catch {
+      // Response was not JSON (HTML debug page, plain text error, etc.)
+      console.error('[external-login proxy] Symfony returned non-JSON response. First 200 chars:', rawText.substring(0, 200));
+      return res.status(502).json({ error: 'Auth server returned an unexpected response. Check Symfony logs (remove any dump() calls).' });
     }
 
-    // Try Teacher
-    if (!user) {
-      user = await Teacher.findOne({ email });
-      if (user && (await bcrypt.compare(password, user.password))) {
-        userRole = 'teacher';
-      }
+    if (extData.data?.token) {
+      // Decode without verify just to log the roles
+      const payload = JSON.parse(Buffer.from(extData.data.token.split('.')[1], 'base64').toString());
     }
 
-    // Try Student (for reference, though students typically don't login)
-    if (!user) {
-      user = await Student.findOne({ email });
-      if (user && (await bcrypt.compare(password, user.password))) {
-        userRole = 'student';
-      }
+    if (extRes.ok && extData.success && extData.data?.token) {
+      return res.json({ success: true, data: extData.data });
     }
 
-    if (user && userRole) {
-      const token = jwt.sign({ id: user.id, email: user.email, role: userRole }, JWT_SECRET, { expiresIn: '7d' });
-      // Include userRole (Formador/a, CoFormador/a, Coordinador/a) for teacher accounts
-      const userData = { id: user.id, name: user.name, email: user.email, role: userRole };
-      if (userRole === 'teacher' && user.userRole) userData.userRole = user.userRole;
-      return res.json({ message: 'Login successful', token, user: userData });
-    }
-
-    return res.status(401).json({ error: 'Invalid email or password' });
+    // External API returned a failure — pass status and message through so the client knows
+    // whether it was wrong credentials (401) or user not found (404) vs other errors
+    const statusToReturn = extRes.status === 404 ? 404 : 401;
+    const errorMsg = extData.message || extData.error || 'Credenciales incorrectas';
+    return res.status(statusToReturn).json({ success: false, status: extRes.status, message: errorMsg });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[external-login proxy] Error:', error.message);
+    res.status(502).json({ error: 'External auth server unreachable' });
   }
+});
+
+// Proxy to external change-password verification
+app.post('/api/auth/external-verify', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+    const extRes = await fetch(`${EXTERNAL_AUTH_BASE}/infouser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const extData = await extRes.json();
+    if (extRes.ok && extData.success) {
+      return res.json({ success: true });
+    }
+    return res.status(401).json({ success: false, message: extData.message || 'Contraseña incorrecta' });
+  } catch (error) {
+    res.status(502).json({ error: 'External auth server unreachable' });
+  }
+});
+
+// Proxy to external reset-password API — changes password via users.coderf5.es
+// Body: { email, currentPassword, newPassword }
+app.post('/api/auth3000password', verifyToken, async (req, res) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body;
+    if (!email || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'email, currentPassword and newPassword are required' });
+    }
+
+    const extRes = await fetch(`${EXTERNAL_AUTH_BASE}/reset-password/api-request-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, currentPassword, newPassword })
+    });
+
+    const extData = await extRes.json();
+    if (extRes.ok && (extData.success !== false)) {
+      return res.json({ success: true, message: extData.message || 'Contraseña actualizada correctamente' });
+    }
+    const statusToReturn = extRes.status >= 400 ? extRes.status : 400;
+    return res.status(statusToReturn).json({ success: false, message: extData.message || extData.error || 'Error al cambiar la contraseña' });
+  } catch (error) {
+    console.error('[reset-password proxy] Error:', error.message);
+    res.status(502).json({ error: 'External auth server unreachable' });
+  }
+});
+
+// Public proxy for forgot-password (no token required) — calls external reset-password API
+// Body: { email }
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'El correo electrónico es obligatorio.' });
+
+    const extRes = await fetch(`${EXTERNAL_AUTH_BASE}/reset-password/api-request-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    let data = {};
+    const text = await extRes.text();
+    try { data = JSON.parse(text); } catch { /* no JSON body */ }
+
+    if (extRes.ok) {
+      return res.json({ success: true, message: data.message || 'En breves recibirás un correo con el enlace para restablecer tu contraseña.' });
+    }
+    return res.status(extRes.status >= 400 ? extRes.status : 400).json({
+      success: false,
+      message: data.message || data.error || 'No se pudo enviar el correo. Comprueba la dirección e inténtalo de nuevo.'
+    });
+  } catch (error) {
+    console.error('[forgot-password proxy] Error:', error.message);
+    res.status(502).json({ error: 'Servidor de autenticación no disponible. Inténtalo más tarde.' });
+  }
+});
+
+// Local register is disabled — user registration is handled exclusively by admins
+// via POST /api/admin/teachers, which registers in the external auth system (users.coderf5.es).
+app.post('/api/auth/register', (req, res) => {
+  res.status(410).json({
+    error: 'El registro de usuarios no está disponible públicamente. Un administrador debe crear la cuenta desde el panel de administración.'
+  });
+});
+
+// Local login is disabled — authentication is handled exclusively via the external auth API.
+// Use POST /api/auth/external-login instead.
+app.post('/api/auth/login', (req, res) => {
+  res.status(410).json({
+    error: 'El login local no está disponible. Por favor, inicia sesión con tus credenciales de users.coderf5.es.'
+  });
 });
 
 // ==================== PROFILE MANAGEMENT ====================
@@ -927,7 +1439,7 @@ app.get('/api/profile', verifyToken, async (req, res) => {
     let user = null;
     const { role } = req.user;
 
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'superadmin') {
       user = await Teacher.findOne({ id: req.user.id });
     } else if (role === 'admin') {
       user = await Admin.findOne({ id: req.user.id });
@@ -965,7 +1477,7 @@ app.put('/api/profile', verifyToken, async (req, res) => {
 
     let user = null;
 
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'superadmin') {
       user = await Teacher.findOneAndUpdate(
         { id: req.user.id },
         {
@@ -1096,7 +1608,6 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
     const students = await Student.find({ promotionId: req.params.promotionId });
-    console.log('Found students:', students.map(s => ({ customId: s.id, mongoId: s._id, name: s.name, lastname: s.lastname, email: s.email })));
 
     // Normalize the response to ensure consistent ID field
     const normalizedStudents = students.map(student => ({
@@ -1109,7 +1620,9 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
       nationality: student.nationality,
       profession: student.profession,
       address: student.address,
-      promotionId: student.promotionId
+      promotionId: student.promotionId,
+      isWithdrawn: !!student.isWithdrawn,
+      withdrawal: student.withdrawal || {}
     }));
 
     res.json(normalizedStudents);
@@ -1123,11 +1636,9 @@ app.get('/api/promotions/:promotionId/students', verifyToken, async (req, res) =
 app.get('/api/promotions/:promotionId/attendance', verifyToken, async (req, res) => {
   try {
     const { month } = req.query; // Format: YYYY-MM
-    console.log('Attendance request - promotionId:', req.params.promotionId, 'month:', month);
     if (!month) return res.status(400).json({ error: 'Month is required (YYYY-MM)' });
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
-    console.log('Promotion found:', promotion ? promotion.id : 'NOT FOUND');
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
@@ -1153,7 +1664,6 @@ app.put('/api/promotions/:promotionId/attendance', verifyToken, async (req, res)
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    console.log('UPDATING ATTENDANCE - payload:', { studentId, date, status, note });
 
     const updateData = { status };
     if (note !== undefined && note !== null) updateData.note = note;
@@ -1164,7 +1674,6 @@ app.put('/api/promotions/:promotionId/attendance', verifyToken, async (req, res)
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    console.log('UPDATED RECORD IN DB:', attendance);
     res.json(attendance);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1172,6 +1681,78 @@ app.put('/api/promotions/:promotionId/attendance', verifyToken, async (req, res)
 });
 
 // Export attendance for entire promotion period as Excel
+// Export students to Excel
+app.get('/api/promotions/:promotionId/students/export', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    let query = { promotionId: req.params.promotionId };
+    
+    // Filter by IDs if provided (comma-separated list)
+    if (req.query.ids) {
+      const ids = req.query.ids.split(',');
+      query.id = { $in: ids };
+    }
+
+    const students = await Student.find(query).sort({ isWithdrawn: 1, name: 1, lastname: 1 });
+
+    if (students.length === 0) {
+      return res.status(400).json({ error: 'No se encontraron estudiantes para exportar' });
+    }
+
+    // Build worksheet data using array of arrays
+    const headers = [
+      'Nombre', 'Apellidos', 'Email', 'Teléfono', 'Edad', 'Género',
+      'Situación Administrativa', 'Nacionalidad', 'Documento ID',
+      'Nivel Inglés', 'Nivel Educativo', 'Profesión', 'Comunidad', 'Estado'
+    ];
+    
+    const worksheetData = [headers];
+
+    students.forEach(s => {
+      worksheetData.push([
+        s.name,
+        s.lastname,
+        s.email,
+        s.phone,
+        s.age,
+        s.gender,
+        s.administrativeSituation,
+        s.nationality,
+        s.identificationDocument,
+        s.englishLevel,
+        s.educationLevel,
+        s.profession,
+        s.community,
+        s.isWithdrawn ? 'BAJA' : 'Activo'
+      ]);
+    });
+
+    const worksheet = xlsx.utils.aoa_to_sheet(worksheetData);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Estudiantes');
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 8 }, { wch: 10 },
+      { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 20 },
+      { wch: 20 }, { wch: 10 }
+    ];
+
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=estudiantes-${promotion.name.replace(/\s+/g, '-')}.xlsx`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Error exporting students:', error);
+    res.status(500).json({ error: `Error al exportar estudiantes: ${error.message}` });
+  }
+});
+
 app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (req, res) => {
   try {
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
@@ -1185,7 +1766,6 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
       return res.status(400).json({ error: 'La promoción debe tener fechas de inicio y fin válidas' });
     }
 
-    console.log(`Exporting attendance for promotion ${req.params.promotionId} from ${startDate} to ${endDate}`);
 
     // Get all students for this promotion
     const students = await Student.find({ promotionId: req.params.promotionId }).sort({ name: 1, lastname: 1 });
@@ -1203,7 +1783,6 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
       }
     }).sort({ date: 1 });
 
-    console.log(`Found ${students.length} students and ${attendance.length} attendance records`);
 
     // Generate all dates between start and end date
     const allDates = [];
@@ -1219,7 +1798,6 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    console.log(`Generated ${allDates.length} school days between ${startDate} and ${endDate}`);
 
     // Group dates by month
     const datesByMonth = {};
@@ -1331,12 +1909,39 @@ app.get('/api/promotions/:promotionId/attendance/export', verifyToken, async (re
     // Set response headers
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-    console.log(`Sending Excel file: ${filename}`);
+    
     res.send(excelBuffer);
   } catch (error) {
     console.error('Error exporting attendance:', error);
     res.status(500).json({ error: `Error al exportar asistencia: ${error.message}` });
+  }
+});
+
+// Send report by email
+app.post('/api/reports/send-email', verifyToken, async (req, res) => {
+  try {
+    const { to, subject, body, filename, base64Data } = req.body;
+
+    if (!to || !base64Data) {
+      return res.status(400).json({ error: 'Recipient and PDF data are required' });
+    }
+
+    const attachments = [{
+      filename: filename || 'informe.pdf',
+      content: base64Data.split('base64,').pop(),
+      encoding: 'base64'
+    }];
+
+    const success = await sendReportEmail(to, subject || 'Informe de Asistencia', body || 'Se adjunta el informe solicitado.', attachments);
+
+    if (success) {
+      res.json({ message: 'Email enviado correctamente' });
+    } else {
+      res.status(500).json({ error: 'Error al enviar el email' });
+    }
+  } catch (error) {
+    console.error('Error in send-email route:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1552,27 +2157,18 @@ app.post('/api/promotions/:promotionId/students/upload-excel', verifyToken, uplo
 // Update student information
 app.put('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
   try {
-    console.log('=== PUT STUDENT UPDATE REQUEST ===');
-    console.log('Request URL:', req.originalUrl);
-    console.log('Request method:', req.method);
-    console.log('Update student request - studentId:', req.params.studentId);
-    console.log('Update student request - promotionId:', req.params.promotionId);
-    console.log('Request body:', req.body);
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) {
-      console.log('Promotion not found with ID:', req.params.promotionId);
       return res.status(404).json({ error: 'Promotion not found' });
     }
     if (!canEditPromotion(promotion, req.user.id)) {
-      console.log('User unauthorized for promotion:', req.user.id);
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { name, lastname, email, phone, age, administrativeSituation,
-      nationality, identificationDocument, gender, englishLevel, educationLevel,
-      profession, community } = req.body;
-    console.log('Updating student with data:', { name, lastname, email, phone, age, administrativeSituation, nationality, profession });
+            nationality, identificationDocument, gender, englishLevel, educationLevel,
+            profession, community } = req.body;
 
     if (!email || !name || !lastname) return res.status(400).json({ error: 'Email, name, and lastname are required' });
 
@@ -1584,21 +2180,12 @@ app.put('/api/promotions/:promotionId/students/:studentId', verifyToken, async (
       try {
         existingStudent = await Student.findOne({ _id: req.params.studentId, promotionId: req.params.promotionId });
       } catch (mongoError) {
-        console.log('Invalid MongoDB ObjectId format:', req.params.studentId);
       }
     }
 
     if (!existingStudent) {
-      console.log('Student not found with ID:', req.params.studentId);
-      console.log('Available students in promotion:', await Student.find({ promotionId: req.params.promotionId }, 'id _id email name lastname'));
       return res.status(404).json({ error: 'Student not found' });
     }
-
-    console.log('Found existing student:', {
-      customId: existingStudent.id,
-      mongoId: existingStudent._id,
-      email: existingStudent.email
-    });
 
     // Check if email is being changed and if it conflicts with another student
     const emailConflict = await Student.findOne({
@@ -1727,11 +2314,6 @@ app.put('/api/promotions/:promotionId/students/:studentId/notes', verifyToken, a
 // Update student progress
 app.put('/api/promotions/:promotionId/students/:studentId/progress', verifyToken, async (req, res) => {
   try {
-    console.log('=== UPDATE PROGRESS REQUEST ===');
-    console.log('Request URL:', req.originalUrl);
-    console.log('Student ID:', req.params.studentId);
-    console.log('Promotion ID:', req.params.promotionId);
-    console.log('Request body:', req.body);
 
     const { modulesViewed, sectionsCompleted, modulesCompleted, lastAccessed } = req.body;
 
@@ -1742,14 +2324,8 @@ app.put('/api/promotions/:promotionId/students/:studentId/progress', verifyToken
     const student = await Student.findOne({ id: req.params.studentId, promotionId: req.params.promotionId });
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    console.log('Student before update:', {
-      id: student.id,
-      progress: student.progress
-    });
-
     // Update modules completed if provided
     if (modulesCompleted !== undefined) {
-      console.log('Updating modulesCompleted from', student.progress.modulesCompleted, 'to', modulesCompleted);
       student.progress.modulesCompleted = Math.max(0, parseInt(modulesCompleted) || 0);
     }
 
@@ -1766,17 +2342,7 @@ app.put('/api/promotions/:promotionId/students/:studentId/progress', verifyToken
     // Update last accessed time
     student.progress.lastAccessed = lastAccessed ? new Date(lastAccessed) : new Date();
 
-    console.log('Student after update before save:', {
-      id: student.id,
-      progress: student.progress
-    });
-
     await student.save();
-
-    console.log('Student after save:', {
-      id: student.id,
-      progress: student.progress
-    });
 
     res.json({
       id: student.id,
@@ -1911,6 +2477,48 @@ function excelDateToJSDate(serial) {
   return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
 }
 
+// Download Excel template for importing píldoras into a module
+app.get('/api/promotions/:promotionId/modules/:moduleId/pildoras/template-excel', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = promotion.modules.find(m => m.id === req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const headers = ['Presentación', 'Fecha', 'Píldora', 'Student', 'Estado'];
+    // Date cell uses a proper date string so Excel recognises it; leave blank if no date
+    const todayStr = new Date().toISOString().split('T')[0];
+    const exampleRow = ['Virtual', todayStr, 'Ej: Testing con Jest', 'Nombre Apellido, Nombre2 Apellido2', 'Pendiente'];
+    const noteRow   = ['', '(dejar vacío si no hay fecha)', '', '(separar por comas)', ''];
+
+    const worksheet = xlsx.utils.aoa_to_sheet([headers, exampleRow, noteRow]);
+    // Set some friendly column widths
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 40 },
+      { wch: 40 },
+      { wch: 16 }
+    ];
+
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Pildoras');
+
+    const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const safeModuleName = (module.name || module.id || 'modulo').toString().replace(/[\\/:*?"<>|]+/g, '-').trim();
+    const filename = `plantilla_importar_pildoras_${safeModuleName}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(excelBuffer);
+  } catch (error) {
+    console.error('Error generating píldoras Excel template:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Upload Excel file for píldoras to a specific module
 app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel', verifyToken, upload.single('excelFile'), async (req, res) => {
   try {
@@ -1937,11 +2545,42 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
 
     // Get current students for validation
     const students = await Student.find({ promotionId: req.params.promotionId });
-    const studentMap = new Map();
+    // Build lookup maps: exact "name lastname", name-only, and lastname-only (all lowercased)
+    const studentByFullName = new Map();
+    const studentByFirstName = new Map();
+    const studentByLastName = new Map();
     students.forEach(student => {
-      const fullName = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
-      studentMap.set(fullName, student);
+      const full = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
+      const first = (student.name || '').trim().toLowerCase();
+      const last = (student.lastname || '').trim().toLowerCase();
+      studentByFullName.set(full, student);
+      if (first && !studentByFirstName.has(first)) studentByFirstName.set(first, student);
+      if (last && !studentByLastName.has(last)) studentByLastName.set(last, student);
     });
+
+    // Resolve a single name string to a student object or a plain-name entry
+    function resolveStudent(rawName) {
+      const key = rawName.trim().toLowerCase();
+      if (!key) return null;
+      // 1. Exact full-name match
+      const byFull = studentByFullName.get(key);
+      if (byFull) return { id: byFull.id, name: byFull.name, lastname: byFull.lastname };
+      // 2. Match by first name only
+      const byFirst = studentByFirstName.get(key);
+      if (byFirst) return { id: byFirst.id, name: byFirst.name, lastname: byFirst.lastname };
+      // 3. Match by last name only
+      const byLast = studentByLastName.get(key);
+      if (byLast) return { id: byLast.id, name: byLast.name, lastname: byLast.lastname };
+      // 4. Partial contains match (e.g. first word matches)
+      const firstWord = key.split(/\s+/)[0];
+      for (const [, s] of studentByFullName) {
+        const sKey = `${s.name || ''} ${s.lastname || ''}`.trim().toLowerCase();
+        if (sKey.includes(firstWord)) return { id: s.id, name: s.name, lastname: s.lastname };
+      }
+      // 5. Not found — store as plain name so the data isn't lost
+      const parts = rawName.trim().split(/\s+/);
+      return { id: '', name: parts[0] || rawName.trim(), lastname: parts.slice(1).join(' ') };
+    }
 
     const pildoras = [];
 
@@ -1953,46 +2592,37 @@ app.post('/api/promotions/:promotionId/modules/:moduleId/pildoras/upload-excel',
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
-      // Process assigned students
+      // Process assigned students — accept names even if not matched in DB
       const assignedStudents = [];
-      if (studentText && studentText.toLowerCase() !== 'desierta') {
-        const studentNames = studentText.split(',').map(name => name.trim().toLowerCase());
-
+      if (studentText && String(studentText).trim().toLowerCase() !== 'desierta') {
+        const studentNames = String(studentText).split(',').map(n => n.trim()).filter(Boolean);
         for (const name of studentNames) {
-          const student = studentMap.get(name);
-          if (student) {
-            assignedStudents.push({
-              id: student.id,
-              name: student.name,
-              lastname: student.lastname
-            });
-          }
+          const resolved = resolveStudent(name);
+          if (resolved) assignedStudents.push(resolved);
         }
       }
 
-      // Process date
+      // Process date — leave empty if not provided or unparseable
       let isoDate = '';
-      if (dateText) {
+      if (dateText !== '' && dateText !== null && dateText !== undefined) {
         try {
-          // Check if it's a number (Excel serial date)
           let date;
-          if (typeof dateText === 'number' && dateText < 100000) { // Likely Excel serial date
+          if (typeof dateText === 'number' && dateText > 1 && dateText < 200000) {
+            // Excel serial date
             date = excelDateToJSDate(dateText);
+          } else if (dateText instanceof Date) {
+            date = dateText;
           } else {
             date = new Date(dateText);
           }
-
           if (date && !isNaN(date.getTime())) {
             isoDate = date.toISOString().split('T')[0];
-          } else {
-            isoDate = new Date().toISOString().split('T')[0];
           }
+          // If invalid date, leave isoDate as ''
         } catch (e) {
           console.warn('Invalid date format:', dateText);
-          isoDate = new Date().toISOString().split('T')[0];
+          // Leave isoDate as ''
         }
-      } else {
-        isoDate = new Date().toISOString().split('T')[0];
       }
 
       if (title) { // Only add if title is provided
@@ -2083,11 +2713,36 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
 
     // Get current students for validation
     const students = await Student.find({ promotionId: req.params.promotionId });
-    const studentMap = new Map();
+    // Build lookup maps: exact "name lastname", name-only, and lastname-only (all lowercased)
+    const studentByFullName2 = new Map();
+    const studentByFirstName2 = new Map();
+    const studentByLastName2 = new Map();
     students.forEach(student => {
-      const fullName = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
-      studentMap.set(fullName, student);
+      const full = `${student.name || ''} ${student.lastname || ''}`.trim().toLowerCase();
+      const first = (student.name || '').trim().toLowerCase();
+      const last = (student.lastname || '').trim().toLowerCase();
+      studentByFullName2.set(full, student);
+      if (first && !studentByFirstName2.has(first)) studentByFirstName2.set(first, student);
+      if (last && !studentByLastName2.has(last)) studentByLastName2.set(last, student);
     });
+
+    function resolveStudent2(rawName) {
+      const key = rawName.trim().toLowerCase();
+      if (!key) return null;
+      const byFull = studentByFullName2.get(key);
+      if (byFull) return { id: byFull.id, name: byFull.name, lastname: byFull.lastname };
+      const byFirst = studentByFirstName2.get(key);
+      if (byFirst) return { id: byFirst.id, name: byFirst.name, lastname: byFirst.lastname };
+      const byLast = studentByLastName2.get(key);
+      if (byLast) return { id: byLast.id, name: byLast.name, lastname: byLast.lastname };
+      const firstWord = key.split(/\s+/)[0];
+      for (const [, s] of studentByFullName2) {
+        const sKey = `${s.name || ''} ${s.lastname || ''}`.trim().toLowerCase();
+        if (sKey.includes(firstWord)) return { id: s.id, name: s.name, lastname: s.lastname };
+      }
+      const parts = rawName.trim().split(/\s+/);
+      return { id: '', name: parts[0] || rawName.trim(), lastname: parts.slice(1).join(' ') };
+    }
 
     const pildoras = [];
 
@@ -2099,45 +2754,34 @@ app.post('/api/promotions/:promotionId/pildoras/upload-excel', verifyToken, uplo
       const studentText = row['Student'] || row['student'] || row['Coders'] || row['coders'] || '';
       const status = row['Estado'] || row['estado'] || '';
 
-      // Process assigned students
+      // Process assigned students — accept names even if not matched in DB
       const assignedStudents = [];
-      if (studentText && studentText.toLowerCase() !== 'desierta') {
-        const studentNames = studentText.split(',').map(name => name.trim().toLowerCase());
-
+      if (studentText && String(studentText).trim().toLowerCase() !== 'desierta') {
+        const studentNames = String(studentText).split(',').map(n => n.trim()).filter(Boolean);
         for (const name of studentNames) {
-          const student = studentMap.get(name);
-          if (student) {
-            assignedStudents.push({
-              id: student.id,
-              name: student.name,
-              lastname: student.lastname
-            });
-          }
+          const resolved = resolveStudent2(name);
+          if (resolved) assignedStudents.push(resolved);
         }
       }
 
-      // Process date
+      // Process date — leave empty if not provided or unparseable
       let isoDate = '';
-      if (dateText) {
+      if (dateText !== '' && dateText !== null && dateText !== undefined) {
         try {
           let date;
-          if (typeof dateText === 'number' && dateText < 100000) {
+          if (typeof dateText === 'number' && dateText > 1 && dateText < 200000) {
             date = excelDateToJSDate(dateText);
+          } else if (dateText instanceof Date) {
+            date = dateText;
           } else {
             date = new Date(dateText);
           }
-
           if (date && !isNaN(date.getTime())) {
             isoDate = date.toISOString().split('T')[0];
-          } else {
-            isoDate = new Date().toISOString().split('T')[0];
           }
         } catch (e) {
           console.warn('Invalid date format:', dateText);
-          isoDate = new Date().toISOString().split('T')[0];
         }
-      } else {
-        isoDate = new Date().toISOString().split('T')[0];
       }
 
       if (title) { // Only add if title is provided
@@ -2207,7 +2851,6 @@ app.get('/api/promotions/:promotionId/modules-pildoras', verifyToken, async (req
       extendedInfo.modulesPildoras.some(mp => mp.pildoras && mp.pildoras.length > 0);
 
     if (!hasAnyModulePildoras && extendedInfo.pildoras && extendedInfo.pildoras.length > 0) {
-      console.log('Migrating legacy píldoras to modules for promotion:', req.params.promotionId);
 
       // Group legacy pildoras by moduleId if present, otherwise put in first module
       const firstModule = promotion.modules && promotion.modules.length > 0 ? promotion.modules[0] : null;
@@ -2661,8 +3304,6 @@ app.put('/api/promotions/:promotionId/students/:studentId/profile', verifyToken,
 
 app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, async (req, res) => {
   try {
-    console.log('Delete student request - studentId:', req.params.studentId);
-    console.log('Delete student request - promotionId:', req.params.promotionId);
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
@@ -2676,21 +3317,12 @@ app.delete('/api/promotions/:promotionId/students/:studentId', verifyToken, asyn
       try {
         existingStudent = await Student.findOne({ _id: req.params.studentId, promotionId: req.params.promotionId });
       } catch (mongoError) {
-        console.log('Invalid MongoDB ObjectId format:', req.params.studentId);
       }
     }
 
     if (!existingStudent) {
-      console.log('Student not found for deletion with ID:', req.params.studentId);
-      console.log('Available students in promotion:', await Student.find({ promotionId: req.params.promotionId }, 'id _id email name lastname'));
       return res.status(404).json({ error: 'Student not found' });
     }
-
-    console.log('Found student to delete:', {
-      customId: existingStudent.id,
-      mongoId: existingStudent._id,
-      email: existingStudent.email
-    });
 
     // Delete the student using the _id (which is always available)
     const student = await Student.findByIdAndDelete(existingStudent._id);
@@ -2770,7 +3402,6 @@ app.post('/api/promotions', verifyToken, async (req, res) => {
     if (templateId) {
       // Use lean() to get plain JS objects — no Mongoose _id complications
       template = await BootcampTemplate.findOne({ id: templateId }).lean();
-      console.log(`[POST /promotions] template found: ${template?.id}, modules: ${template?.modules?.length || 0}, competences: ${template?.competences?.length || 0}`);
       if (template && template.modules && template.modules.length > 0 && promotionModules.length === 0) {
         promotionModules = template.modules.map(m => ({
           id: uuidv4(),
@@ -2945,14 +3576,14 @@ app.get('/api/promotions/:promotionId/quick-links', async (req, res) => {
 
 app.post('/api/promotions/:promotionId/quick-links', verifyToken, async (req, res) => {
   try {
-    const { name, url } = req.body;
+    const { name, url, platform } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and URL are required' });
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url });
+    const quickLink = await QuickLink.create({ id: uuidv4(), promotionId: req.params.promotionId, name, url, platform });
     res.status(201).json(quickLink);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -3069,8 +3700,12 @@ app.post('/api/promotions/:promotionId/calendar', verifyToken, async (req, res) 
 app.get('/api/promotions/:promotionId/extended-info', async (req, res) => {
   try {
     const extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    console.log(`[GET /api/promotions/${req.params.promotionId}/extended-info] Found:`, !!extendedInfo);
+    if (extendedInfo) {
+      console.log('[extended-info] Has competences:', !!extendedInfo.competences, 'count:', (extendedInfo.competences || []).length);
+    }
     if (!extendedInfo) {
-      return res.json({ schedule: {}, team: [], resources: [], evaluation: '', pildoras: [], pildorasAssignmentOpen: false });
+      return res.json({ schedule: {}, team: [], resources: [], evaluation: '', pildoras: [], pildorasAssignmentOpen: false, competences: [] });
     }
     res.json(extendedInfo);
   } catch (error) {
@@ -3084,59 +3719,122 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    console.log('UPDATING EXTENDED INFO for promotion:', req.params.promotionId);
-    console.log('ModulesPildoras present in request:', !!req.body.modulesPildoras);
     if (req.body.modulesPildoras) {
-      console.log('ModulesPildoras count:', req.body.modulesPildoras.length);
     }
 
-    const { schedule, team, resources, evaluation, pildoras, modulesPildoras, pildorasAssignmentOpen, competences,
-      school, projectType, positiveExitStart, positiveExitEnd, totalHours,
-      modality, presentialDays, materials, internships, funders, funderDeadlines,
-      okrKpis, funderKpis, trainerDayOff, cotrainerDayOff, projectMeetings, teamMeetings,
-      approvalName, approvalRole, projectEvaluations } = req.body;
-    const normalizedPildoras = Array.isArray(pildoras) ? pildoras : [];
-    const normalizedModulesPildoras = Array.isArray(modulesPildoras) ? modulesPildoras : [];
-    const normalizedCompetences = Array.isArray(competences) ? competences : [];
-    const normalizedProjectEvaluations = Array.isArray(projectEvaluations) ? projectEvaluations : undefined;
-    console.log('[extended-info POST] competences to save:', JSON.stringify(normalizedCompetences.map(c => ({ name: c.name, startModule: c.startModule }))));
+  const { schedule, team, resources, evaluation, pildoras, modulesPildoras, pildorasAssignmentOpen, competences,
+            school, projectType, positiveExitStart, positiveExitEnd, totalHours,
+            modality, presentialDays, materials, internships, funders, funderDeadlines,
+            okrKpis, funderKpis, trainerDayOff, cotrainerDayOff, projectMeetings, teamMeetings,
+            approvalName, approvalRole, projectEvaluations, projectCompetences, virtualClassroom } = req.body;
+
+    // Build a $set object with ONLY the fields that were explicitly sent in the request body.
+    // This prevents partial saves (e.g. _persistEvaluations sending only projectEvaluations)
+    // from wiping out other fields like pildoras, competences, etc.
+    const body = req.body;
+    const $setFields = {};
+
+    if (body.hasOwnProperty('schedule'))               $setFields.schedule = schedule || {};
+    if (body.hasOwnProperty('team'))                   $setFields.team = Array.isArray(team) ? team : [];
+    if (body.hasOwnProperty('resources'))              $setFields.resources = Array.isArray(resources) ? resources : [];
+    if (body.hasOwnProperty('evaluation'))             $setFields.evaluation = evaluation || '';
+    if (body.hasOwnProperty('pildoras'))               $setFields.pildoras = Array.isArray(pildoras) ? pildoras : [];
+    if (body.hasOwnProperty('modulesPildoras'))        $setFields.modulesPildoras = Array.isArray(modulesPildoras) ? modulesPildoras : [];
+    if (body.hasOwnProperty('pildorasAssignmentOpen')) $setFields.pildorasAssignmentOpen = !!pildorasAssignmentOpen;
+    if (body.hasOwnProperty('competences'))            $setFields.competences = Array.isArray(competences) ? competences : [];
+    if (body.hasOwnProperty('school'))                 $setFields.school = school || '';
+    if (body.hasOwnProperty('projectType'))            $setFields.projectType = projectType || '';
+    if (body.hasOwnProperty('positiveExitStart'))      $setFields.positiveExitStart = positiveExitStart || '';
+    if (body.hasOwnProperty('positiveExitEnd'))        $setFields.positiveExitEnd = positiveExitEnd || '';
+    if (body.hasOwnProperty('totalHours'))             $setFields.totalHours = totalHours || '';
+    if (body.hasOwnProperty('modality'))               $setFields.modality = modality || '';
+    if (body.hasOwnProperty('presentialDays'))         $setFields.presentialDays = presentialDays || '';
+    if (body.hasOwnProperty('materials'))              $setFields.materials = materials || '';
+    if (body.hasOwnProperty('internships'))            $setFields.internships = internships !== undefined ? internships : null;
+    if (body.hasOwnProperty('funders'))                $setFields.funders = funders || '';
+    if (body.hasOwnProperty('funderDeadlines'))        $setFields.funderDeadlines = funderDeadlines || '';
+    if (body.hasOwnProperty('okrKpis'))                $setFields.okrKpis = okrKpis || '';
+    if (body.hasOwnProperty('funderKpis'))             $setFields.funderKpis = funderKpis || '';
+    if (body.hasOwnProperty('trainerDayOff'))          $setFields.trainerDayOff = trainerDayOff || '';
+    if (body.hasOwnProperty('cotrainerDayOff'))        $setFields.cotrainerDayOff = cotrainerDayOff || '';
+    if (body.hasOwnProperty('projectMeetings'))        $setFields.projectMeetings = projectMeetings || '';
+    if (body.hasOwnProperty('teamMeetings'))           $setFields.teamMeetings = teamMeetings || '';
+    if (body.hasOwnProperty('approvalName'))           $setFields.approvalName = approvalName || '';
+    if (body.hasOwnProperty('approvalRole'))           $setFields.approvalRole = approvalRole || '';
+    if (Array.isArray(projectEvaluations))             $setFields.projectEvaluations = projectEvaluations;
+    if (Array.isArray(projectCompetences))             $setFields.projectCompetences = projectCompetences;
+    if (body.hasOwnProperty('virtualClassroom'))       $setFields.virtualClassroom = virtualClassroom || {};
+    // Final Update
     const newInfo = await ExtendedInfo.findOneAndUpdate(
       { promotionId: req.params.promotionId },
-      {
-        $set: {
-          schedule: schedule || {},
-          team: team || [],
-          resources: resources || [],
-          evaluation: evaluation || '',
-          pildoras: normalizedPildoras,
-          modulesPildoras: normalizedModulesPildoras,
-          pildorasAssignmentOpen: !!pildorasAssignmentOpen,
-          competences: normalizedCompetences,
-          school: school || '',
-          projectType: projectType || '',
-          positiveExitStart: positiveExitStart || '',
-          positiveExitEnd: positiveExitEnd || '',
-          totalHours: totalHours || '',
-          modality: modality || '',
-          presentialDays: presentialDays || '',
-          materials: materials || '',
-          internships: internships !== undefined ? internships : null,
-          funders: funders || '',
-          funderDeadlines: funderDeadlines || '',
-          okrKpis: okrKpis || '',
-          funderKpis: funderKpis || '',
-          trainerDayOff: trainerDayOff || '',
-          cotrainerDayOff: cotrainerDayOff || '',
-          projectMeetings: projectMeetings || '',
-          teamMeetings: teamMeetings || '',
-          approvalName: approvalName || '',
-          approvalRole: approvalRole || '',
-          ...(normalizedProjectEvaluations !== undefined ? { projectEvaluations: normalizedProjectEvaluations } : {})
-        }
-      },
+      { $set: $setFields },
       { upsert: true, returnDocument: 'after', strict: false }
     );
+
+    // Mongoose "Mixed" type fields (like projectEvaluations, schedule, etc if defined as such)
+    // sometimes need explicit marking if we are deeply Nesting objects, but findOneAndUpdate $set usually handles it.
+    // However, to be extra safe for future saves:
+    if ($setFields.projectEvaluations) newInfo.markModified('projectEvaluations');
+    if ($setFields.projectCompetences)  newInfo.markModified('projectCompetences');
+    if ($setFields.virtualClassroom)   newInfo.markModified('virtualClassroom');
+    if ($setFields.schedule)           newInfo.markModified('schedule');
+    
+    await newInfo.save();
+
     res.json(newInfo);
+  } catch (error) {
+    console.error('Error saving extended info:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== ASANA CONTENT ====================
+
+// GET asana content URL
+app.get('/api/promotions/:promotionId/asana-content', async (req, res) => {
+  try {
+    const extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    if (!extendedInfo) {
+      return res.json({ asanaContentUrl: '' });
+    }
+    res.json({ asanaContentUrl: extendedInfo.asanaContentUrl || '' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST/UPDATE asana content URL
+app.post('/api/promotions/:promotionId/asana-content', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { asanaContentUrl } = req.body;
+    const updatedInfo = await ExtendedInfo.findOneAndUpdate(
+      { promotionId: req.params.promotionId },
+      { $set: { asanaContentUrl: asanaContentUrl || '' } },
+      { upsert: true, returnDocument: 'after' }
+    );
+    res.json({ asanaContentUrl: updatedInfo.asanaContentUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE asana content URL
+app.delete('/api/promotions/:promotionId/asana-content', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    await ExtendedInfo.findOneAndUpdate(
+      { promotionId: req.params.promotionId },
+      { $set: { asanaContentUrl: '' } },
+      { upsert: true }
+    );
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3205,6 +3903,196 @@ app.put('/api/promotions/:promotionId/pildoras-self-assign', async (req, res) =>
   }
 });
 
+// ==================== AULA VIRTUAL (PUBLIC STUDENT VIEW) ====================
+
+// Public endpoint to expose current active Aula Virtual configuration for students
+app.get('/api/promotions/:promotionId/virtual-classroom', async (req, res) => {
+  try {
+    const promotionId = req.params.promotionId;
+    const ext = await ExtendedInfo.findOne({ promotionId }).lean();
+    if (!ext || !ext.virtualClassroom || !ext.virtualClassroom.isActive) {
+      return res.json({ active: false });
+    }
+
+    const vc = ext.virtualClassroom || {};
+    const promotion = await Promotion.findOne({ id: promotionId }).lean();
+    if (!promotion) {
+      return res.status(404).json({ error: 'Promotion not found' });
+    }
+
+    const modules = promotion.modules || [];
+    const module = modules.find(m => String(m.id || '') === String(vc.moduleId));
+    const project = module ? (module.projects || []).find(p => p.name === vc.projectName) : null;
+
+    // Resolve competences for this project from ExtendedInfo.projectCompetences + competences catalog
+    console.log(`[DEBUG] Resolving VC competences for ${promotionId}. ext.competences count: ${((ext || {}).competences || []).length}`);
+    if (ext && ext.competences && ext.competences.length > 0) {
+       const first = ext.competences[0];
+       console.log(`[DEBUG] First comp in DB: ${first.name}, levels: ${(first.levels || []).length}, compInds: ${!!first.competenceIndicators}`);
+    }
+    let competences = [];
+    if (Array.isArray(ext.projectCompetences) && Array.isArray(ext.competences)) {
+      const pcEntry = ext.projectCompetences.find(
+        pc => pc.moduleId === vc.moduleId && pc.projectName === vc.projectName
+      );
+      const compIds = pcEntry ? (pcEntry.competenceIds || []) : [];
+      const pcTools = (pcEntry && pcEntry.competenceTools) ? pcEntry.competenceTools : {};
+
+      competences = compIds.map(cid => {
+        const cidStr = String(cid);
+        const c = ext.competences.find(ec => String(ec.id) === cidStr);
+        if (!c) return { id: cid, name: cidStr, area: '', description: '', levels: [], selectedTools: [] };
+
+        // Pull selected tools for this COMP from the project-specific map (pcEntry.competenceTools)
+        const selectedTools = pcTools[cidStr] || [];
+
+        return {
+          id: c.id,
+          name: c.name,
+          area: c.area || '',
+          description: c.description || '',
+          levels: c.levels || [],
+          selectedTools: selectedTools,
+          // Filtering tool detail objects to only those selected in pcTools
+          toolsWithIndicators: (c.toolsWithIndicators || []).filter(ti => selectedTools.includes(ti.name)),
+          competenceIndicators: c.competenceIndicators || { initial: [], medio: [], advance: [] }
+        };
+      });
+    }
+
+    // Resolve groups for grupal projects from projectEvaluations
+    let groups = [];
+    if (vc.projectType === 'grupal' && Array.isArray(ext.projectEvaluations)) {
+      const evalEntry = ext.projectEvaluations.find(
+        e => e.moduleId === vc.moduleId && e.projectName === vc.projectName
+      );
+      if (evalEntry && Array.isArray(evalEntry.groups)) {
+        groups = evalEntry.groups.map(g => ({
+          groupName: g.groupName,
+          studentIds: g.studentIds || []
+        }));
+      }
+    }
+
+    res.json({
+      active: true,
+      projectType: vc.projectType || 'individual',
+      repoBaseUrl: vc.repoBaseUrl || '',
+      briefingUrl: vc.briefingUrl || (project ? project.url || '' : ''),
+      project: {
+        moduleId: vc.moduleId || (module ? module.id : ''),
+        moduleName: module ? module.name : '',
+        projectName: vc.projectName || (project ? project.name : ''),
+      },
+      competences,
+      groups
+    });
+  } catch (error) {
+    console.error('[GET /api/promotions/:promotionId/virtual-classroom]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Public endpoint for students/teams to submit Aula Virtual repository links
+app.post('/api/promotions/:promotionId/virtual-classroom/submissions', async (req, res) => {
+  try {
+    const promotionId = req.params.promotionId;
+    const { type, studentId, groupName, repoName } = req.body;
+
+    if (!repoName || typeof repoName !== 'string' || !repoName.trim()) {
+      return res.status(400).json({ error: 'Repository name is required' });
+    }
+
+    const ext = await ExtendedInfo.findOne({ promotionId });
+    if (!ext || !ext.virtualClassroom || !ext.virtualClassroom.isActive) {
+      return res.status(400).json({ error: 'No active virtual classroom project for this promotion' });
+    }
+
+    const vc = ext.virtualClassroom;
+    console.log('[DEBUG] Active Virtual Classroom project:', vc);
+    const projectType = vc.projectType || 'individual';
+
+    if (projectType === 'individual') {
+      if (!studentId) return res.status(400).json({ error: 'studentId is required for individual projects' });
+    } else if (projectType === 'grupal') {
+      if (!groupName) return res.status(400).json({ error: 'groupName is required for group projects' });
+    }
+
+    const repoBaseUrl = vc.repoBaseUrl || '';
+    const fullUrl = repoBaseUrl ? `${repoBaseUrl.replace(/\/+$/,'')}/${repoName.trim()}` : repoName.trim();
+
+    if (!Array.isArray(ext.projectEvaluations)) {
+      ext.projectEvaluations = [];
+    }
+
+    const moduleId = vc.moduleId;
+    const projectName = vc.projectName;
+
+    let evalEntry = ext.projectEvaluations.find(
+      e => e.moduleId === moduleId && e.projectName === projectName
+    );
+    console.log('[DEBUG] Found evalEntry:', !!evalEntry, { moduleId, projectName });
+    if (!evalEntry) {
+      evalEntry = {
+        moduleId,
+        moduleName: '',
+        projectName,
+        type: projectType,
+        groups: [],
+        evaluations: []
+      };
+      ext.projectEvaluations.push(evalEntry);
+    }
+
+    let targetId;
+    if (projectType === 'individual') {
+      targetId = String(studentId);
+    } else {
+      targetId = String(groupName);
+      if (!Array.isArray(evalEntry.groups)) evalEntry.groups = [];
+      if (!evalEntry.groups.some(g => g.groupName === targetId)) {
+        evalEntry.groups.push({ groupName: targetId, studentIds: [] });
+      }
+    }
+
+    if (!Array.isArray(evalEntry.evaluations)) {
+      evalEntry.evaluations = [];
+    }
+
+    let targetEval = evalEntry.evaluations.find(e => String(e.targetId) === String(targetId));
+    if (!targetEval) {
+      targetEval = {
+        targetId,
+        targetName: '',
+        competences: [],
+        feedback: '',
+        studentComment: ''
+      };
+      evalEntry.evaluations.push(targetEval);
+    }
+
+    targetEval.submissionLink = fullUrl;
+    targetEval.submissionStatus = 'Entregado';
+    targetEval.submittedAt = new Date().toISOString();
+
+    console.log('[DEBUG] Saved submission:', {
+      moduleId,
+      projectName,
+      targetId,
+      submissionLink: targetEval.submissionLink,
+      status: targetEval.submissionStatus
+    });
+
+    ext.markModified('projectEvaluations');
+    await ext.save();
+
+    res.json({ message: 'Entrega registrada correctamente', submissionLink: fullUrl });
+  } catch (error) {
+    console.error('[POST /api/promotions/:promotionId/virtual-classroom/submissions]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== TEACHERS & COLLABORATORS ====================
 
 app.get('/api/teachers', verifyToken, async (req, res) => {
@@ -3217,6 +4105,25 @@ app.get('/api/teachers', verifyToken, async (req, res) => {
       userRole: t.userRole || 'Formador/a'
     }));
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/teachers/:id', verifyToken, async (req, res) => {
+  try {
+    const { name, email, userRole } = req.body;
+    if (email) {
+      const existing = await Teacher.findOne({ email, id: { $ne: req.params.id } });
+      if (existing) return res.status(400).json({ error: 'Email already in use' });
+    }
+    const teacher = await Teacher.findOneAndUpdate(
+      { id: req.params.id },
+      { name, email, userRole },
+      { new: true, runValidators: true }
+    );
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    res.json(teacher);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3258,7 +4165,6 @@ app.get('/api/promotions/:promotionId/collaborators', verifyToken, async (req, r
 app.post('/api/promotions/:promotionId/collaborators', verifyToken, async (req, res) => {
   try {
     const { teacherId, moduleIds } = req.body;
-    console.log('[POST collaborators] teacherId:', teacherId, 'moduleIds:', moduleIds);
     if (!teacherId) return res.status(400).json({ error: 'Teacher ID is required' });
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
@@ -3278,9 +4184,7 @@ app.post('/api/promotions/:promotionId/collaborators', verifyToken, async (req, 
     promotion.markModified('collaborators');
     promotion.markModified('collaboratorModules');
 
-    console.log('[POST collaborators] saving collaboratorModules:', JSON.stringify(promotion.collaboratorModules));
     await promotion.save();
-    console.log('[POST collaborators] saved OK');
     const teacher = await Teacher.findOne({ id: teacherId }, 'id name email userRole');
     res.status(201).json({ message: 'Collaborator added', collaborator: teacher });
   } catch (error) {
@@ -3296,7 +4200,10 @@ app.put('/api/promotions/:promotionId/collaborators/:teacherId/modules', verifyT
 
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can manage module assignments' });
+    const isOwner = promotion.teacherId === req.user.id;
+    const isCollab = (promotion.collaborators || []).includes(req.user.id);
+    const isAdmin = req.user.userRole === 'superadmin';
+    if (!isOwner && !isCollab && !isAdmin) return res.status(403).json({ error: 'Only teaching team can manage module assignments' });
 
     if (req.params.teacherId === promotion.teacherId) {
       promotion.ownerModules = moduleIds;
@@ -3323,7 +4230,10 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
     const promotion = await Promotion.findOne({ id: req.params.promotionId });
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
 
-    if (promotion.teacherId !== req.user.id) return res.status(403).json({ error: 'Only owner can remove collaborators' });
+    const isOwner = promotion.teacherId === req.user.id;
+    const isCollab = (promotion.collaborators || []).includes(req.user.id);
+    const isAdmin = req.user.userRole === 'superadmin';
+    if (!isOwner && !isCollab && !isAdmin) return res.status(403).json({ error: 'Only teaching team can manage collaborators' });
 
     promotion.collaborators = (promotion.collaborators || []).filter(id => id !== req.params.teacherId);
     promotion.collaboratorModules = (promotion.collaboratorModules || []).filter(m => m.teacherId !== req.params.teacherId);
@@ -3339,7 +4249,7 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
 // ==================== ADMIN ====================
 
 const verifyAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') next();
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) next();
   else res.status(403).json({ error: 'Admin role required' });
 };
 
@@ -3451,29 +4361,55 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Email already registered' });
 
     const provisionalPassword = Math.random().toString(36).slice(-10) + 'A1!';
-    const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
 
+    // ── Register user in the external auth API ──────────────────────────────
+    let externalRegistered = false;
+    let externalError = null;
+    try {
+      const extRegRes = await fetch(`${EXTERNAL_AUTH_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: provisionalPassword, name })
+      });
+      const extRegData = await extRegRes.json();
+      if (extRegRes.ok && (extRegData.success !== false)) {
+        externalRegistered = true;
+      } else {
+        externalError = extRegData.message || extRegData.error || `External API returned ${extRegRes.status}`;
+      }
+    } catch (extErr) {
+      console.warn('[admin/teachers POST] External register unreachable:', extErr.message);
+      externalError = 'External auth server unreachable';
+    }
+
+    // Create local teacher record regardless (local system still needs the user)
+    const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
     const validUserRoles = ['Formador/a', 'CoFormador/a', 'Coordinador/a'];
     const resolvedUserRole = validUserRoles.includes(userRole) ? userRole : 'Formador/a';
-
     const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword, provisional: true, userRole: resolvedUserRole });
 
-    // Send password to email
+    // Send welcome email with provisional password
     const emailSent = await sendPasswordEmail(email, name, provisionalPassword);
 
-    if (emailSent) {
-      res.status(201).json({
-        message: 'Teacher created successfully. Password has been sent to their email address.',
-        teacher: { id: teacher.id, name: teacher.name, email: teacher.email }
-      });
-    } else {
-      // Still create teacher but alert admin
-      res.status(201).json({
-        message: 'Teacher created, but password email could not be sent. Please notify the teacher manually.',
-        teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
-        warning: 'Email not sent'
-      });
+    const responsePayload = {
+      teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
+      externalRegistered,
+      provisionalPassword
+    };
+
+    if (!externalRegistered) {
+      responsePayload.warning = `Local account created but external registration failed: ${externalError}. The user may need to register separately in the auth system.`;
     }
+    if (!emailSent) {
+      responsePayload.emailWarning = 'Password email could not be sent. Please share the provisional password manually.';
+    }
+
+    res.status(201).json({
+      message: externalRegistered
+        ? 'User registered in auth system and local account created.'
+        : 'Local account created (external registration failed — see warning).',
+      ...responsePayload
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3510,5 +4446,4 @@ app.delete('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res)
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
 });

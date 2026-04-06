@@ -3,9 +3,8 @@
  * PDF Report generation via print-window technique
  * 4 report types:
  *   1. Ficha Seguimiento Técnico   (per student)
- *   2. Ficha Seguimiento Transversal (per student)
- *   3. Acta de Inicio               (program-level)
- *   4. Descripción Técnica Formación (full bootcamp)
+ *   2. Acta de Inicio               (program-level)
+ *   3. Descripción Técnica Formación (full bootcamp)
  */
 (function (window) {
     'use strict';
@@ -31,9 +30,10 @@
         h3 { font-size: 11pt; font-weight: 600; color: ${PRIMARY}; margin-top: 10pt; margin-bottom: 4pt; border-bottom: 1.5px solid ${PRIMARY}; padding-bottom: 2pt; }
         h4 { font-size: 10pt; font-weight: 600; color: ${SECONDARY}; margin-top: 8pt; margin-bottom: 3pt; }
         p  { margin-bottom: 5pt; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt; break-inside: auto; }
         th { background: ${DARK}; color: #fff; padding: 5pt 7pt; text-align: left; font-weight: 600; }
         td { padding: 5pt 7pt; border-bottom: 1px solid ${BORDER}; vertical-align: top; }
+        tr { break-inside: avoid; break-after: auto; }
         tr:nth-child(even) td { background: ${LIGHT_BG}; }
         .badge {
             display: inline-block; padding: 2pt 6pt; border-radius: 10pt;
@@ -53,23 +53,39 @@
             padding: 10pt 12pt; margin-bottom: 10pt;
             break-inside: avoid;
         }
+        .card {
+            border: 1px solid ${BORDER}; border-radius: 6pt;
+            padding: 10pt 12pt; margin-bottom: 10pt;
+            break-inside: avoid;
+        }
         .section-box.accent { border-left: 4px solid ${PRIMARY}; }
         .section-box.green  { border-left: 4px solid #198754; }
         .section-box.blue   { border-left: 4px solid #0d6efd; }
         .section-box.red    { border-left: 4px solid #dc3545; }
         .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
         .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10pt; }
-        .kv { margin-bottom: 3pt; }
+        .kv { margin-bottom: 3pt; break-inside: avoid; }
         .kv strong { color: ${SECONDARY}; }
         .empty-note { color: #aaa; font-style: italic; font-size: 9pt; }
         .pill-row { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 3pt; }
         .page-break { page-break-before: always; }
         .no-break { break-inside: avoid; }
+        h1, h2, h3, h4 { break-after: avoid; }
         `;
     }
 
     // ─── Header banner ───────────────────────────────────────────────────────
-    function _header(title, subtitle, promotionName, date) {
+    function _header(title, subtitle, promotionName, date, promo) {
+        let periodHtml = '';
+        if (promo && (promo.startDate || promo.endDate)) {
+            const start = _fmtDate(promo.startDate) || '—';
+            const end   = _fmtDate(promo.endDate)   || '—';
+            periodHtml = `<div style="font-size:9pt; color:#666; margin-top:2pt;">
+                Período: <span style="color:${DARK}; font-weight:500;">${start}</span> 
+                al <span style="color:${DARK}; font-weight:500;">${end}</span>
+            </div>`;
+        }
+
         return `
         <div style="display:flex; justify-content:space-between; align-items:flex-start;
                     border-bottom: 3px solid ${PRIMARY}; padding-bottom: 10pt; margin-bottom: 14pt;">
@@ -81,6 +97,7 @@
                 <h1>${_esc(title)}</h1>
                 ${subtitle ? `<div style="font-size:11pt; color:${SECONDARY}; margin-top:3pt;">${_esc(subtitle)}</div>` : ''}
                 ${promotionName ? `<div style="font-size:9pt; color:#888; margin-top:3pt;">Promoción: <strong>${_esc(promotionName)}</strong></div>` : ''}
+                ${periodHtml}
             </div>
             <div style="text-align:right; font-size:9pt; color:#888; min-width:100pt;">
                 <div>${_esc(date)}</div>
@@ -120,36 +137,53 @@
      */
     function _renderToPdf(htmlContent, filename) {
         return new Promise((resolve, reject) => {
-            if (!window.html2canvas || !window.jspdf) {
-                reject(new Error('Librerías html2canvas / jsPDF no cargadas. Revisa tu conexión.'));
+            const html2canvas = window.html2canvas;
+            const jspdf = window.jspdf;
+            
+            if (!html2canvas || !jspdf) {
+                const msg = 'Librerías html2canvas / jsPDF no cargadas. Revisa tu conexión.';
+                console.error('[Reports]', msg);
+                reject(new Error(msg));
                 return;
             }
-            const { jsPDF } = window.jspdf;
+            
+            const jsPDF = jspdf.jsPDF || window.jsPDF;
+            if (!jsPDF) {
+                const msg = 'No se pudo encontrar el constructor jsPDF.';
+                console.error('[Reports]', msg);
+                reject(new Error(msg));
+                return;
+            }
 
             // Create a hidden iframe so the browser fully lays out the HTML
             const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;top:0;left:0;width:794px;height:1px;opacity:0;pointer-events:none;border:none;z-index:-1;';
+            // Make it "visible" but off-screen and non-interactive to ensure rendering
+            iframe.style.cssText = 'position:fixed;top:0;left:-2000px;width:794px;height:1000px;visibility:hidden;pointer-events:none;border:none;z-index:-1;';
             document.body.appendChild(iframe);
 
             // Write the full HTML document into the iframe
-            iframe.contentDocument.open();
-            iframe.contentDocument.write(_wrapHtml(htmlContent));
-            iframe.contentDocument.close();
+            const iDoc = iframe.contentDocument || iframe.contentWindow.document;
+            iDoc.open();
+            iDoc.write(_wrapHtml(htmlContent));
+            iDoc.close();
 
             // Give the browser time to finish layout/fonts
             const capture = () => {
-                const iDoc = iframe.contentDocument;
                 const body = iDoc.body;
                 // Expand iframe to full content height so nothing is clipped
                 const scrollH = Math.max(body.scrollHeight, body.offsetHeight, iDoc.documentElement.scrollHeight);
-                iframe.style.height = scrollH + 'px';
+                iframe.style.height = (scrollH + 100) + 'px';
 
-                // ── Collect bottom-edge of every <tr> in CSS px (from body top)
-                //    BEFORE html2canvas runs so the iframe is still live. ──
+                // ── Collect bottom-edge of elements that shouldn't be split ──
+                //    BEFORE html2canvas runs so the iframe is still live.
                 const bodyTop = body.getBoundingClientRect().top;
-                const rowBottomsPx = Array.from(iDoc.querySelectorAll('tr')).map(tr => {
-                    return tr.getBoundingClientRect().bottom - bodyTop;
+                const safeBreakSelectors = 'tr, h2, h3, .section-box, .no-break, .kv, .card';
+                const rowBottomsPx = Array.from(iDoc.querySelectorAll(safeBreakSelectors)).map(el => {
+                    return el.getBoundingClientRect().bottom - bodyTop;
                 }).filter(v => v > 0);
+
+                // Sort unique values to ensure logical slicing
+                const uniqueBottoms = [...new Set(rowBottomsPx)].sort((a, b) => a - b);
 
                 html2canvas(body, {
                     scale: 2,
@@ -177,10 +211,10 @@
                     const cssPxToMm = usableW / (canvas.width / 2);
                     const canvasMmH = (canvas.height / 2) * cssPxToMm;
 
-                    // Convert row bottoms from CSS px → mm
-                    const rowBottomsMm = rowBottomsPx.map(px => px * cssPxToMm);
+                    // Convert element bottoms from CSS px → mm
+                    const rowBottomsMm = uniqueBottoms.map(px => px * cssPxToMm);
 
-                    // ── Smart page-break: build slices that always end at a row boundary ──
+                    // ── Smart page-break: build slices that always end at an element boundary ──
                     const slices = [];
                     let yPos = 0;
                     while (yPos < canvasMmH - 0.5) {
@@ -210,7 +244,7 @@
                         ctx.drawImage(canvas, 0, pxStart, canvas.width, pxH, 0, 0, canvas.width, pxH);
 
                         pdf.addImage(
-                            sliceCanvas.toDataURL('image/jpeg', 0.97), 'JPEG',
+                            sliceCanvas.toDataURL('image/jpeg', 0.95), 'JPEG',
                             margin, margin,
                             canvasMmW, sh,
                             undefined, 'FAST'
@@ -220,24 +254,46 @@
                     pdf.setProperties({ title: filename || 'informe.pdf' });
                     resolve(pdf);
                 }).catch(err => {
-                    document.body.removeChild(iframe);
+                    if (iframe.parentNode) document.body.removeChild(iframe);
+                    console.error('[Reports] html2canvas error:', err);
                     reject(err);
                 });
             };
 
             // Wait for iframe load event, then a short extra tick for fonts
-            if (iframe.contentDocument.readyState === 'complete') {
-                setTimeout(capture, 300);
-            } else {
-                iframe.onload = () => setTimeout(capture, 300);
-            }
+            const checkLoad = () => {
+                if (iDoc.readyState === 'complete') {
+                    setTimeout(capture, 500);
+                } else {
+                    iframe.onload = () => setTimeout(capture, 500);
+                    // Backup timeout in case onload doesn't fire
+                    setTimeout(capture, 2000);
+                }
+            };
+            
+            checkLoad();
+            
+            // Safety timeout to avoid hanging the UI forever
+            setTimeout(() => {
+                if (iframe.parentNode) {
+                    document.body.removeChild(iframe);
+                    reject(new Error('Tiempo de espera agotado al generar el PDF.'));
+                }
+            }, 30000);
         });
     }
 
     /** Directly download a single PDF. Returns a Promise. */
     async function _savePdf(htmlContent, filename) {
-        const pdf = await _renderToPdf(htmlContent, filename);
-        pdf.save(filename || 'informe.pdf');
+        console.log('[Reports] _savePdf called for:', filename);
+        try {
+            const pdf = await _renderToPdf(htmlContent, filename);
+            console.log('[Reports] PDF rendered, saving now...');
+            pdf.save(filename || 'informe.pdf');
+        } catch (err) {
+            console.error('[Reports] _savePdf error:', err);
+            throw err;
+        }
     }
 
     /** Generate a PDF Blob without downloading it (for ZIP). Returns Promise<Blob>. */
@@ -382,107 +438,290 @@
         return `<span class="badge badge-${cls}">Nv.${level ?? '—'} ${label}</span>`;
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // 1. FICHA SEGUIMIENTO TÉCNICO
-    // ════════════════════════════════════════════════════════════════════════
-
+    // ─── Motivo del Informe modal ─────────────────────────────────────────────
     /**
-     * Shows a modal dialog asking for the "Razón del informe" before generating the PDF.
-     * Returns a Promise that resolves with the entered text, or null if cancelled.
+     * Shows a Bootstrap modal asking for the reason ("motivo") of the report.
+     * Safely hides any currently-open Bootstrap modal and restores it afterwards.
+     * Returns Promise<string|null>:
+     *   - string (possibly empty) when the user confirms
+     *   - null when the user cancels
      */
-    function _promptRazonInforme() {
+    function _askRazon(title) {
+        console.log('[Reports] Showing _askRazon modal for:', title);
         return new Promise(resolve => {
-            document.getElementById('_razon-modal-overlay')?.remove();
-
-            // ── Bootstrap's modal has a focus-trap (enforceFocus) that steals focus
-            //    back to the modal on every focusin event on document.
-            //    The only reliable fix: hide the modal, show our prompt, then re-show.
-            const fichaModal = document.getElementById('fichaModal');
-            const bsModal = (fichaModal && window.bootstrap)
-                ? bootstrap.Modal.getInstance(fichaModal)
-                : null;
-
-            // Build and inject the overlay before hiding the modal,
-            // so we can re-show it in the 'hidden.bs.modal' callback.
-            const overlay = document.createElement('div');
-            overlay.id = '_razon-modal-overlay';
-            overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(26,26,46,.65);display:flex;align-items:center;justify-content:center;';
-            overlay.innerHTML = `
-                <div id="_razon-card" style="
-                    background:#fff; border-radius:12px; padding:28px 32px;
-                    width:480px; max-width:95vw; box-shadow:0 8px 40px rgba(0,0,0,.25);
-                    font-family:'Inter',Arial,sans-serif; position:relative;
-                ">
-                    <div style="font-size:13pt;font-weight:700;color:#1A1A2E;margin-bottom:6px;">
-                        <span style="color:#FF6B35;margin-right:6px;">✦</span>Razón del informe
-                    </div>
-                    <div style="font-size:9.5pt;color:#888;margin-bottom:16px;">
-                        Opcional — aparecerá en la cabecera del PDF, debajo de las fechas del bootcamp.
-                    </div>
-                    <textarea id="_razon-ta" rows="4"
-                        placeholder="Ej: Seguimiento trimestral, solicitud de empresa, revisión de competencias…"
-                        style="width:100%;border:1px solid #dee2e6;border-radius:6px;padding:10px 12px;
-                               font-family:inherit;font-size:10pt;resize:vertical;color:#222;
-                               line-height:1.5;display:block;box-sizing:border-box;"></textarea>
-                    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
-                        <button id="_razon-skip" type="button" style="
-                            background:transparent;border:1px solid #dee2e6;border-radius:6px;
-                            padding:8px 18px;font-size:10pt;cursor:pointer;color:#555;">Omitir</button>
-                        <button id="_razon-ok" type="button" style="
-                            background:#FF6B35;border:none;border-radius:6px;
-                            padding:8px 22px;font-size:10pt;font-weight:600;color:#fff;cursor:pointer;">Generar PDF</button>
-                    </div>
-                </div>`;
-
-            const ta   = overlay.querySelector('#_razon-ta');
-            const ok   = overlay.querySelector('#_razon-ok');
-            const skip = overlay.querySelector('#_razon-skip');
-            const card = overlay.querySelector('#_razon-card');
-
-            const done = (val) => {
-                overlay.remove();
-                if (bsModal) {
-                    // Re-show the ficha modal after the prompt closes
-                    bsModal.show();
-                }
-                resolve(val);
-            };
-
-            ok.addEventListener('click',   () => done(ta.value.trim()));
-            skip.addEventListener('click', () => done(''));
-            card.addEventListener('click',      e => e.stopPropagation());
-            card.addEventListener('mousedown',  e => e.stopPropagation());
-            overlay.addEventListener('click',   () => done(''));
-            ta.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) done(ta.value.trim()); });
-
-            if (bsModal) {
-                // Hide the Bootstrap modal first; append overlay + focus once it's fully hidden
-                fichaModal.addEventListener('hidden.bs.modal', function onHidden() {
-                    fichaModal.removeEventListener('hidden.bs.modal', onHidden);
-                    document.body.appendChild(overlay);
-                    setTimeout(() => ta.focus(), 50);
-                }, { once: true });
-                bsModal.hide();
-            } else {
-                // No Bootstrap modal open — just show immediately
-                document.body.appendChild(overlay);
-                setTimeout(() => ta.focus(), 50);
+            // ── Hide any currently-open Bootstrap modal so they don't stack ──
+            const openModalEl   = document.querySelector('.modal.show');
+            const openModalInst = openModalEl ? (window.bootstrap?.Modal.getInstance(openModalEl) || null) : null;
+            if (openModalInst) {
+                console.log('[Reports] Hiding existing modal');
+                openModalInst.hide();
             }
+
+            // ── Build the modal DOM ──
+            const id = '_razon-informe-modal';
+            const existing = document.getElementById(id);
+            if (existing) {
+                const inst = window.bootstrap?.Modal.getInstance(existing);
+                if (inst) inst.hide();
+                existing.remove();
+            }
+
+            const div = document.createElement('div');
+            div.innerHTML = `
+<div class="modal fade" id="${id}" tabindex="-1" aria-labelledby="${id}-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow">
+      <div class="modal-header" style="background:#1A1A2E;color:#fff;border-bottom:2px solid #FF6B35;">
+        <h5 class="modal-title" id="${id}-label" style="font-size:1rem;">
+          <i class="bi bi-file-earmark-text me-2" style="color:#FF6B35;"></i>${_esc(title || 'Informe de Seguimiento Técnico')}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <label class="form-label fw-semibold mb-1" style="font-size:.875rem;color:#4A4A6A;">
+          Motivo del informe <span class="text-muted fw-normal">(opcional)</span>
+        </label>
+        <textarea id="${id}-textarea" class="form-control" rows="4"
+          placeholder="Ej: Seguimiento mensual de progreso, revisión por solicitud de financiador, evaluación de fin de módulo…"
+          style="font-size:.875rem;resize:vertical;"></textarea>
+        <div class="form-text mt-1">Déjalo en blanco para generar el informe sin motivo.</div>
+      </div>
+      <div class="modal-footer pt-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+          <i class="bi bi-x me-1"></i>Cancelar
+        </button>
+        <button type="button" class="btn btn-sm" id="${id}-confirm"
+          style="background:#FF6B35;color:#fff;border:none;">
+          <i class="bi bi-file-earmark-pdf me-1"></i>Generar PDF
+        </button>
+      </div>
+    </div>
+  </div>
+</div>`;
+            document.body.appendChild(div.firstElementChild);
+
+            const modalEl  = document.getElementById(id);
+            if (!window.bootstrap?.Modal) {
+                console.error('[Reports] Bootstrap Modal library not found!');
+                resolve(''); // Fallback to no reason if bootstrap is missing
+                return;
+            }
+            const modal    = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+            let   resolved = false;
+
+            // ── Confirm ──
+            document.getElementById(`${id}-confirm`).addEventListener('click', () => {
+                if (resolved) return;
+                resolved = true;
+                const val = (document.getElementById(`${id}-textarea`)?.value || '').trim();
+                modal.hide();
+                resolve(val); // empty string = confirmed without text
+            });
+
+            // ── After modal closes (either path) — clean up DOM and handle cancel ──
+            modalEl.addEventListener('hidden.bs.modal', () => {
+                modalEl.remove();
+                if (!resolved) {
+                    resolved = true;
+                    // Restore previously-hidden modal
+                    if (openModalInst) {
+                        try { openModalInst.show(); } catch (_) {}
+                    }
+                    resolve(null); // cancelled
+                }
+            }, { once: true });
+
+            modal.show();
+            modalEl.addEventListener('shown.bs.modal', () => {
+                document.getElementById(`${id}-textarea`)?.focus();
+            }, { once: true });
         });
     }
 
+    /**
+     * Shows a Bootstrap modal to select a week from a list of options.
+     * Returns Promise<number|null>: the index of the selected option, or null if cancelled.
+     */
+    function _askWeekSelect(title, options, collaborators = []) {
+        console.log('[Reports] Showing _askWeekSelect modal with collaborators');
+        return new Promise(resolve => {
+            const openModalEl   = document.querySelector('.modal.show');
+            const openModalInst = openModalEl ? (window.bootstrap?.Modal.getInstance(openModalEl) || null) : null;
+            if (openModalInst) openModalInst.hide();
+
+            const id = '_week-select-modal';
+            const existing = document.getElementById(id);
+            if (existing) {
+                const inst = window.bootstrap?.Modal.getInstance(existing);
+                if (inst) inst.hide();
+                existing.remove();
+            }
+
+            let optHtml = '';
+            options.forEach((opt, idx) => {
+                optHtml += `<option value="${idx}">${_esc(opt.label)}</option>`;
+            });
+
+            let collHtml = '';
+            collaborators.forEach(c => {
+                collHtml += `<option value="${c.email}">${_esc(c.name)} (${_esc(c.email)})</option>`;
+            });
+            collHtml += `<option value="manual">Añadir otro email manualmente...</option>`;
+
+            const div = document.createElement('div');
+            div.innerHTML = `
+<div class="modal fade" id="${id}" tabindex="-1" aria-labelledby="${id}-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow">
+      <div class="modal-header" style="background:#1A1A2E;color:#fff;border-bottom:2px solid #FF6B35;">
+        <h5 class="modal-title" id="${id}-label" style="font-size:1rem;">
+          <i class="bi bi-calendar3 me-2" style="color:#FF6B35;"></i>${_esc(title || 'Seleccionar Semana')}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <label class="form-label fw-semibold mb-1" style="font-size:.875rem;color:#4A4A6A;">
+          Elige la semana para el informe
+        </label>
+        <select id="${id}-select" class="form-select mb-3" style="font-size:.875rem;">
+          ${optHtml}
+        </select>
+        
+        <div class="p-3 mb-2 rounded border" style="background: #f8f9fa;">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="${id}-send-check">
+              <label class="form-check-label fw-semibold" for="${id}-send-check" style="color: #1A1A2E;">Enviar por email tras generar</label>
+            </div>
+            
+            <div id="${id}-email-section" style="display:none;">
+              <label class="form-label small text-muted mb-1">Destinatario:</label>
+              <select id="${id}-dest-select" class="form-select form-select-sm mb-2" style="font-size:.8rem;">
+                ${collHtml}
+              </select>
+              <input type="email" id="${id}-manual-email" class="form-control form-control-sm" placeholder="ejemplo@email.com" style="display:none;font-size:.8rem;">
+            </div>
+        </div>
+        
+        <div class="form-text mt-1 text-muted small">Al elegir "Enviar", el sistema generará el PDF y lo hará llegar por email al destino seleccionado.</div>
+      </div>
+      <div class="modal-footer pt-1">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+          <i class="bi bi-x me-1"></i>Cancelar
+        </button>
+        <button type="button" class="btn btn-sm" id="${id}-download-btn" 
+          style="background:#f1f3f5;color:#4A4A6A;border:1px solid #dee2e6;">
+          <i class="bi bi-download me-1"></i>Descargar PDF
+        </button>
+        <button type="button" class="btn btn-sm" id="${id}-send-btn" 
+          style="background:#FF6B35;color:#fff;border:none;display:none;">
+          <i class="bi bi-send me-1"></i>Generar y Enviar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>`;
+            document.body.appendChild(div.firstElementChild);
+
+            const modalEl  = document.getElementById(id);
+            if (!window.bootstrap?.Modal) return resolve(options.length ? { weekIdx: 0, action: 'download' } : null);
+            const modal    = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+            let   resolved = false;
+
+            const sendCheck = document.getElementById(`${id}-send-check`);
+            const emailSec  = document.getElementById(`${id}-email-section`);
+            const destSel   = document.getElementById(`${id}-dest-select`);
+            const manualIn  = document.getElementById(`${id}-manual-email`);
+            const downBtn   = document.getElementById(`${id}-download-btn`);
+            const sendBtn   = document.getElementById(`${id}-send-btn`);
+
+            sendCheck.addEventListener('change', () => {
+                const checked = sendCheck.checked;
+                emailSec.style.display = checked ? 'block' : 'none';
+                sendBtn.style.display  = checked ? 'inline-block' : 'none';
+                downBtn.style.display  = checked ? 'none' : 'inline-block';
+            });
+
+            destSel.addEventListener('change', () => {
+                manualIn.style.display = (destSel.value === 'manual') ? 'block' : 'none';
+            });
+
+            downBtn.addEventListener('click', () => {
+               if (resolved) return;
+               resolved = true;
+               const val = parseInt(document.getElementById(`${id}-select`).value, 10);
+               modal.hide();
+               resolve({
+                 weekIdx: isNaN(val) ? 0 : val,
+                 action: 'download'
+               });
+            });
+
+            sendBtn.addEventListener('click', () => {
+               if (resolved) return;
+               let email = destSel.value;
+               if (email === 'manual') {
+                  email = manualIn.value.trim();
+                  if (!email || !email.includes('@')) {
+                      alert('Por favor, indica un email válido.');
+                      return;
+                  }
+               }
+               resolved = true;
+               const val = parseInt(document.getElementById(`${id}-select`).value, 10);
+               modal.hide();
+               resolve({
+                 weekIdx: isNaN(val) ? 0 : val,
+                 action: 'send',
+                 email: email
+               });
+            });
+
+            modalEl.addEventListener('hidden.bs.modal', () => {
+                modalEl.remove();
+                if (!resolved) {
+                    resolved = true;
+                    if (openModalInst) try { openModalInst.show(); } catch (_) {}
+                    resolve(null);
+                }
+            }, { once: true });
+
+            modal.show();
+        });
+    }
+
+    // ─── Reason block HTML (injected right after the header) ─────────────────
+    function _razonBlock(razonInforme) {
+        if (!razonInforme) return '';
+        return `<div style="
+            margin-bottom: 14pt;
+            padding: 8pt 12pt;
+            background: #f8f9fa;
+            border-left: 4px solid ${PRIMARY};
+            border-radius: 0 6pt 6pt 0;
+            font-size: 9.5pt;
+            line-height: 1.6;
+        ">
+            <div>
+                <span style="color:${SECONDARY}; font-weight:600;">Motivo del informe:&nbsp;</span>
+                <span style="color:#222;">${_esc(razonInforme)}</span>
+            </div>
+        </div>`;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 1. FICHA SEGUIMIENTO TÉCNICO
+    // ════════════════════════════════════════════════════════════════════════
     async function printTechnical(studentId, promotionId) {
-        // Ask for the reason BEFORE showing the saving spinner
-        const razonInforme = await _promptRazonInforme();
-        // null means the user closed the dialog — we still generate (razonInforme will be '')
+        // Ask for reason first — null means user cancelled
+        const razonInforme = await _askRazon('Informe de Seguimiento Técnico');
+        if (razonInforme === null) return;
 
         const token = localStorage.getItem('token');
         try {
-            const [stuRes, promoRes, pildarasRes, extRes] = await Promise.all([
+            const [stuRes, promoRes, pildarasRes] = await Promise.all([
                 fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
                 fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/modules-pildoras`,      { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`)
+                fetch(`${API_URL}/api/promotions/${promotionId}/modules-pildoras`,      { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
             if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
             const s   = await stuRes.json();
@@ -490,98 +729,25 @@
             const pildarasData = pildarasRes.ok ? await pildarasRes.json() : {};
             const modulesPildarasExtended = pildarasData.modulesPildoras || [];
             const tt  = s.technicalTracking || {};
-
-            // ── Overlay evaluations from ExtendedInfo into teams (same logic as openFicha) ──
-            if (extRes.ok) {
-                const ext = await extRes.json();
-                const projectEvaluations = ext.projectEvaluations || [];
-                const teamsFromDb = tt.teams || [];
-                for (const projEval of projectEvaluations) {
-                    let evalEntry = null;
-                    if (projEval.type === 'grupal') {
-                        const group = (projEval.groups || []).find(g => (g.studentIds || []).includes(String(studentId)));
-                        if (group) {
-                            evalEntry = (projEval.evaluations || []).find(e => e.targetId === group.groupName);
-                        }
-                    } else {
-                        evalEntry = (projEval.evaluations || []).find(e => String(e.targetId) === String(studentId));
-                    }
-                    if (!evalEntry) continue;
-                    if (!(evalEntry.competences || []).length && !evalEntry.feedback) continue;
-                    const alreadyIn = teamsFromDb.some(
-                        t => t.teamName === projEval.projectName && t.moduleId === projEval.moduleId
-                    );
-                    if (alreadyIn) continue;
-                    teamsFromDb.push({
-                        teamName:     projEval.projectName || '',
-                        projectType:  projEval.type || 'individual',
-                        moduleName:   projEval.moduleName || '',
-                        moduleId:     projEval.moduleId || '',
-                        assignedDate: evalEntry.evaluatedAt ? evalEntry.evaluatedAt.split('T')[0] : '',
-                        teacherNote:  evalEntry.feedback || '',
-                        members:      [],
-                        competences:  (evalEntry.competences || []).map(ce => ({
-                            competenceId:   ce.competenceId,
-                            competenceName: ce.competenceName,
-                            level:          ce.level,
-                            toolsUsed:      ce.toolsUsed || []
-                        }))
-                    });
-                }
-                tt.teams = teamsFromDb;
-            }
             const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-
-            // ── Format bootcamp date range ──
-            const fmtLong = (d) => {
-                if (!d) return '—';
-                try {
-                    const parts = String(d).split('T')[0].split('-');
-                    if (parts.length === 3) {
-                        const dt = new Date(+parts[0], +parts[1]-1, +parts[2]);
-                        return dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-                    }
-                    return String(d);
-                } catch { return String(d); }
-            };
-            const startStr = fmtLong(promo.startDate);
-            const endStr   = fmtLong(promo.endDate);
-            const dateRange = (promo.startDate || promo.endDate)
-                ? `${startStr} a ${endStr}`
-                : null;
 
             let html = _header(
                 'Ficha de Seguimiento Técnico',
                 fullName,
                 promo.name,
-                _today()
+                _today(),
+                promo
             );
 
-            // ── Dates + reason block (injected right after the header) ──
-            if (dateRange || razonInforme) {
-                html += `<div style="
-                    margin-bottom: 14pt;
-                    padding: 8pt 12pt;
-                    background: #f8f9fa;
-                    border-left: 4px solid ${PRIMARY};
-                    border-radius: 0 6pt 6pt 0;
-                    font-size: 9.5pt;
-                    line-height: 1.6;
-                ">`;
-                if (dateRange) {
-                    html += `<div style="margin-bottom:${razonInforme ? '5pt' : '0'};">
-                        <span style="color:${SECONDARY}; font-weight:600;">Período del bootcamp:&nbsp;</span>
-                        <span style="color:#222;">${_esc(dateRange)}</span>
-                    </div>`;
-                }
-                if (razonInforme) {
-                    html += `<div>
-                        <span style="color:${SECONDARY}; font-weight:600;">Motivo del informe:&nbsp;</span>
-                        <span style="color:#222;">${_esc(razonInforme)}</span>
-                    </div>`;
-                }
-                html += `</div>`;
-            }
+            // ── Motivo del informe (right after header) ──
+            html += _razonBlock(razonInforme);
+
+            // ── Datos personales ──
+            html += `<div class="section-box accent">
+                <div class="kv"><strong>Coder:</strong> ${fullName}</div>
+                <div class="kv"><strong>Promoción:</strong> ${promo.name || '—'}</div>
+                <div class="kv"><strong>Fecha de generación:</strong> ${_today()}</div>
+            </div>`;
 
             // ── Notas del profesor ──
             html += `<h3><span style="color:${PRIMARY}">✦</span> Notas del Profesor</h3>`;
@@ -710,6 +876,7 @@
         }
     }
 
+
     // ════════════════════════════════════════════════════════════════════════
     // 2. FICHA SEGUIMIENTO TRANSVERSAL
     // ════════════════════════════════════════════════════════════════════════
@@ -721,68 +888,12 @@
                 fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
             if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
-            const s     = await stuRes.json();
+            const s   = await stuRes.json();
             const promo = promoRes.ok ? await promoRes.json() : {};
-            const tr    = s.transversalTracking || {};
             const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
 
-            let html = _header(
-                'Ficha de Seguimiento Transversal',
-                fullName,
-                promo.name,
-                _today()
-            );
-
-            // ── Sesiones empleabilidad ──
-            html += `<h3><span style="color:${PRIMARY}">✦</span> Sesiones de Empleabilidad</h3>`;
-            const empSessions = tr.employabilitySessions || [];
-            if (empSessions.length) {
-                html += `<table><thead><tr><th>Fecha</th><th>Tema</th><th>Notas</th></tr></thead><tbody>`;
-                empSessions.forEach(s2 => {
-                    html += `<tr><td>${_fmtDate(s2.date)}</td><td>${_esc(s2.topic || '—')}</td><td>${_esc(s2.notes || '')}</td></tr>`;
-                });
-                html += `</tbody></table>`;
-            } else {
-                html += `<p class="empty-note">Sin sesiones de empleabilidad registradas.</p>`;
-            }
-
-            // ── Sesiones individuales ──
-            html += `<h3><span style="color:${PRIMARY}">✦</span> Sesiones Individuales</h3>`;
-            const indSessions = tr.individualSessions || [];
-            if (indSessions.length) {
-                html += `<table><thead><tr><th>Fecha</th><th>Tema</th><th>Notas</th></tr></thead><tbody>`;
-                indSessions.forEach(s2 => {
-                    html += `<tr><td>${_fmtDate(s2.date)}</td><td>${_esc(s2.topic || '—')}</td><td>${_esc(s2.notes || '')}</td></tr>`;
-                });
-                html += `</tbody></table>`;
-            } else {
-                html += `<p class="empty-note">Sin sesiones individuales registradas.</p>`;
-            }
-
-            // ── Incidencias ──
-            html += `<h3><span style="color:${PRIMARY}">✦</span> Incidencias</h3>`;
-            const incidents = tr.incidents || [];
-            if (incidents.length) {
-                html += `<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Estado</th></tr></thead><tbody>`;
-                incidents.forEach(inc => {
-                    const estado = inc.resolved
-                        ? `<span class="badge badge-green">Resuelta</span>`
-                        : `<span class="badge badge-red">Pendiente</span>`;
-                    html += `<tr>
-                        <td style="white-space:nowrap;">${_fmtDate(inc.date)}</td>
-                        <td>${_esc(inc.type || '—')}</td>
-                        <td>${_esc(inc.description || '')}</td>
-                        <td>${estado}</td>
-                    </tr>`;
-                });
-                html += `</tbody></table>`;
-            } else {
-                html += `<p class="empty-note">Sin incidencias registradas.</p>`;
-            }
-
-            const filename = `transversal_${(fullName).replace(/\s+/g,'-')}.pdf`;
             _showSaving('Generando PDF…');
-            await _savePdf(html, filename);
+            await _savePdf(_transPageHtml(s, promo), `transversal_${fullName.replace(/\s+/g,'-')}.pdf`);
             _hideSaving();
         } catch (e) {
             _hideSaving();
@@ -790,6 +901,41 @@
             alert('Error generando el informe transversal: ' + e.message);
         }
     }
+
+    async function printBulkTransversal(studentIds, promotionId) {
+        if (!studentIds?.length) { alert('Selecciona al menos un estudiante.'); return; }
+        const token = localStorage.getItem('token');
+        try {
+            const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const promo = promoRes.ok ? await promoRes.json() : {};
+            const students = await Promise.all(studentIds.map(id => _fetchStudent(id, promotionId, token)));
+
+            if (students.length === 1) {
+                const s = students[0];
+                const fullName = `${s.name||''} ${s.lastname||''}`.trim();
+                _showSaving('Generando PDF…');
+                await _savePdf(_transPageHtml(s, promo), `transversal_${fullName.replace(/\s+/g,'-')}.pdf`);
+            } else {
+                const files = [];
+                for (let i = 0; i < students.length; i++) {
+                    const s = students[i];
+                    const fullName = `${s.name||''} ${s.lastname||''}`.trim();
+                    const fname = `transversal_${fullName.replace(/\s+/g,'-')}.pdf`;
+                    _showSaving(`Generando PDF ${i + 1} de ${students.length}: ${fullName}…`);
+                    const blob = await _getPdfBlob(_transPageHtml(s, promo), fname);
+                    files.push({ blob, filename: fname });
+                }
+                _showSaving(`Comprimiendo ${files.length} PDFs…`);
+                await _zipAndDownload(files, `seguimiento-transversal_${(promo.name||'promo').replace(/\s+/g,'-')}.zip`);
+            }
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printBulkTransversal:', e);
+            alert('Error generando los informes transversales: ' + e.message);
+        }
+    }
+
 
     // ════════════════════════════════════════════════════════════════════════
     // 3. ACTA DE INICIO
@@ -1197,250 +1343,6 @@ async function printActaInicio(promotionId) {
 }
 
     // ════════════════════════════════════════════════════════════════════════
-    // 3b. ACTA DE BAJA
-    // ════════════════════════════════════════════════════════════════════════
-    async function printActaBaja(studentId, promotionId) {
-        const token = localStorage.getItem('token');
-        try {
-            const [promoRes, extRes, studentRes] = await Promise.all([
-                fetch(`${API_URL}/api/promotions/${promotionId}`,                              { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`,                { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`,        { headers: { 'Authorization': `Bearer ${token}` } })
-            ]);
-            if (!promoRes.ok) throw new Error('No se pudo cargar la promoción');
-            if (!studentRes.ok) throw new Error('No se pudo cargar el estudiante');
-
-            const promo   = await promoRes.json();
-            const ext     = extRes.ok ? await extRes.json() : {};
-            const student = await studentRes.json();
-            const w = student.withdrawal || {};
-
-            const studentName = `${student.name || ''} ${student.lastname || ''}`.trim() || '—';
-            const docId       = student.identificationDocument || '—';
-
-            // Extract city from ext.presentialDays (last comma-segment) or fallback to promo location
-            const DAYS_ES = /^(lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)$/i;
-            let city = '';
-            if (ext.presentialDays) {
-                const parts = ext.presentialDays.split(',').map(p => p.trim()).filter(Boolean);
-                // Walk from the end and pick the first segment that doesn't look like a weekday
-                for (let i = parts.length - 1; i >= 0; i--) {
-                    if (!DAYS_ES.test(parts[i])) { city = parts[i]; break; }
-                }
-            }
-            // Last resort: try to pull city from the seat address stored in presentialDays free text
-            if (!city) city = ext.city || promo.city || '';
-
-            const withdrawalDate = w.date ? new Date(w.date) : new Date();
-            const withdrawalDateStr = withdrawalDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-            const withdrawalDateShort = withdrawalDate.toLocaleDateString('es-ES');
-
-            const representative = w.representative || '—';
-            const reason         = w.reason || '—';
-
-            const ORANGE = '#E85D26';
-            const BLUE   = '#4472C4';
-
-            const style = `
-                <style>
-                    * { box-sizing: border-box; margin: 0; padding: 0; }
-                    body {
-                        font-family: 'Poppins', Arial, sans-serif;
-                        font-size: 10pt;
-                        color: #1a1a1a;
-                        padding: 40pt 50pt 80pt 50pt;
-                        line-height: 1.6;
-                    }
-                    .doc-title {
-                        font-size: 20pt;
-                        font-weight: bold;
-                        color: ${ORANGE};
-                        text-align: center;
-                        margin-bottom: 6pt;
-                        margin-top: 10pt;
-                        text-transform: uppercase;
-                        letter-spacing: 1pt;
-                    }
-                    .doc-subtitle {
-                        text-align: center;
-                        font-size: 12pt;
-                        font-weight: bold;
-                        color: ${BLUE};
-                        margin-bottom: 24pt;
-                    }
-                    .doc-location {
-                        text-align: right;
-                        font-size: 10pt;
-                        color: #555;
-                        margin-bottom: 20pt;
-                        font-style: italic;
-                    }
-                    .body-text {
-                        font-size: 10pt;
-                        margin-bottom: 14pt;
-                        text-align: justify;
-                        line-height: 1.7;
-                    }
-                    .body-text .highlight {
-                        font-weight: bold;
-                        color: ${BLUE};
-                    }
-                    .reason-box {
-                        background: #fff8f5;
-                        border-left: 3pt solid ${ORANGE};
-                        padding: 10pt 14pt;
-                        margin: 16pt 0;
-                        font-size: 10pt;
-                        line-height: 1.6;
-                    }
-                    .reason-box .label {
-                        font-weight: bold;
-                        color: ${ORANGE};
-                        display: block;
-                        margin-bottom: 4pt;
-                    }
-                    .signatures {
-                        margin-top: 40pt;
-                        display: flex;
-                        justify-content: space-between;
-                        gap: 40pt;
-                    }
-                    .sign-block {
-                        flex: 1;
-                        text-align: center;
-                    }
-                    .sign-block .sign-line {
-                        border-bottom: 1px solid #999;
-                        height: 50pt;
-                        margin-bottom: 8pt;
-                    }
-                    .sign-block .sign-label {
-                        font-size: 9pt;
-                        color: #555;
-                        font-weight: bold;
-                    }
-                    .sign-block .sign-name {
-                        font-size: 9pt;
-                        color: #1a1a1a;
-                        margin-top: 2pt;
-                    }
-                    .divider {
-                        border: none;
-                        border-top: 1px solid #ddd;
-                        margin: 20pt 0;
-                    }
-                    .footer {
-                        position: fixed;
-                        bottom: 16pt;
-                        right: 40pt;
-                        display: flex;
-                        align-items: center;
-                        gap: 6pt;
-                    }
-                    .footer-badge {
-                        background: ${ORANGE};
-                        color: white;
-                        font-size: 9pt;
-                        font-weight: bold;
-                        padding: 2pt 4pt;
-                        border-radius: 2pt;
-                    }
-                    .footer-text {
-                        font-size: 14pt;
-                        font-weight: bold;
-                        color: ${ORANGE};
-                    }
-                    .footer-sub {
-                        font-size: 6.5pt;
-                        color: #999;
-                        letter-spacing: 1.2pt;
-                        text-transform: uppercase;
-                        display: block;
-                        margin-top: -2pt;
-                    }
-                    @media print {
-                        body { padding: 20pt 30pt 60pt 30pt; }
-                    }
-                </style>`;
-
-            const esc = (v) => _esc(v);
-
-            let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-                ${style}</head><body>`;
-
-            // Título
-            html += `<div class="doc-title">Acta de Baja Oficial</div>`;
-            html += `<div class="doc-subtitle">${esc(promo.name || '—')}</div>`;
-            html += `<div class="doc-location">${city ? `En ${esc(city)}, a` : 'A'} ${esc(withdrawalDateStr)}</div>`;
-            html += `<hr class="divider">`;
-
-            // Cuerpo
-            html += `<p class="body-text">
-                Mediante el presente documento se hace constar que
-                <span class="highlight">${esc(studentName)}</span>,
-                con documento de identidad <span class="highlight">${esc(docId)}</span>,
-                participante en el programa formativo
-                <span class="highlight">${esc(promo.name || '—')}</span>
-                impartido por Factoría F5, ha causado <strong>baja oficial</strong>
-                del citado programa con efectos a partir del día
-                <span class="highlight">${esc(withdrawalDateShort)}</span>.
-            </p>`;
-
-            html += `<div class="reason-box">
-                <span class="label">Motivo de la baja:</span>
-                ${esc(reason)}
-            </div>`;
-
-            html += `<p class="body-text">
-                Dicha baja ha sido tramitada y registrada en los sistemas de gestión de Factoría F5,
-                dejando constancia de la misma a todos los efectos legales y administrativos pertinentes.
-            </p>`;
-
-            html += `<p class="body-text">
-                La persona interesada ha sido informada de esta decisión y ha tenido la oportunidad de
-                conocer los motivos que la fundamentan.
-            </p>`;
-
-            // Firmas
-            html += `<div class="signatures">
-                <div class="sign-block">
-                    <div class="sign-line"></div>
-                    <div class="sign-label">La persona participante</div>
-                    <div class="sign-name">${esc(studentName)}</div>
-                    <div class="sign-name">${esc(docId)}</div>
-                </div>
-                <div class="sign-block">
-                    <div class="sign-line"></div>
-                    <div class="sign-label">Por Factoría F5</div>
-                    <div class="sign-name">${esc(representative)}</div>
-                </div>
-            </div>`;
-
-            // Footer
-            html += `<div class="footer">
-                <div>
-                    <span class="footer-badge">F5</span>
-                    <span class="footer-text">factoría</span>
-                    <span class="footer-sub">powered by simplon</span>
-                </div>
-            </div>`;
-
-            html += `</body></html>`;
-
-            const safeName = studentName.replace(/\s+/g, '-');
-            const filename = `acta-baja_${safeName}_${(promo.name||'promo').replace(/\s+/g,'-')}.pdf`;
-            _showSaving('Generando Acta de Baja…');
-            await _savePdf(html, filename);
-            _hideSaving();
-        } catch (e) {
-            _hideSaving();
-            console.error('[Reports] printActaBaja:', e);
-            alert('Error generando el Acta de Baja: ' + e.message);
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
     // 4. DESCRIPCIÓN TÉCNICA DE FORMACIÓN
     // ════════════════════════════════════════════════════════════════════════
     async function printDescripcionTecnica(promotionId) {
@@ -1466,7 +1368,8 @@ async function printActaInicio(promotionId) {
                 'Descripción Técnica de la Formación',
                 promo.name,
                 null,
-                _today()
+                _today(),
+                promo
             );
 
             // ── 1. Presentación ──
@@ -1785,10 +1688,24 @@ async function printActaInicio(promotionId) {
     }
 
     /** Fetch all projects (teams) that belong to a named project across multiple students */
-    function _techPageHtml(s, promo) {
+    function _techPageHtml(s, promo, razonInforme) {
         const tt = s.technicalTracking || {};
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-        let html = _header('Ficha de Seguimiento Técnico', fullName, promo.name, _today());
+        let html = _header('Ficha de Seguimiento Técnico', fullName, promo.name, _today(), promo);
+
+        // ── Motivo del informe (right after header) ──
+        html += _razonBlock(razonInforme || '');
+
+        html += `<div class="section-box accent row2">
+            <div>
+                <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+            </div>
+            <div>
+                <div class="kv"><strong>Edad:</strong> ${_esc(s.age || '—')}</div>
+                <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+            </div>
+        </div>`;
 
         html += `<h3>✦ Notas del Profesor</h3>`;
         const notes = tt.teacherNotes || [];
@@ -1846,7 +1763,18 @@ async function printActaInicio(promotionId) {
     function _transPageHtml(s, promo) {
         const tr2 = s.transversalTracking || {};
         const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
-        let html = _header('Ficha de Seguimiento Transversal', fullName, promo.name, _today());
+        let html = _header('Ficha de Seguimiento Transversal', fullName, promo.name, _today(), promo);
+
+        html += `<div class="section-box accent row2">
+            <div>
+                <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+            </div>
+            <div>
+                <div class="kv"><strong>Edad:</strong> ${_esc(s.age || '—')}</div>
+                <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+            </div>
+        </div>`;
 
         html += `<h3>✦ Sesiones de Empleabilidad</h3>`;
         const emp = tr2.employabilitySessions || [];
@@ -1881,6 +1809,11 @@ async function printActaInicio(promotionId) {
     // ── 6a. Bulk Technical ───────────────────────────────────────────────────
     async function printBulkTechnical(studentIds, promotionId) {
         if (!studentIds?.length) { alert('Selecciona al menos un estudiante.'); return; }
+
+        // Ask for reason first — null means user cancelled
+        const razonInforme = await _askRazon('Informe de Seguimiento Técnico');
+        if (razonInforme === null) return;
+
         const token = localStorage.getItem('token');
         try {
             const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -1891,7 +1824,7 @@ async function printActaInicio(promotionId) {
                 const s = students[0];
                 const fullName = `${s.name||''} ${s.lastname||''}`.trim();
                 _showSaving('Generando PDF…');
-                await _savePdf(_techPageHtml(s, promo), `tecnico_${fullName.replace(/\s+/g,'-')}.pdf`);
+                await _savePdf(_techPageHtml(s, promo, razonInforme), `tecnico_${fullName.replace(/\s+/g,'-')}.pdf`);
             } else {
                 // Sequential processing — one iframe at a time
                 const files = [];
@@ -1900,7 +1833,7 @@ async function printActaInicio(promotionId) {
                     const fullName = `${s.name||''} ${s.lastname||''}`.trim();
                     const fname = `tecnico_${fullName.replace(/\s+/g,'-')}.pdf`;
                     _showSaving(`Generando PDF ${i + 1} de ${students.length}: ${fullName}…`);
-                    const blob = await _getPdfBlob(_techPageHtml(s, promo), fname);
+                    const blob = await _getPdfBlob(_techPageHtml(s, promo, razonInforme), fname);
                     files.push({ blob, filename: fname });
                 }
                 _showSaving(`Comprimiendo ${files.length} PDFs…`);
@@ -1914,41 +1847,6 @@ async function printActaInicio(promotionId) {
         }
     }
 
-    // ── 6b. Bulk Transversal ─────────────────────────────────────────────────
-    async function printBulkTransversal(studentIds, promotionId) {
-        if (!studentIds?.length) { alert('Selecciona al menos un estudiante.'); return; }
-        const token = localStorage.getItem('token');
-        try {
-            const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-            const promo = promoRes.ok ? await promoRes.json() : {};
-            const students = await Promise.all(studentIds.map(id => _fetchStudent(id, promotionId, token)));
-
-            if (students.length === 1) {
-                const s = students[0];
-                const fullName = `${s.name||''} ${s.lastname||''}`.trim();
-                _showSaving('Generando PDF…');
-                await _savePdf(_transPageHtml(s, promo), `transversal_${fullName.replace(/\s+/g,'-')}.pdf`);
-            } else {
-                // Sequential processing — one iframe at a time
-                const files = [];
-                for (let i = 0; i < students.length; i++) {
-                    const s = students[i];
-                    const fullName = `${s.name||''} ${s.lastname||''}`.trim();
-                    const fname = `transversal_${fullName.replace(/\s+/g,'-')}.pdf`;
-                    _showSaving(`Generando PDF ${i + 1} de ${students.length}: ${fullName}…`);
-                    const blob = await _getPdfBlob(_transPageHtml(s, promo), fname);
-                    files.push({ blob, filename: fname });
-                }
-                _showSaving(`Comprimiendo ${files.length} PDFs…`);
-                await _zipAndDownload(files, `seguimiento-transversal_${(promo.name||'promo').replace(/\s+/g,'-')}.zip`);
-            }
-            _hideSaving();
-        } catch (e) {
-            _hideSaving();
-            console.error('[Reports] printBulkTransversal:', e);
-            alert('Error generando los informes: ' + e.message);
-        }
-    }
 
     // ── 6c. Bulk by Project (all students who participated in a specific project) ──
     // studentIds: array of IDs to process, or null/undefined = all students in the promotion
@@ -2004,7 +1902,7 @@ async function printActaInicio(promotionId) {
             // Helper: build HTML for a single student's project page
             const _buildStudentProjectHtml = (s) => {
                 const fullName = `${s.name||''} ${s.lastname||''}`.trim();
-                let sHtml = _header(`Proyecto: ${_esc(projectName)}`, fullName, promo.name, _today());
+                let sHtml = _header(`Proyecto: ${_esc(projectName)}`, fullName, promo.name, _today(), promo);
                 const projectTeams = (s.technicalTracking?.teams || []).filter(t =>
                     (t.teamName || '').toLowerCase() === projectName.toLowerCase()
                 );
@@ -2114,7 +2012,8 @@ async function printActaInicio(promotionId) {
                 'Resumen de Proyectos de la Promoción',
                 `${projectMap.size} proyectos · ${fullStudents.filter(Boolean).length} coders`,
                 promo.name,
-                _today()
+                _today(),
+                promo
             );
 
             // Overview table
@@ -2202,8 +2101,342 @@ async function printActaInicio(promotionId) {
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // ACTA DE BAJA
+    // ════════════════════════════════════════════════════════════════════════
+    async function printActaBaja(studentId, promotionId) {
+        const token = localStorage.getItem('token');
+        try {
+            const [stuRes, promoRes] = await Promise.all([
+                fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}`,                       { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            if (!stuRes.ok) throw new Error('No se pudo cargar el estudiante');
+            const s     = await stuRes.json();
+            const promo = promoRes.ok ? await promoRes.json() : {};
+            const w     = s.withdrawal || {};
+            const fullName = `${s.name || ''} ${s.lastname || ''}`.trim();
+
+            const bajaDate        = w.date         ? new Date(w.date).toLocaleDateString('es-ES',         { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+            const processedDate   = w.processedAt  ? new Date(w.processedAt).toLocaleDateString('es-ES',  { day: '2-digit', month: 'long', year: 'numeric' }) : _today();
+            const promoStart      = promo.startDate ? new Date(promo.startDate).toLocaleDateString('es-ES',{ day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+            const promoEnd        = promo.endDate   ? new Date(promo.endDate).toLocaleDateString('es-ES',  { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+            let html = _header(
+                'Acta de Baja',
+                fullName,
+                promo.name,
+                processedDate,
+                promo
+            );
+
+            // ── Alert banner ──
+            html += `
+            <div style="background:#fff1f0; border:1.5px solid #dc3545; border-left:5px solid #dc3545;
+                        border-radius:6pt; padding:10pt 14pt; margin-bottom:16pt; display:flex; align-items:center; gap:12pt;">
+                <div style="font-size:20pt; flex-shrink:0;">🚫</div>
+                <div>
+                    <div style="font-size:11pt; font-weight:700; color:#a31515;">Baja oficial del programa</div>
+                    <div style="font-size:9pt; color:#6b2b33; margin-top:2pt;">
+                        Este documento certifica que el/la participante ha causado baja oficial del bootcamp
+                        con fecha <strong>${bajaDate}</strong>.
+                    </div>
+                </div>
+            </div>`;
+
+            // ── Datos del participante ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Datos del/la Participante</h3>
+            <div class="section-box accent row2">
+                <div>
+                    <div class="kv"><strong>Nombre completo:</strong> ${_esc(fullName)}</div>
+                    <div class="kv"><strong>Email:</strong> ${_esc(s.email || '—')}</div>
+                    <div class="kv"><strong>Nacionalidad:</strong> ${_esc(s.nationality || '—')}</div>
+                    <div class="kv"><strong>Sit. Administrativa:</strong> ${_esc(s.administrativeSituation || '—')}</div>
+                </div>
+                <div>
+                    <div class="kv"><strong>Documento (DNI/NIE):</strong> ${_esc(s.identificationDocument || '—')}</div>
+                    <div class="kv"><strong>Nivel educativo:</strong> ${_esc(s.educationLevel || '—')}</div>
+                    <div class="kv"><strong>Género:</strong> ${_esc(s.gender || '—')}</div>
+                    <div class="kv"><strong>Profesión:</strong> ${_esc(s.profession || '—')}</div>
+                </div>
+            </div>`;
+
+            // ── Datos del programa ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Datos del Programa</h3>
+            <div class="section-box blue row2">
+                <div>
+                    <div class="kv"><strong>Promoción:</strong> ${_esc(promo.name || '—')}</div>
+                    <div class="kv"><strong>Inicio del programa:</strong> ${promoStart}</div>
+                    <div class="kv"><strong>Fin previsto:</strong> ${promoEnd}</div>
+                </div>
+                <div>
+                    <div class="kv"><strong>Fecha oficial de baja:</strong>
+                        <span style="color:#dc3545; font-weight:700;">${bajaDate}</span>
+                    </div>
+                    <div class="kv"><strong>Representante Factoría F5:</strong> ${_esc(w.representative || '—')}</div>
+                    <div class="kv"><strong>Acta generada el:</strong> ${processedDate}</div>
+                </div>
+            </div>`;
+
+            // ── Motivo de la baja ──
+            html += `<h3><span style="color:${PRIMARY}">✦</span> Motivo de la Baja</h3>
+            <div class="section-box red">
+                <p style="white-space:pre-wrap; font-size:10pt; color:#333;">${_esc(w.reason || 'No especificado.')}</p>
+            </div>`;
+
+            // ── Bloque de firmas ──
+            html += `
+            <div style="margin-top:40pt;">
+                <h3><span style="color:${PRIMARY}">✦</span> Firmas</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:30pt; margin-top:16pt;">
+                    <div style="border-top:1.5px solid #333; padding-top:8pt; text-align:center;">
+                        <div style="font-size:9pt; color:${SECONDARY}; font-weight:600;">PARTICIPANTE</div>
+                        <div style="font-size:9pt; margin-top:4pt;">${_esc(fullName)}</div>
+                    </div>
+                    <div style="border-top:1.5px solid #333; padding-top:8pt; text-align:center;">
+                        <div style="font-size:9pt; color:${SECONDARY}; font-weight:600;">REPRESENTANTE FACTORÍA F5</div>
+                        <div style="font-size:9pt; margin-top:4pt;">${_esc(w.representative || '—')}</div>
+                    </div>
+                </div>
+            </div>`;
+
+            const filename = `acta_baja_${(fullName).replace(/\s+/g, '-')}.pdf`;
+            _showSaving('Generando Acta de Baja…');
+            await _savePdf(html, filename);
+            _hideSaving();
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printActaBaja:', e);
+            alert('Error generando el acta de baja: ' + e.message);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ASISTENCIA SEMANAL (PDF)
+    // ════════════════════════════════════════════════════════════════════════
+    async function printWeeklyAttendance(promotionId, monthFilter = null) {
+        const token = localStorage.getItem('token');
+        try {
+            _showSaving('Recopilando datos de asistencia...');
+            const [promoRes, stuRes, collRes] = await Promise.all([
+                fetch(`${API_URL}/api/promotions/${promotionId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}/students`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_URL}/api/promotions/${promotionId}/collaborators`, { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            
+            if (!promoRes.ok) throw new Error('No se pudo cargar la promoción');
+            const promo = await promoRes.json();
+            const students = await stuRes.json();
+            const collaborators = collRes.ok ? await collRes.json() : [];
+            
+            // Get holidays
+            const holRes = await fetch(`${API_URL}/api/promotions/${promotionId}/holidays`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null);
+            const holidays = new Set((holRes && holRes.ok ? (await holRes.json()).holidays : []) || []);
+
+            // Determine date range for the weeks
+            let pStart = promo.startDate ? new Date(promo.startDate) : new Date();
+            let pEnd = promo.endDate ? new Date(promo.endDate) : new Date();
+
+            let currentDate = new Date(pStart);
+            while (currentDate.getDay() !== 1) currentDate.setDate(currentDate.getDate() - 1); // Rewind to Monday
+            
+            let actualEnd = new Date(pEnd);
+            actualEnd.setHours(23, 59, 59, 999);
+            
+            const allWeeks = [];
+            while (currentDate <= actualEnd) {
+                const weekDates = [];
+                for (let i = 0; i < 7; i++) {
+                    weekDates.push(new Date(currentDate));
+                    currentDate.setDate(currentDate.getDate() + 1);
+                }
+                if (weekDates[0] > actualEnd) break;
+                allWeeks.push(weekDates);
+            }
+
+            const formatLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+            // Filter weeks to match the selected month if monthFilter is given (e.g. "2026-03")
+            const filteredWeeks = [];
+            allWeeks.forEach((wdArray, index) => {
+                const wStart = wdArray[0];
+                const wEnd = wdArray[4]; // Friday
+                const startStr = formatLocal(wStart);
+                const endStr = formatLocal(wEnd);
+                const belongsToMonth = !monthFilter || startStr.startsWith(monthFilter) || endStr.startsWith(monthFilter);
+                if (new Date(`${endStr}T00:00:00`) >= pStart && new Date(`${startStr}T00:00:00`) <= pEnd && belongsToMonth) {
+                    filteredWeeks.push({
+                        label: `Semana ${index + 1}: ${_fmtDateEs(startStr)} al ${_fmtDateEs(endStr)}`,
+                        dates: wdArray,
+                        wIdx: index
+                    });
+                }
+            });
+
+            _hideSaving(); // Hide loading indicator before showing prompt
+
+            if (filteredWeeks.length === 0) {
+                alert('No se encontraron semanas laborables en el rango seleccionado.');
+                return;
+            }
+
+            // Ask user which week they want and if they want to send it
+            const selection = await _askWeekSelect('Asistencia Semanal', filteredWeeks, collaborators);
+            if (selection === null) return; // User cancelled
+
+            const selectedWeek = filteredWeeks[selection.weekIdx];
+
+            _showSaving('Descargando datos de la semana...');
+
+            // Fetch attendance data ONLY for the months that touch this week
+            const startStr = formatLocal(selectedWeek.dates[0]);
+            const endStr = formatLocal(selectedWeek.dates[4]);
+            const startMonth = startStr.substring(0, 7);
+            const endMonth = endStr.substring(0, 7);
+            
+            const monthsToFetch = new Set([startMonth, endMonth]);
+            let allAttendance = [];
+            for (const m of monthsToFetch) {
+                const aRes = await fetch(`${API_URL}/api/promotions/${promotionId}/attendance?month=${m}`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null);
+                if (aRes && aRes.ok) {
+                    const data = await aRes.json();
+                    if (Array.isArray(data)) allAttendance = allAttendance.concat(data);
+                }
+            }
+
+            // Organize by student and date
+            const attMap = {};
+            allAttendance.forEach(r => {
+                const sId = String(r.studentId?._id || r.studentId);
+                if (!attMap[sId]) attMap[sId] = {};
+                const dateKey = r.date.includes('T') ? r.date.split('T')[0] : r.date;
+                attMap[sId][dateKey] = r;
+            });
+
+            const stMap = { 'Presente': 'P', 'Ausente': 'A', 'Con retraso': 'T', 'Justificado': 'J', 'Sale antes': 'S' };
+
+            let html = _header('Informe de Asistencia Semanal', `Semana ${selectedWeek.wIdx + 1}`, promo.name, _today(), promo);
+
+            const workDays = selectedWeek.dates.slice(0, 5);
+            
+            html += `
+            <div class="no-break" style="margin-top:20px;">
+                <h3 style="background:#f1f3f5; padding:6px 10px; border-left:4px solid ${PRIMARY}; margin-bottom:10px;">
+                    Semana ${selectedWeek.wIdx + 1} (${_fmtDateEs(formatLocal(workDays[0]))} al ${_fmtDateEs(formatLocal(workDays[4]))})
+                </h3>
+                <table style="font-size:8.5pt;">
+                    <thead>
+                        <tr>
+                            <th style="width:20%">Estudiante</th>`;
+            workDays.forEach(wd => { html += `<th style="text-align:center;">${['Do','Lu','Ma','Mi','Ju','Vi','Sa'][wd.getDay()]} ${wd.getDate()}</th>`; });
+            html += `       <th style="text-align:center;" title="Presentes">P</th>
+                            <th style="text-align:center;" title="Ausentes">A</th>
+                            <th style="text-align:center;" title="Retrasos">T</th>
+                            <th style="width:25%">Comentarios</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            students.forEach(st => {
+                const stuId = String(st.id || st._id);
+                const stAtt = attMap[stuId] || {};
+                let p=0, a=0, r=0;
+                let marksHtml = '';
+                let comments = [];
+
+                workDays.forEach(wd => {
+                    const localDateStr = formatLocal(wd);
+                    const dateNum = wd.getDate();
+                    const isHoliday = holidays.has(localDateStr);
+
+                    if (isHoliday) {
+                        marksHtml += `<td style="text-align:center;color:#888;background:#f9f9f9;">F</td>`;
+                    } else {
+                        const rec = stAtt[localDateStr];
+                        let mark = '-';
+                        let col = '#000';
+                        if (rec) {
+                            mark = stMap[rec.status] || rec.status.charAt(0);
+                            if (mark === 'P') { col = '#198754'; p++; }
+                            else if (mark === 'A') { col = '#dc3545'; a++; }
+                            else if (mark === 'T') { col = '#fd7e14'; r++; }
+                            else if (mark === 'J') { col = '#6c757d'; }
+                            else if (mark === 'S') { col = '#fd7e14'; }
+                            
+                            if (rec.note) comments.push(`<strong>${dateNum}:</strong> ${_esc(rec.note)}`);
+                        }
+                        marksHtml += `<td style="text-align:center;font-weight:600;color:${col}">${mark}</td>`;
+                    }
+                });
+
+                const commentText = comments.length > 0 ? comments.join('<br>') : '<span style="color:#aaa;font-size:8pt;">Sin comentarios</span>';
+
+                html += `<tr>
+                    <td><strong>${_esc(st.name)} ${_esc(st.lastname)}</strong></td>
+                    ${marksHtml}
+                    <td style="text-align:center;font-weight:bold;color:#198754;">${p}</td>
+                    <td style="text-align:center;font-weight:bold;color:#dc3545;">${a}</td>
+                    <td style="text-align:center;font-weight:bold;color:#fd7e14;">${r}</td>
+                    <td style="font-size:7.5pt;line-height:1.2;">${commentText}</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div>`;
+
+            // Leyenda
+            html += `
+            <div style="margin-top:15px; font-size:8pt; color:#666; padding:10px; border:1px solid #ddd; border-radius:4px; display:inline-block;">
+                <strong>Leyenda:</strong> &nbsp;
+                <span style="color:#198754;font-weight:bold;">P</span> = Presente &nbsp;|&nbsp;
+                <span style="color:#dc3545;font-weight:bold;">A</span> = Ausente &nbsp;|&nbsp;
+                <span style="color:#fd7e14;font-weight:bold;">T</span> = Con retraso &nbsp;|&nbsp;
+                <span style="color:#6c757d;font-weight:bold;">J</span> = Justificado &nbsp;|&nbsp;
+                <span style="color:#fd7e14;font-weight:bold;">S</span> = Sale antes &nbsp;|&nbsp;
+                <span style="color:#888;">F</span> = Festivo / No laborable
+            </div>`;
+
+            const filename = `asistencia_semana_${selectedWeek.wIdx + 1}_${(promo.name || 'promo').replace(/\s+/g, '-')}.pdf`;
+            _showSaving(selection.action === 'send' ? 'Generando y enviando...' : 'Generando PDF...');
+
+            const pdf = await _renderToPdf(html, filename);
+
+            if (selection.action === 'send') {
+                const base64Data = pdf.output('datauristring');
+                const emailRes = await fetch(`${API_URL}/api/reports/send-email`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        to: selection.email,
+                        subject: `Informe de Asistencia Semanal: ${promo.name} - Semana ${selectedWeek.wIdx + 1}`,
+                        body: `Hola,<br><br>Se adjunta el informe de asistencia semanal correspondiente a la <strong>Semana ${selectedWeek.wIdx + 1}</strong> de la promoción <strong>${promo.name}</strong> (${_fmtDateEs(formatLocal(selectedWeek.dates[0]))} al ${_fmtDateEs(formatLocal(selectedWeek.dates[4]))}).<br><br>Un saludo,<br>Sistema de Gestión de Bootcamps`,
+                        filename: filename,
+                        base64Data: base64Data
+                    })
+                });
+
+                if (emailRes.ok) {
+                    _hideSaving();
+                    alert('¡Email enviado correctamente a ' + selection.email + '!');
+                } else {
+                    const error = await emailRes.json();
+                    throw new Error(error.error || 'Error al enviar el email');
+                }
+            } else {
+                pdf.save(filename);
+                _hideSaving();
+            }
+        } catch (e) {
+            _hideSaving();
+            console.error('[Reports] printWeeklyAttendance:', e);
+            alert('Error generando el informe de asistencia semanal: ' + e.message);
+        }
+    }
+
     // ─── Public API ──────────────────────────────────────────────────────────
-    window.Reports = {
+    const Reports = {
         printTechnical,
         printTransversal,
         printActaInicio,
@@ -2213,7 +2446,12 @@ async function printActaInicio(promotionId) {
         printBulkTechnical,
         printBulkTransversal,
         printBulkByProject,
-        printAllProjectsSummary
+        printAllProjectsSummary,
+        printWeeklyAttendance
     };
+    
+    // Attach to window and log availability
+    window.Reports = Reports;
+    console.log('[Reports] Library initialized and attached to window.Reports');
 
 })(window);

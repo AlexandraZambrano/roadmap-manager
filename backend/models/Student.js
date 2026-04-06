@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const StudentSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    lastname: { type: String, required: false, default: '' },
+    lastname: { type: String, required: false, default: '' }, // Changed to not required for existing students
     email: { type: String, required: true },
     phone: { type: String, default: '' },
     age: { type: Number, default: null },
@@ -13,9 +13,9 @@ const StudentSchema = new mongoose.Schema({
     gender: { type: String, default: '' },
     englishLevel: { type: String, default: '' },
     educationLevel: { type: String, default: '' },
-    profession: { type: String, default: '' },
+    profession: { type: String, default: '' }, // Current profession/background
     community: { type: String, default: '' },
-    address: { type: String, default: '' },
+    address: { type: String, default: '' }, // Full address
     promotionId: { type: String },
     notes: { type: String, default: '' }, // Teacher notes about the student
     progress: {
@@ -34,6 +34,13 @@ const StudentSchema = new mongoose.Schema({
         assignedAt: { type: Date, default: Date.now }
     }],
     isManuallyAdded: { type: Boolean, default: true }, // Changed default to true since we removed auto-tracking
+    isWithdrawn: { type: Boolean, default: false },
+    withdrawal: {
+        date: { type: String, default: null },
+        reason: { type: String, default: '' },
+        representative: { type: String, default: '' },
+        processedAt: { type: String, default: null }
+    },
     accessLog: [{
         accessedAt: { type: Date, default: Date.now },
         ipAddress: { type: String },
@@ -56,13 +63,19 @@ const StudentSchema = new mongoose.Schema({
             moduleId: String,
             assignedDate: String,
             teacherNote: String,
-            studentComment: { type: String, default: '' },
+            studentComment: String,
             members: [{ id: String, name: String }],
             competences: [{
                 competenceId: mongoose.Schema.Types.Mixed,
                 competenceName: String,
                 level: Number,
-                toolsUsed: [String]
+                toolsUsed: [String],
+                achievedIndicators: [{
+                    toolName: String,
+                    indicatorName: String,
+                    indicatorId: String,
+                    levelId: Number
+                }]
             }]
         }],
         competences: [{
@@ -70,6 +83,12 @@ const StudentSchema = new mongoose.Schema({
             competenceName: String,
             level: Number,
             toolsUsed: [String],
+            achievedIndicators: [{
+                toolName: String,
+                indicatorName: String,
+                indicatorId: String,
+                levelId: Number
+            }],
             evaluatedDate: String,
             notes: String
         }],
@@ -77,8 +96,11 @@ const StudentSchema = new mongoose.Schema({
             moduleId: String,
             moduleName: String,
             completionDate: String,
+            finalGrade: String,
             grade: String,
-            notes: String
+            notes: String,
+            progressPercent: Number,
+            completedCourses: [String]
         }],
         completedPildoras: [{
             pildoraTitle: String,
@@ -107,16 +129,7 @@ const StudentSchema = new mongoose.Schema({
             resolved: { type: Boolean, default: false }
         }]
     },
-    extendedInfo: { type: mongoose.Schema.Types.Mixed, default: {} },
-
-    // ── Baja / Withdrawal ─────────────────────────────────────────────────────
-    isWithdrawn: { type: Boolean, default: false },
-    withdrawal: {
-        date: { type: String, default: null },
-        reason: { type: String, default: '' },
-        representative: { type: String, default: '' },
-        processedAt: { type: String, default: null }
-    }
+    extendedInfo: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 
 export default mongoose.model('Student', StudentSchema);

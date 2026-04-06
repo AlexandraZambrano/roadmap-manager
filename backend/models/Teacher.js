@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const TeacherSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
+    externalId: { type: String, default: null }, // numeric userId from external auth API (/infouser)
     name: { type: String, required: true },
     lastName: { type: String, default: '' },
     email: { type: String, required: true, unique: true },

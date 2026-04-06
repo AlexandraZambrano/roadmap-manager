@@ -178,13 +178,130 @@ window.verifyPromotionPassword = async function () {
     }
 };
 
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchPublicTab(tab) {
+    const progresoPanel = document.getElementById('tab-progreso');
+    const infoPanel = document.getElementById('tab-info');
+    const progresoBtn = document.getElementById('tab-progreso-btn');
+    const infoBtn = document.getElementById('tab-info-btn');
+
+    if (tab === 'progreso') {
+        progresoPanel?.classList.remove('d-none');
+        infoPanel?.classList.add('d-none');
+        progresoBtn?.classList.add('active');
+        infoBtn?.classList.remove('active');
+    } else {
+        infoPanel?.classList.remove('d-none');
+        progresoPanel?.classList.add('d-none');
+        infoBtn?.classList.add('active');
+        progresoBtn?.classList.remove('active');
+    }
+}
+
+// ── Progress bar ───────────────────────────────────────────────────────────
+function renderProgressBar() {
+    const promotion = window.publicPromotionData;
+    const students = Array.isArray(window.publicStudents) ? window.publicStudents : [];
+
+    const activeStudents = students.filter(s => !s.isWithdrawn && !s.withdrawn).length || students.length;
+
+    let pct = 0, weeksDone = 0, weeksLeft = 0, totalWeeks = 0;
+
+    if (promotion) {
+        totalWeeks = promotion.weeks || 0;
+        if (totalWeeks > 0 && promotion.startDate) {
+            const start = new Date(promotion.startDate);
+            const today = new Date();
+            const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+            weeksDone = Math.max(0, Math.min(totalWeeks, Math.floor((today - start) / msPerWeek)));
+            weeksLeft = Math.max(0, totalWeeks - weeksDone);
+            pct = Math.round((weeksDone / totalWeeks) * 100);
+        }
+    }
+
+    // Helper to update one set of bar + stats
+    function _update(barId, totalId, doneId, leftId, totalWeeksId) {
+        const bar = document.getElementById(barId);
+        if (bar) {
+            bar.style.width = pct + '%';
+            bar.setAttribute('aria-valuenow', pct);
+            bar.textContent = pct + '%';
+        }
+        const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        setVal(totalId, activeStudents || '—');
+        setVal(doneId, weeksDone || '—');
+        setVal(leftId, weeksLeft !== undefined ? weeksLeft : '—');
+        setVal(totalWeeksId, totalWeeks || '—');
+    }
+
+    _update('pp-progress-bar',      'pp-stat-total',      'pp-stat-weeks-done',      'pp-stat-weeks-left',      'pp-stat-weeks-total');
+    _update('pp-progress-bar-info', 'pp-info-stat-total', 'pp-info-stat-weeks-done', 'pp-info-stat-weeks-left', 'pp-info-stat-weeks-total');
+}
+
+// ── Next-Pildora notice ────────────────────────────────────────────────────
+function _renderNextPildoraNotice(info) {
+    const bodyEl = document.getElementById('pp-next-pildora-body');
+    if (!bodyEl) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let nextPildora = null;
+    let nextDate = null;
+
+    // Module-based
+    const modulesWithActualPildoras = Array.isArray(info.modulesPildoras)
+        ? info.modulesPildoras.filter(mp => Array.isArray(mp.pildoras) && mp.pildoras.length > 0)
+        : [];
+
+    const allPildoras = modulesWithActualPildoras.length > 0
+        ? modulesWithActualPildoras.flatMap(mp => mp.pildoras)
+        : (Array.isArray(info.pildoras) ? info.pildoras : []);
+
+    allPildoras.forEach(p => {
+        if (!p.date || !p.date.trim()) return;
+        const d = new Date(p.date);
+        d.setHours(0, 0, 0, 0);
+        if (d >= today && (!nextDate || d < nextDate)) {
+            nextDate = d;
+            nextPildora = p;
+        }
+    });
+
+    if (!nextPildora) {
+        bodyEl.innerHTML = '<em>Sin píldoras próximas.</em>';
+        return;
+    }
+
+    const students = Array.isArray(nextPildora.students) && nextPildora.students.length
+        ? nextPildora.students.map(s => `${(s.name || '').trim()} ${(s.lastname || '').trim()}`.trim()).join(', ')
+        : '<em class="text-muted">Desierta — ¡apúntate!</em>';
+
+    bodyEl.innerHTML = `
+        <p class="mb-1"><strong>${escapeHtml(nextPildora.title || 'Píldora')}</strong></p>
+        <p class="mb-1 small"><i class="bi bi-calendar2-event me-1"></i>${escapeHtml(nextPildora.date)}</p>
+        ${nextPildora.mode ? `<p class="mb-1 small"><i class="bi bi-broadcast me-1"></i>${escapeHtml(nextPildora.mode)}</p>` : ''}
+        <p class="mb-0 small"><i class="bi bi-person me-1"></i>${students}</p>
+    `;
+}
+
+// ── Date helper ────────────────────────────────────────────────────────────
+function _formatDateShort(dateStr) {
+    if (!dateStr) return '';
+    try {
+        return new Date(dateStr).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return dateStr; }
+}
+
 async function loadPromotionContent() {
     await loadPromotion();
     // await loadModules(); // loadPromotion already calls generateGanttChart
     await loadQuickLinks();
     await loadSections();
     await loadCalendar();
+    await loadPublicStudents(); // needed for progress bar and pildoras self-assign
     await loadExtendedInfo(); // Load Program Info after main promotion data
+    renderProgressBar(); // render after both promotion and students are loaded
 }
 
 async function loadPromotion() {
@@ -198,6 +315,26 @@ async function loadPromotion() {
 
             // Store promotion data globally for module access
             window.publicPromotionData = promotion;
+
+            // Populate banner subtitles and info-tab title
+            const titleEl = document.getElementById('promotion-title');
+            if (titleEl) titleEl.textContent = `¡Hola Coder! 👋 - ${promotion.name}`;
+
+            const infoTitle = document.getElementById('pp-info-title');
+            if (infoTitle) infoTitle.textContent = promotion.name;
+
+            const sub = promotion.startDate && promotion.endDate
+                ? `${_formatDateShort(promotion.startDate)} → ${_formatDateShort(promotion.endDate)}`
+                : '';
+            const subEl = document.getElementById('pp-banner-sub');
+            if (subEl) subEl.textContent = sub;
+            const infoSub = document.getElementById('pp-info-sub');
+            if (infoSub) infoSub.textContent = sub;
+
+            document.title = `${promotion.name} - Bootcamp`;
+
+            // Store promotion data globally for module access
+            // window.publicPromotionData already set above
 
             generateGanttChart(promotion);
         }
@@ -340,9 +477,9 @@ function generateGanttChart(promotion) {
 
         // Compute the overall span of all employability sessions to show on the header row
         const allStartWeeks = employability.map(e => (e.startMonth - 1) * 4);
-        const allEndWeeks   = employability.map(e => (e.startMonth - 1) * 4 + (e.duration * 4));
+        const allEndWeeks = employability.map(e => (e.startMonth - 1) * 4 + (e.duration * 4));
         const minStart = Math.min(...allStartWeeks);
-        const maxEnd   = Math.min(Math.max(...allEndWeeks), weeks);
+        const maxEnd = Math.min(Math.max(...allEndWeeks), weeks);
 
         for (let i = 0; i < weeks; i++) {
             const cell = document.createElement('td');
@@ -387,7 +524,7 @@ function generateGanttChart(promotion) {
             itemRow.appendChild(itemLabel);
 
             const startWeek = (item.startMonth - 1) * 4;
-            const endWeek   = startWeek + (item.duration * 4);
+            const endWeek = startWeek + (item.duration * 4);
 
             for (let i = 0; i < weeks; i++) {
                 const cell = document.createElement('td');
@@ -571,22 +708,49 @@ function displayQuickLinks(links) {
     const list = document.getElementById('quick-links-list');
     list.innerHTML = '';
 
-    if (links.length === 0) {
+    if (!links || links.length === 0) {
         document.getElementById('quick-links').classList.add('hidden');
         return;
     }
 
+    document.getElementById('quick-links').classList.remove('hidden');
+
     links.forEach(link => {
-        const col = document.createElement('div');
-        col.className = 'col-md-6 col-lg-3';
-        col.innerHTML = `
-            <div class="d-grid gap-2">
-                <a href="${escapeHtml(link.url)}" target="_blank" class="btn btn-outline-primary">
-                    <i class="bi bi-box-arrow-up-right me-2"></i> ${escapeHtml(link.name)}
-                </a>
-            </div>
+        // Determine icon and color based on platform or name
+        let icon = 'bi-box-arrow-up-right';
+        let color = 'var(--principal-1)';
+        const name = (link.name || '').toLowerCase();
+        const platform = (link.platform || '').toLowerCase();
+
+        if (platform === 'zoom' || name.includes('zoom')) {
+            icon = 'bi-camera-video';
+            color = '#2D8CFF';
+        } else if (platform === 'discord' || name.includes('discord')) {
+            icon = 'bi-discord';
+            color = '#5865F2';
+        } else if (platform === 'github' || name.includes('github')) {
+            icon = 'bi-github';
+            color = '#333';
+        } else if (name.includes('meet') || name.includes('google meet')) {
+            icon = 'bi-google';
+            color = '#ea4335';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'quick-action-card';
+        card.innerHTML = `
+            <a href="${escapeHtml(link.url)}" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               title="${escapeHtml(link.name)}"
+               class="quick-action-link">
+                <div class="quick-action-icon" style="color: ${color};">
+                    <i class="bi ${icon}"></i>
+                </div>
+                <div class="quick-action-label">${escapeHtml(link.name)}</div>
+            </a>
         `;
-        list.appendChild(col);
+        list.appendChild(card);
     });
 }
 
@@ -631,22 +795,22 @@ function displaySections(sections) {
 function updateSidebar(sections) {
     const nav = document.getElementById('sidebar-nav');
     nav.innerHTML = `
-        <li class="nav-item"><a class="nav-link" href="#roadmap"><i class="bi bi-map me-2"></i>Roadmap</a></li>
+        <li class="nav-item"><a class="nav-link" href="#roadmap" onclick="closeAulaVirtualPage()"><i class="bi bi-map me-2"></i>Roadmap</a></li>
     `;
 
     sections.forEach(section => {
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = `<a class="nav-link" href="#${section.id}"><i class="bi bi-file-text me-2"></i>${escapeHtml(section.title)}</a>`;
+        li.innerHTML = `<a class="nav-link" href="#${section.id}" onclick="closeAulaVirtualPage()"><i class="bi bi-file-text me-2"></i>${escapeHtml(section.title)}</a>`;
         nav.appendChild(li);
     });
 
     // Note: Program Info sections will be added by updateSidebarWithExtendedInfo()
 
-    const li = document.createElement('li');
-    li.className = 'nav-item';
-    li.innerHTML = '<a class="nav-link" href="#quick-links"><i class="bi bi-lightning-charge me-2"></i>Quick Links</a>';
-    nav.appendChild(li);
+    // const li = document.createElement('li');
+    // li.className = 'nav-item';
+    // li.innerHTML = '<a class="nav-link" href="#quick-links" onclick="closeAulaVirtualPage()"><i class="bi bi-lightning-charge me-2"></i>Quick Links</a>';
+    // nav.appendChild(li);
 }
 
 // Update sidebar with only the Program Info sections that have data
@@ -676,7 +840,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding pildoras section to sidebar right after roadmap');
         const pildorasLi = document.createElement('li');
         pildorasLi.className = 'nav-item';
-        pildorasLi.innerHTML = '<a class="nav-link" href="#pildoras"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
+        pildorasLi.innerHTML = '<a class="nav-link" href="#pildoras-wrapper" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-lightbulb me-2"></i>Píldoras</a>';
 
         if (roadmapItem) {
             roadmapItem.insertAdjacentElement('afterend', pildorasLi);
@@ -690,9 +854,21 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding calendar section to sidebar right after pildoras');
         const calendarLi = document.createElement('li');
         calendarLi.className = 'nav-item';
-        calendarLi.innerHTML = '<a class="nav-link" href="#calendar"><i class="bi bi-calendar me-2"></i>Calendario</a>';
+        calendarLi.innerHTML = '<a class="nav-link" href="#calendar" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-calendar me-2"></i>Calendario</a>';
 
         pildorasLi.insertAdjacentElement('afterend', calendarLi);
+    }
+
+    // Add Aula Virtual entry in sidebar (always visible)
+    const aulaLi = document.createElement('li');
+    aulaLi.className = 'nav-item';
+    // Usamos href="#" para evitar scroll por ancla; el comportamiento lo controla openAulaVirtualPage
+    aulaLi.innerHTML = '<a class="nav-link" href="#" onclick="openAulaVirtualPage(event)"><i class="bi bi-laptop me-2"></i>Aula Virtual</a>';
+
+    if (quickLinksItem) {
+        nav.insertBefore(aulaLi, quickLinksItem);
+    } else {
+        nav.appendChild(aulaLi);
     }
 
     // Add other Program Info sections before Quick Links
@@ -700,7 +876,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding schedule section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#horario"><i class="bi bi-clock me-2"></i>Horario</a>';
+        li.innerHTML = '<a class="nav-link" href="#horario-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-clock me-2"></i>Horario</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -713,7 +889,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding team section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#equipo"><i class="bi bi-people me-2"></i>Equipo</a>';
+        li.innerHTML = '<a class="nav-link" href="#equipo-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-people me-2"></i>Equipo</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -726,7 +902,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding evaluation section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#evaluacion"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
+        li.innerHTML = '<a class="nav-link" href="#evaluacion-wrapper" onclick="switchPublicTab(\'info\')"><i class="bi bi-clipboard-check me-2"></i>Evaluación</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -739,7 +915,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding resources section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#resources"><i class="bi bi-tools me-2"></i>Recursos</a>';
+        li.innerHTML = '<a class="nav-link" href="#recursos-wrapper" onclick="switchPublicTab(\'progreso\')"><i class="bi bi-tools me-2"></i>Recursos</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -752,7 +928,7 @@ function updateSidebarWithExtendedInfo(info) {
         console.log('Adding competences section to sidebar');
         const li = document.createElement('li');
         li.className = 'nav-item';
-        li.innerHTML = '<a class="nav-link" href="#competences-section"><i class="bi bi-award me-2"></i>Competencias</a>';
+        li.innerHTML = '<a class="nav-link" href="#competences-section" onclick="switchPublicTab(\'info\')"><i class="bi bi-award me-2"></i>Competencias</a>';
 
         if (quickLinksItem) {
             nav.insertBefore(li, quickLinksItem);
@@ -768,9 +944,10 @@ async function loadCalendar() {
 
         if (response.ok) {
             const calendar = await response.json();
-            const calendarCard = document.getElementById('calendar').querySelector('.card');
-            calendarCard.classList.remove('hidden');
-            document.getElementById('calendar-iframe').src = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calendar.googleCalendarId)}&ctz=Europe/Madrid`;
+            const calendarCard = document.getElementById('calendar-card');
+            if (calendarCard) calendarCard.classList.remove('hidden');
+            const iframe = document.getElementById('calendar-iframe');
+            if (iframe) iframe.src = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calendar.googleCalendarId)}&ctz=Europe/Madrid`;
         }
     } catch (error) {
         console.error('Error loading calendar:', error);
@@ -814,20 +991,368 @@ async function loadExtendedInfo() {
             const info = await response.json();
             console.log('Extended info loaded:', info);
             console.log('Self-assignment status:', info.pildorasAssignmentOpen);
-
-            // If self-assignment is open, fetch students list
-            if (info.pildorasAssignmentOpen) {
-                console.log('Self-assignment is open, loading students...');
-                await loadPublicStudents();
-            }
+            // Students are already loaded by loadPromotionContent before this call
 
             displayExtendedInfo(info);
-            displayPublicCompetences(info.competences || []);
+            displayPublicCompetences(info);
+            await loadVirtualClassroom();
         } else {
             console.log('No extended info found or error loading:', response.status);
         }
     } catch (error) {
         console.error('Error loading extended info:', error);
+    }
+}
+
+// ==================== AULA VIRTUAL – VISTA PÚBLICA ====================
+
+let _virtualClassroomState = null;
+
+async function loadVirtualClassroom() {
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/virtual-classroom`);
+        if (!res.ok) {
+            console.error('Error loading virtual classroom:', res.status);
+            _virtualClassroomState = null;
+            return;
+        }
+        const data = await res.json();
+        if (!data.active) {
+            _virtualClassroomState = { active: false };
+            // Mantener la tarjeta en modo "sin proyecto activo"
+            return;
+        }
+
+        _virtualClassroomState = data;
+
+        // Preparar UI base (si la página ya estuviera abierta)
+        const prefixEl = document.getElementById('aula-virtual-repo-prefix');
+        if (prefixEl) {
+            const base = data.repoBaseUrl && data.repoBaseUrl.trim()
+                ? data.repoBaseUrl.trim().replace(/\/+$/, '') + '/'
+                : 'https://github.com/';
+            prefixEl.textContent = base;
+        }
+
+        const briefingEl = document.getElementById('aula-virtual-briefing');
+        if (briefingEl) {
+            const url = data.briefingUrl;
+            if (url) {
+                briefingEl.innerHTML = `<a href="${escapeHtml(url)}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>${escapeHtml(url)}
+                </a>`;
+            } else {
+                briefingEl.innerHTML = '<span class="text-muted small fst-italic">El formador no ha definido un briefing.</span>';
+            }
+        }
+
+        const compContainer = document.getElementById('aula-virtual-competences');
+        if (compContainer) {
+            const comps = Array.isArray(data.competences) ? data.competences : [];
+            if (!comps.length) {
+                compContainer.innerHTML = '<span class="text-muted small fst-italic">Este proyecto no tiene competencias asociadas.</span>';
+            } else {
+                const mainAccordionId = `aula-virtual-comps-acc`;
+                compContainer.innerHTML = `
+                    <div class="accordion accordion-flush border rounded overflow-hidden" id="${mainAccordionId}">
+                        ${comps.map((c, idx) => {
+                            const levelDescs = (c.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
+                            const compInds = c.competenceIndicators || { initial: [], medio: [], advance: [] };
+                            const tools = c.toolsWithIndicators || [];
+                            
+                            const LEVEL_COLORS = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+                            const LEVEL_BG = { 1: '#fff3cd', 2: '#cfe2ff', 3: '#d1e7dd' };
+                            const LEVEL_NAMES = { 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+
+                            // Competence levels side-by-side
+                            const compLevelCols = [1, 2, 3].map(lvl => {
+                                const catInds = lvl === 1 ? compInds.initial : (lvl === 2 ? compInds.medio : compInds.advance);
+                                const levelObj = (c.levels || []).find(l => l.level === lvl);
+                                const finalIndNames = (catInds && catInds.length > 0) 
+                                    ? catInds.map(i => i.name || i) 
+                                    : (levelObj && levelObj.indicators ? levelObj.indicators : []);
+                                    
+                                const desc = levelDescs[lvl] || LEVEL_NAMES[lvl];
+                                return `
+                                    <div class="col-md-4">
+                                        <div class="p-2 h-100 rounded border" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_COLORS[lvl]} !important;">
+                                            <div class="extra-small fw-bold mb-1 text-uppercase" style="color:${LEVEL_COLORS[lvl]}; font-size: 0.6rem; letter-spacing: 0.05em;">
+                                                <i class="bi bi-award-fill me-1"></i>Nivel ${lvl}
+                                            </div>
+                                            <div class="small fw-semibold mb-1" style="font-size: 0.75rem; line-height: 1.2;">${escapeHtml(desc)}</div>
+                                            ${(finalIndNames && finalIndNames.length > 0) ? `
+                                            <ul class="mb-0 ps-3 extra-small text-muted" style="font-size: 0.7rem; line-height: 1.2;">
+                                                ${finalIndNames.map(name => `<li>${escapeHtml(name)}</li>`).join('')}
+                                            </ul>` : '<div class="text-muted extra-small fst-italic">Sin indicadores definidos.</div>'}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('');
+
+                            // Tool accordion
+                            const toolAccordionId = `tool-acc-${promotionId}-${idx}`;
+                            const toolAccordionHtml = tools.length > 0 ? `
+                                <div class="accordion accordion-flush mt-3 border rounded shadow-sm" id="${toolAccordionId}">
+                                    <div class="bg-light px-3 py-2 border-bottom extra-small fw-bold text-uppercase text-muted" style="font-size: 0.6rem; letter-spacing: 0.05em;">
+                                        <i class="bi bi-tools me-1"></i>Herramientas y Tecnologías
+                                    </div>
+                                    ${tools.map((tool, tIdx) => {
+                                        const toolByLevel = { 1: [], 2: [], 3: [] };
+                                        (tool.indicators || []).forEach(ind => { if (toolByLevel[ind.levelId]) toolByLevel[ind.levelId].push(ind); });
+                                        
+                                        const toolLevelCols = [1, 2, 3].filter(l => toolByLevel[l].length > 0).map(lvl => `
+                                            <div class="col-md-4">
+                                                <div class="extra-small fw-bold mb-1 text-uppercase" style="color:${LEVEL_COLORS[lvl]}; font-size: 0.55rem;">
+                                                    Nivel ${lvl} ${LEVEL_NAMES[lvl]}
+                                                </div>
+                                                <ul class="mb-0 ps-3 extra-small text-muted" style="font-size: 0.65rem; line-height: 1.2;">
+                                                    ${toolByLevel[lvl].map(ind => `<li>${escapeHtml(ind.name)}</li>`).join('')}
+                                                </ul>
+                                            </div>
+                                        `).join('');
+
+                                        return `
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed py-2 px-3 small fw-bold" type="button" 
+                                                        data-bs-toggle="collapse" data-bs-target="#${toolAccordionId}-${tIdx}">
+                                                        ${escapeHtml(tool.name)}
+                                                    </button>
+                                                </h2>
+                                                <div id="${toolAccordionId}-${tIdx}" class="accordion-collapse collapse" data-bs-parent="#${toolAccordionId}">
+                                                    <div class="accordion-body p-3">
+                                                        ${tool.description ? `<p class="text-muted extra-small mb-3 italic">${escapeHtml(tool.description)}</p>` : ''}
+                                                        <div class="row g-2">${toolLevelCols || '<div class="col text-muted extra-small fst-italic">Sin indicadores definidos para esta herramienta.</div>'}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            ` : '';
+
+                            const collapseId = `comp-collapse-${idx}`;
+                            return `
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button ${idx === 0 ? '' : 'collapsed'} py-3 px-4" type="button" 
+                                            data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge bg-primary px-2" style="font-size: 0.7rem;">${escapeHtml(c.area || 'General')}</span>
+                                                <strong class="h6 mb-0">${escapeHtml(c.name)}</strong>
+                                            </div>
+                                        </button>
+                                    </h2>
+                                    <div id="${collapseId}" class="accordion-collapse collapse ${idx === 0 ? 'show' : ''}" data-bs-parent="#${mainAccordionId}">
+                                        <div class="accordion-body p-4">
+                                            ${c.description ? `<p class="text-muted small mb-4" style="line-height: 1.4;">${escapeHtml(c.description)}</p>` : ''}
+                                            <div class="row g-3">
+                                                ${compLevelCols}
+                                            </div>
+                                            ${toolAccordionHtml}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading virtual classroom:', error);
+        _virtualClassroomState = null;
+    }
+}
+
+function openAulaVirtualPage(event) {
+    if (event && event.preventDefault) event.preventDefault();
+
+    const page = document.getElementById('aula-virtual-page');
+    const emptyEl = document.getElementById('aula-virtual-empty');
+    const contentEl = document.getElementById('aula-virtual-content');
+    if (!page || !emptyEl || !contentEl) return;
+
+    // Hide both tab panels and tab nav
+    const tabProgreso = document.getElementById('tab-progreso');
+    const tabInfo = document.getElementById('tab-info');
+    const tabNav = document.getElementById('pp-main-tabs');
+    const banner = document.querySelector('.pp-banner');
+
+    [tabProgreso, tabInfo, tabNav, banner].forEach(el => {
+        if (el) el.classList.add('d-none');
+    });
+
+    page.classList.remove('d-none');
+
+    // Configurar contenido según estado actual
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        emptyEl.classList.remove('d-none');
+        contentEl.classList.add('d-none');
+    } else {
+        emptyEl.classList.add('d-none');
+        contentEl.classList.remove('d-none');
+        populateAulaVirtualTargets();
+    }
+
+    // Scroll al inicio
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function closeAulaVirtualPage() {
+    const page = document.getElementById('aula-virtual-page');
+    if (page) page.classList.add('d-none');
+
+    // Restore tab panels and nav
+    const tabNav = document.getElementById('pp-main-tabs');
+    const banner = document.querySelector('.pp-banner');
+    if (tabNav) tabNav.classList.remove('d-none');
+    if (banner) banner.classList.remove('d-none');
+
+    // Show whichever tab was active
+    const progresoBtn = document.getElementById('tab-progreso-btn');
+    if (progresoBtn && progresoBtn.classList.contains('active')) {
+        document.getElementById('tab-progreso')?.classList.remove('d-none');
+        document.getElementById('tab-info')?.classList.add('d-none');
+    } else {
+        document.getElementById('tab-info')?.classList.remove('d-none');
+        document.getElementById('tab-progreso')?.classList.add('d-none');
+    }
+
+    const feedbackEl = document.getElementById('aula-virtual-feedback');
+    const suffixEl = document.getElementById('aula-virtual-repo-suffix');
+    if (feedbackEl) feedbackEl.textContent = '';
+    if (suffixEl) suffixEl.value = '';
+}
+
+async function populateAulaVirtualTargets() {
+    const select = document.getElementById('aula-virtual-target-select');
+    const label = document.getElementById('aula-virtual-target-label');
+    if (!select || !label) return;
+
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        select.innerHTML = '<option value="">No hay proyecto activo</option>';
+        return;
+    }
+
+    const type = _virtualClassroomState.projectType === 'grupal' ? 'grupal' : 'individual';
+
+    if (!window.publicStudents) {
+        await loadPublicStudents();
+    }
+    const students = Array.isArray(window.publicStudents) ? window.publicStudents : [];
+
+    let optionsHtml = '';
+    if (type === 'individual') {
+        label.textContent = 'Selecciona tu nombre';
+        optionsHtml = '<option value="">Selecciona tu nombre…</option>' +
+            students.map(st => `
+                <option value="student:${escapeHtml(String(st.id))}">
+                    ${escapeHtml(`${st.name || ''} ${st.lastname || ''}`.trim())}
+                </option>
+            `).join('');
+    } else {
+        label.textContent = 'Selecciona tu equipo';
+        const groups = Array.isArray(_virtualClassroomState.groups) ? _virtualClassroomState.groups : [];
+        const byId = {};
+        students.forEach(s => { byId[String(s.id)] = s; });
+
+        optionsHtml = '<option value="">Selecciona tu equipo…</option>' +
+            groups.map(g => {
+                const members = (g.studentIds || []).map(id => {
+                    const st = byId[String(id)];
+                    return st ? `${st.name || ''} ${st.lastname || ''}`.trim() : id;
+                }).filter(Boolean);
+                const membersLabel = members.slice(0, 3).join(', ') + (members.length > 3 ? '…' : '');
+                return `
+                    <option value="group:${escapeHtml(g.groupName)}">
+                        ${escapeHtml(g.groupName)}${membersLabel ? ` — ${escapeHtml(membersLabel)}` : ''}
+                    </option>
+                `;
+            }).join('');
+    }
+
+    select.innerHTML = optionsHtml;
+}
+
+async function submitVirtualClassroomDelivery() {
+    const btn = document.querySelector('#aula-virtual-page button[onclick*="submitVirtualClassroomDelivery"]');
+    const spinner = btn ? btn.querySelector('.spinner-border') : null;
+    const labelSpan = btn ? btn.querySelector('.btn-label') : null;
+    const select = document.getElementById('aula-virtual-target-select');
+    const suffixEl = document.getElementById('aula-virtual-repo-suffix');
+    const feedbackEl = document.getElementById('aula-virtual-feedback');
+
+    if (!select || !suffixEl || !feedbackEl) return;
+    if (!_virtualClassroomState || !_virtualClassroomState.active) {
+        feedbackEl.textContent = 'No hay proyecto activo para entregar.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    const targetVal = select.value;
+    const repoName = suffixEl.value.trim();
+    console.log('[DEBUG] submitVirtualClassroomDelivery:', { targetVal, repoName });
+
+    if (!targetVal) {
+        feedbackEl.textContent = 'Selecciona tu nombre o equipo antes de enviar.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    if (!repoName) {
+        feedbackEl.textContent = 'Escribe el nombre de tu repositorio.';
+        feedbackEl.className = 'small text-danger';
+        return;
+    }
+
+    const [kind, id] = targetVal.split(':');
+    const body = {
+        type: _virtualClassroomState.projectType === 'grupal' ? 'grupal' : 'individual',
+        repoName
+    };
+    if (body.type === 'grupal') {
+        body.groupName = id;
+    } else {
+        body.studentId = id;
+    }
+
+    if (btn && spinner && labelSpan) {
+        btn.disabled = true;
+        spinner.classList.remove('d-none');
+        labelSpan.classList.add('d-none');
+    }
+    feedbackEl.textContent = '';
+
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/virtual-classroom/submissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        console.log('[DEBUG] Submission response:', { status: res.status, data });
+
+        if (!res.ok) {
+            console.error('Error submitting virtual classroom delivery:', data);
+            feedbackEl.textContent = data.error || 'Error al registrar la entrega.';
+            feedbackEl.className = 'small text-danger';
+            return;
+        }
+
+        feedbackEl.textContent = 'Entrega registrada correctamente.';
+        feedbackEl.className = 'small text-success';
+        suffixEl.value = '';
+    } catch (error) {
+        console.error('Error submitting virtual classroom delivery:', error);
+        feedbackEl.textContent = 'Error de conexión al enviar la entrega.';
+        feedbackEl.className = 'small text-danger';
+    } finally {
+        if (btn && spinner && labelSpan) {
+            btn.disabled = false;
+            spinner.classList.add('d-none');
+            labelSpan.classList.remove('d-none');
+        }
     }
 }
 
@@ -846,17 +1371,25 @@ async function loadPublicStudents() {
 // ─── Competencias públicas ────────────────────────────────────────────────────
 let _publicCompetencesAll = [];
 
-function displayPublicCompetences(competences) {
-    _publicCompetencesAll = Array.isArray(competences) ? competences : [];
+function displayPublicCompetences(info) {
+    const usedCompIds = new Set();
+    if (Array.isArray(info.projectCompetences)) {
+        info.projectCompetences.forEach(pc => {
+            (pc.competenceIds || []).forEach(cid => usedCompIds.add(String(cid)));
+        });
+    }
+
+    const competences = info.competences || [];
+    _publicCompetencesAll = competences.filter(c => usedCompIds.has(String(c.id)));
     const section = document.getElementById('competences-section');
     if (!section) return;
 
     if (!_publicCompetencesAll.length) {
-        section.style.display = 'none';
+        section.classList.add('d-none');
         return;
     }
 
-    section.style.display = '';
+    section.classList.remove('d-none');
 
     // Build area filter options
     const areaFilter = document.getElementById('public-competences-area-filter');
@@ -976,40 +1509,59 @@ function _renderPublicCompetences(filterArea) {
 
 // Display Program Info sections
 function displayExtendedInfo(info) {
-    const sectionsContainer = document.getElementById('sections-container');
-    const roadmapSection = document.getElementById('roadmap');
-
     // Store extended info globally for píldoras navigation
     window.publicPromotionExtendedInfo = info;
 
     // Clear existing extended info sections to avoid duplicates on reload
-    document.querySelectorAll('#pildoras, #horario, #equipo, #recursos, #evaluacion').forEach(el => el.remove());
+    ['#pildoras-wrapper', '#recursos-wrapper', '#horario-wrapper', '#evaluacion-wrapper', '#equipo-wrapper'].forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) el.innerHTML = '';
+    });
+    // Also remove any old IDs that may have been injected
+    document.querySelectorAll('#pildoras, #horario, #equipo, #recursos, #evaluacion, #resources').forEach(el => {
+        if (!['pildoras-wrapper','recursos-wrapper','horario-wrapper','evaluacion-wrapper','equipo-wrapper'].includes(el.id)) {
+            el.remove();
+        }
+    });
 
     // Create Program Info sections
     const programInfoSections = createProgramInfoSections(info);
 
-    // Find píldoras section and insert it right after roadmap
-    const pildorasSection = programInfoSections.find(section => section.id === 'pildoras');
-    if (pildorasSection && roadmapSection) {
-        // Insert píldoras right after roadmap
-        roadmapSection.insertAdjacentElement('afterend', pildorasSection);
+    programInfoSections.forEach(section => {
+        const sectionId = section.id;
 
-        // Remove píldoras from the regular sections array
-        const otherSections = programInfoSections.filter(section => section.id !== 'pildoras');
-
-        // Add remaining sections to sections container
-        otherSections.forEach(section => {
-            sectionsContainer.appendChild(section);
-        });
-    } else {
-        // If no píldoras section, add all sections normally
-        programInfoSections.forEach(section => {
-            sectionsContainer.appendChild(section);
-        });
-    }
+        if (sectionId === 'pildoras') {
+            // Píldoras → "En progreso" tab
+            const wrapper = document.getElementById('pildoras-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'resources') {
+            // Recursos → "En progreso" tab
+            const wrapper = document.getElementById('recursos-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'horario') {
+            // Horario → "Info General" tab
+            const wrapper = document.getElementById('horario-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'evaluacion') {
+            // Evaluación → "Info General" tab
+            const wrapper = document.getElementById('evaluacion-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else if (sectionId === 'equipo') {
+            // Equipo → "Info General" tab
+            const wrapper = document.getElementById('equipo-wrapper');
+            if (wrapper) wrapper.appendChild(section);
+        } else {
+            // Fallback: put into sections-container
+            const container = document.getElementById('sections-container');
+            if (container) container.appendChild(section);
+        }
+    });
 
     // Update sidebar to include the new sections
     updateSidebarWithExtendedInfo(info);
+
+    // Populate next-pildora notice card
+    _renderNextPildoraNotice(info);
 
     console.log('Extended info sections displayed:', programInfoSections.length);
 }
@@ -1120,7 +1672,7 @@ function createProgramInfoSections(info) {
 
         const maxVisible = 5;
         const showExpandButton = info.pildoras.length > maxVisible;
-        
+
         pildorasSection.innerHTML = `
             <div class="card">
                 <div class="card-body">
@@ -1294,7 +1846,7 @@ function createProgramInfoSections(info) {
                     const actionHeader = info.pildorasAssignmentOpen ? '<th style="width: 15%; border: 1px solid #dee2e6; text-align: center; vertical-align: middle;">Acción</th>' : '';
                     const maxVisible = 5;
                     const showExpandButton = currentModule.pildoras.length > maxVisible;
-                    
+
                     tableContainer.innerHTML = `
                         <table class="table table-sm table-bordered" style="border-color: #dee2e6;">
                             <thead class="table-light">
@@ -1319,14 +1871,14 @@ function createProgramInfoSections(info) {
                                 </button>
                             </div>
                         ` : ''}`
-                    ;
+                        ;
                 } else {
                     console.error('Table container not found!');
                 }
 
                 // Update navigation controls - Update button styles
                 const countBadge = pildorasSection.querySelector('.module-pildoras-count');
-                
+
                 // Update all module buttons
                 for (let i = 0; i < modulesWithPildoras.length; i++) {
                     const btn = pildorasSection.querySelector(`.module-selector-btn-${i}`);
@@ -1348,14 +1900,14 @@ function createProgramInfoSections(info) {
                         }
                     }
                 }
-                
+
                 if (countBadge) countBadge.textContent = currentModule.pildoras.length;
 
                 console.log('Navigation controls updated successfully');
             }
 
             // Navigate to specific píldoras module
-            window.navigateToPildorasModule = function(moduleIdx) {
+            window.navigateToPildorasModule = function (moduleIdx) {
                 currentModuleIndex = moduleIdx;
                 renderPildorasTable();
             };
@@ -1478,19 +2030,19 @@ function createProgramInfoSections(info) {
             };
 
             // Toggle expand/collapse for píldoras table
-            window.togglePildorasTableExpand = function(moduleId) {
+            window.togglePildorasTableExpand = function (moduleId) {
                 const hiddenRows = document.querySelectorAll('.pildora-table-row-hidden');
                 const btn = document.querySelector(`.pildora-expand-btn-${moduleId}`);
                 const text = document.querySelector(`.pildora-expand-text-${moduleId}`);
                 const icon = document.querySelector(`.pildora-expand-icon-${moduleId}`);
-                
+
                 if (!hiddenRows.length) return;
-                
+
                 const isCollapsed = hiddenRows[0].style.display !== 'table-row';
                 hiddenRows.forEach(row => {
                     row.style.display = isCollapsed ? 'table-row' : 'none';
                 });
-                
+
                 if (isCollapsed) {
                     text.textContent = 'Ver menos';
                     icon.classList.remove('bi-chevron-down');
@@ -1503,18 +2055,18 @@ function createProgramInfoSections(info) {
             };
 
             // Toggle expand/collapse for legacy píldoras table
-            window.togglePildorasTableExpandLegacy = function() {
+            window.togglePildorasTableExpandLegacy = function () {
                 const hiddenRows = document.querySelectorAll('.pildora-table-row-hidden');
                 const text = document.querySelector('.pildora-expand-text-legacy');
                 const icon = document.querySelector('.pildora-expand-icon-legacy');
-                
+
                 if (!hiddenRows.length) return;
-                
+
                 const isCollapsed = hiddenRows[0].style.display !== 'table-row';
                 hiddenRows.forEach(row => {
                     row.style.display = isCollapsed ? 'table-row' : 'none';
                 });
-                
+
                 if (isCollapsed) {
                     text.textContent = 'Ver menos';
                     icon.classList.remove('bi-chevron-down');

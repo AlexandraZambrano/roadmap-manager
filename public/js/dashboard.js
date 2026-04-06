@@ -33,6 +33,12 @@ function loadTeacherInfo() {
     if (currentUser && currentUser.name) {
         document.getElementById('teacher-name').textContent = currentUser.name;
     }
+    // Show admin panel button only for superadmin
+    const role = localStorage.getItem('role') || currentUser.role;
+    if (role === 'superadmin') {
+        document.getElementById('admin-panel-divider')?.classList.remove('d-none');
+        document.getElementById('admin-panel-item')?.classList.remove('d-none');
+    }
 }
 
 async function loadPromotions() {
@@ -93,13 +99,15 @@ function displayPromotions(promotions, userId) {
 }
 
 function updateDashboardStats(promotions) {
-    document.getElementById('promotions-count').textContent = promotions.length;
+    const countEl = document.getElementById('promotions-count');
+    const modulesEl = document.getElementById('modules-count');
+    if (countEl) countEl.textContent = promotions.length;
 
     let totalModules = 0;
     promotions.forEach(p => {
         totalModules += (p.modules || []).length;
     });
-    document.getElementById('modules-count').textContent = totalModules;
+    if (modulesEl) modulesEl.textContent = totalModules;
 }
 
 function setupNavigation() {
@@ -322,21 +330,28 @@ window.openProfileModal = async function () {
             document.getElementById('profile-email').value = profile.email;
             document.getElementById('profile-location').value = profile.location || '';
 
-            // Clear password fields
-            document.getElementById('current-password').value = '';
-            document.getElementById('new-password').value = '';
-            document.getElementById('confirm-password').value = '';
+            // Pre-fill reset email with the user's email
+            const resetEmailEl = document.getElementById('reset-email');
+            if (resetEmailEl) resetEmailEl.value = profile.email || '';
 
-            // Update save button handler
+            // Clear old password fields if still present
+            ['current-password', 'new-password', 'confirm-password'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            // Update save button handler — only active on Profile tab
             const saveBtn = document.getElementById('profile-save-btn');
-            saveBtn.onclick = function () {
-                const activeTab = document.querySelector('.nav-link.active');
-                if (activeTab.id === 'profile-tab') {
-                    saveProfileInfo();
-                } else {
-                    changePassword();
-                }
-            };
+            saveBtn.style.display = '';  // ensure visible on open (profile tab is default)
+            saveBtn.onclick = function () { saveProfileInfo(); };
+
+            // Update button label when switching tabs
+            document.querySelectorAll('#profileTabs .nav-link').forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function () {
+                    const isPasswordTab = this.id === 'password-tab';
+                    saveBtn.style.display = isPasswordTab ? 'none' : '';
+                });
+            });
 
             profileModal.show();
         } else {
@@ -398,62 +413,49 @@ window.saveProfileInfo = async function () {
 };
 
 window.changePassword = async function () {
-    const token = localStorage.getItem('token');
-    const currentPassword = document.getElementById('current-password').value;
-    const newPassword = document.getElementById('new-password').value;
-    const confirmPassword = document.getElementById('confirm-password').value;
-
     const alertEl = document.getElementById('password-alert');
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'All fields are required';
-        alertEl.classList.remove('hidden');
-        return;
-    }
+    const emailEl = document.getElementById('reset-email');
+    const email = emailEl ? emailEl.value.trim() : '';
 
-    if (newPassword !== confirmPassword) {
+    if (!email) {
         alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'New passwords do not match';
-        alertEl.classList.remove('hidden');
-        return;
-    }
-
-    if (newPassword.length < 8) {
-        alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'Password must be at least 8 characters';
+        alertEl.textContent = 'Por favor, introduce tu correo electrónico.';
         alertEl.classList.remove('hidden');
         return;
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/change-password`, {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === 'localhost';
+        const resetUrl = isLocal
+            ? 'http://localhost:8000/reset-password/api-request-reset'
+            : 'https://users.coderf5.es/reset-password/api-request-reset';
+
+        const response = await fetch(resetUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ currentPassword, newPassword })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
         });
+
+        // Many reset-password endpoints return 200/204 with no body, or a JSON message
+        let data = {};
+        const text = await response.text();
+        try { data = JSON.parse(text); } catch { /* no JSON body */ }
 
         if (response.ok) {
             alertEl.className = 'alert alert-success';
-            alertEl.textContent = 'Password changed successfully! Please log in again.';
+            alertEl.textContent = data.message || 'En breves recibirás un correo con el enlace para cambiar tu contraseña.';
             alertEl.classList.remove('hidden');
-
-            setTimeout(() => {
-                logout();
-            }, 2000);
+            // Do NOT close the modal — let the user read the confirmation
         } else {
-            const data = await response.json();
             alertEl.className = 'alert alert-danger';
-            alertEl.textContent = data.error || 'Error changing password';
+            alertEl.textContent = data.message || data.error || 'Error al enviar el correo. Inténtalo de nuevo.';
             alertEl.classList.remove('hidden');
         }
     } catch (error) {
-        console.error('Error changing password:', error);
+        console.error('Error sending reset password email:', error);
         alertEl.className = 'alert alert-danger';
-        alertEl.textContent = 'Error changing password';
+        alertEl.textContent = 'Error de conexión. Inténtalo de nuevo.';
         alertEl.classList.remove('hidden');
     }
 };

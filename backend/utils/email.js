@@ -85,4 +85,35 @@ export async function sendPasswordEmail(email, name, password) {
   }
 }
 
-export default { sendPasswordEmail };
+/**
+ * Send report email with attachment
+ * @param {string} to - Recipient email
+ * @param {string} subject - Email subject
+ * @param {string} body - Email body (HTML)
+ * @param {Array} attachments - Array of attachments { filename, content, encoding }
+ */
+export async function sendReportEmail(to, subject, body, attachments) {
+  if (!transporter) {
+    console.warn(`Email not sent to ${to} - email service not configured`);
+    return false;
+  }
+
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'Bootcamp Manager <noreply@factoriaf5.com>',
+      to,
+      subject,
+      html: body,
+      attachments
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Report email sent to ${to}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending report email:', error);
+    return false;
+  }
+}
+
+export default { sendPasswordEmail, sendReportEmail };

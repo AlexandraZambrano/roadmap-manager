@@ -25,13 +25,19 @@ const ExtendedInfoSchema = new mongoose.Schema({
         role: String,
         email: String,
         linkedin: String,
-        moduleId: String,
+        moduleIds: [String],
         moduleName: String
     }],
     resources: [{
+        externalId: mongoose.Schema.Types.Mixed,
         title: String,
         category: String,
-        url: String
+        url: String,
+        comments: String,
+        areas: [mongoose.Schema.Types.Mixed],
+        tools: [mongoose.Schema.Types.Mixed],
+        types: [mongoose.Schema.Types.Mixed],
+        providers: [mongoose.Schema.Types.Mixed]
     }],
     evaluation: { type: String, default: '' },
     pildoras: [{
@@ -95,33 +101,45 @@ const ExtendedInfoSchema = new mongoose.Schema({
         }],
         allTools: [String],
         selectedTools: [String],
+        toolsWithIndicators: [{
+            id: String,
+            name: String,
+            description: String,
+            indicators: [{
+                id: String,
+                name: String,
+                description: String,
+                levelId: Number
+            }]
+        }],
+        competenceIndicators: {
+            initial: [{ id: String, name: String, description: String, levelId: Number }],
+            medio: [{ id: String, name: String, description: String, levelId: Number }],
+            advance: [{ id: String, name: String, description: String, levelId: Number }]
+        },
         startModule: {
             id: String,
             name: String
         }
     }],
-    // Project evaluations for the Evaluación tab
-    projectEvaluations: [{
+    // Per-project competence definitions (source of truth for evaluation)
+    projectCompetences: [{
         moduleId: String,
-        moduleName: String,
         projectName: String,
-        type: { type: String, enum: ['individual', 'grupal'], default: 'individual' },
-        groups: [{
-            groupName: String,
-            studentIds: [String]
-        }],
-        evaluations: [{
-            targetId: String,
-            targetName: String,
-            competences: [{
-                competenceId: mongoose.Schema.Types.Mixed,
-                competenceName: String,
-                level: Number
-            }],
-            feedback: String,
-            evaluatedAt: String
-        }]
-    }]
+        competenceIds: [mongoose.Schema.Types.Mixed], // number or string IDs
+        competenceTools: { type: mongoose.Schema.Types.Mixed, default: {} } // { [competenceId]: [toolName, ...] }
+    }],
+    projectEvaluations: { type: mongoose.Schema.Types.Mixed },
+    // Aula Virtual – configuración del proyecto activo
+    virtualClassroom: {
+        isActive: { type: Boolean, default: false },
+        moduleId: String,
+        projectName: String,
+        projectType: { type: String, enum: ['individual', 'grupal'], default: 'individual' },
+        repoBaseUrl: String,
+        briefingUrl: String,
+        competenceIds: [mongoose.Schema.Types.Mixed]
+    }
 }, { timestamps: true });
 
 export default mongoose.model('ExtendedInfo', ExtendedInfoSchema);

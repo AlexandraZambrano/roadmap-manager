@@ -18,6 +18,7 @@
     // ─── Estado interno ────────────────────────────────────────────────────────
     let _programCompetences = []; // competencias seleccionadas para este programa (con selectedTools)
     let _catalogLoaded = false;
+    let _viewOnlyMode = false;    // true when competences come from Evaluation tab (read-only display)
 
     // ─── Carga el catálogo desde la API ───────────────────────────────────────
     async function _loadCatalog() {
@@ -82,10 +83,23 @@
 
     // ─── Inicialización ────────────────────────────────────────────────────────
     async function init(savedCompetences) {
+        _viewOnlyMode = false;
         _programCompetences = Array.isArray(savedCompetences) ? savedCompetences : [];
         await _loadCatalog();
         _populateAreaFilter();
         _render();
+    }
+
+    /**
+     * View-only mode: competences are defined per-project in the Evaluation tab.
+     * Renders the same accordion but without add/remove/edit action buttons.
+     */
+    async function initViewOnly(aggregatedCompetences) {
+        _viewOnlyMode = true;
+        _programCompetences = Array.isArray(aggregatedCompetences) ? aggregatedCompetences : [];
+        await _loadCatalog();
+        _populateAreaFilter();
+        _renderViewOnly();
     }
 
     // ─── Rellena el selector de área en promotion-detail con las áreas de la BD
@@ -109,7 +123,7 @@
 
     }
 
-    // ─── Renderiza el panel de competencias como acordeón ────────────────────
+    // ─── Renderiza el panel de competencias como acordeón (modo edición) ─────
     function _render() {
         const container = document.getElementById('competences-list-container');
         if (!container) return;
@@ -142,31 +156,119 @@
         container.innerHTML = `<div class="accordion" id="competences-accordion">${items}</div>`;
     }
 
+    // ─── Renderiza en modo sólo-lectura (competencias definidas en Evaluación) ─
+    function _renderViewOnly() {
+        const container = document.getElementById('competences-list-container');
+        if (!container) return;
+
+        const filterArea = document.getElementById('competences-area-filter')?.value || '';
+
+        if (!_programCompetences.length) {
+            container.innerHTML = `
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-award fs-1 d-block mb-2 opacity-50"></i>
+                    <p class="mb-1">Aún no hay competencias definidas.</p>
+                    <small>Ve a la sección <strong>Evaluación</strong> y haz clic en el badge de competencias de cada proyecto para definirlas.</small>
+                </div>`;
+            return;
+        }
+
+        const filtered = filterArea
+            ? _programCompetences.filter(c => c.area === filterArea)
+            : _programCompetences;
+
+        if (!filtered.length) {
+            container.innerHTML = `<div class="text-center py-3 text-muted"><i class="bi bi-filter-circle me-2"></i>No hay competencias en el área seleccionada.</div>`;
+            return;
+        }
+
+        const items = filtered.map((comp, i) => _renderViewOnlyItem(comp, i)).join('');
+        container.innerHTML = `<div class="accordion" id="competences-accordion">${items}</div>`;
+    }
+
+    function _renderViewOnlyItem(comp, idx) {
+        const areaColor = _areaColor(comp.area);
+        const selectedToolsCount = (comp.selectedTools || []).length;
+        const allToolsCount      = (comp.allTools || []).length;
+        const toolBadges = (comp.selectedTools || []).map(t =>
+            `<span class="badge bg-light text-dark border me-1 mb-1"><i class="bi bi-tools me-1 opacity-50"></i>${_esc(t)}</span>`
+        ).join('');
+        const levelRows = (comp.levels || []).map(l => `
+            <div class="d-flex align-items-start gap-2 mb-2">
+                <span class="badge bg-${_levelColor(l.level)} flex-shrink-0" style="min-width:2rem;text-align:center;">${l.level}</span>
+                <div>
+                    <strong class="small">${_esc(l.description)}</strong>
+                    <ul class="mb-0 ps-3 small text-muted">
+                        ${(l.indicators || []).map(i => `<li>${_esc(i)}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>`).join('');
+
+        const collapseId = `vo-comp-${idx}`;
+        return `
+        <div class="accordion-item mb-2 border rounded">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false">
+                    <span class="badge bg-${areaColor} me-2" style="font-size:.7rem;">${_esc(comp.area || 'Sin área')}</span>
+                    <span class="fw-semibold me-2">${_esc(comp.name)}</span>
+                    <span class="badge bg-light text-muted border ms-auto me-3" style="font-size:.7rem;">
+                        <i class="bi bi-tools me-1"></i>${selectedToolsCount}/${allToolsCount} herramientas
+                    </span>
+                </button>
+            </h2>
+            <div id="${collapseId}" class="accordion-collapse collapse">
+                <div class="accordion-body pt-2">
+                    ${comp.description ? `<p class="small text-muted mb-2">${_esc(comp.description)}</p>` : ''}
+                    ${toolBadges ? `<div class="mb-3"><strong class="small text-muted d-block mb-1"><i class="bi bi-tools me-1"></i>Herramientas seleccionadas:</strong>${toolBadges}</div>` : ''}
+                    ${levelRows ? `<div><strong class="small text-muted d-block mb-1"><i class="bi bi-bar-chart-steps me-1"></i>Niveles:</strong>${levelRows}</div>` : ''}
+                </div>
+            </div>
+        </div>`;
+    }
+
+
     function _renderAccordionItem(comp, idx) {
         const areaColor = _areaColor(comp.area);
         const selectedToolsCount = (comp.selectedTools || []).length;
         const allToolsCount = (comp.allTools || []).length;
         const levelsCount = (comp.levels || []).length;
 
-        // Module selector options
+        // Multi-module selector (checkboxes)
         const modules = (window.promotionModules && window.promotionModules.length)
             ? window.promotionModules
             : [];
-        const moduleOptions = modules.map(m => {
-            const sel = comp.startModule && comp.startModule.id === m.id ? 'selected' : '';
-            return `<option value="${m.id}" ${sel}>${_esc(m.name || m.title || `Módulo ${m.id}`)}</option>`;
-        }).join('');
-        const startModuleLabel = comp.startModule
-            ? `<span class="badge bg-light text-dark border ms-2 small"><i class="bi bi-play-circle me-1"></i>${_esc(comp.startModule.name)}</span>`
-            : '';
 
-        // Tools badges — with inline × remove button
+        // Migrate legacy startModule → evalModules if needed
+        if (!comp.evalModules && comp.startModule) {
+            comp.evalModules = [{ id: comp.startModule.id, name: comp.startModule.name }];
+        }
+        if (!comp.evalModules) comp.evalModules = [];
+
+        const selectedModuleIds = new Set((comp.evalModules || []).map(m => String(m.id)));
+
+        const moduleCheckboxes = modules.map(m => {
+            const checked = selectedModuleIds.has(String(m.id)) ? 'checked' : '';
+            return `<div class="form-check">
+                <input class="form-check-input" type="checkbox" value="${_esc(String(m.id))}"
+                    id="comp-mod-${idx}-${_esc(String(m.id))}"
+                    data-mod-name="${_esc(m.name || m.title || `Módulo`)}"
+                    onchange="window.ProgramCompetences._toggleEvalModule(${idx}, this)"
+                    ${checked}>
+                <label class="form-check-label small" for="comp-mod-${idx}-${_esc(String(m.id))}">
+                    ${_esc(m.name || m.title || `Módulo ${m.id}`)}
+                </label>
+            </div>`;
+        }).join('');
+
+        // Module badges for collapsed header
+        const evalModuleBadges = (comp.evalModules || []).map(m =>
+            `<span class="badge ms-1 small" style="background:#E85D26;color:#fff;"><i class="bi bi-folder2 me-1"></i>${_esc(m.name)}</span>`
+        ).join('');
+
+        // Tools badges
         const toolBadges = (comp.selectedTools || []).map(t =>
-            `<span class="badge bg-light text-dark border me-1 mb-1 d-inline-flex align-items-center gap-1">` +
-            `<i class="bi bi-tools opacity-50" style="font-size:.75em;"></i>${_esc(t)}` +
-            `<button type="button" class="btn-close btn-close-sm ms-1" style="font-size:.55em;" aria-label="Eliminar" ` +
-            `onclick="event.stopPropagation();window.ProgramCompetences._removeTool(${idx},'${t.replace(/'/g,"\\'")}')"></button>` +
-            `</span>`
+            `<span class="badge bg-light text-dark border me-1 mb-1"><i class="bi bi-tools me-1 opacity-50"></i>${_esc(t)}</span>`
         ).join('');
 
         // Level rows
@@ -182,15 +284,15 @@
             </div>`).join('');
 
         return `
-        <div class="accordion-item border-start border-4 border-${areaColor}" data-competence-idx="${idx}">
+        <div class="accordion-item border-start border-4" style="border-color:#E85D26 !important;" data-competence-idx="${idx}">
             <h2 class="accordion-header" id="comp-header-${idx}">
                 <button class="accordion-button collapsed py-2" type="button"
                     data-bs-toggle="collapse" data-bs-target="#comp-body-${idx}"
                     aria-expanded="false" aria-controls="comp-body-${idx}">
                     <div class="d-flex align-items-center flex-wrap gap-2 w-100 me-3">
-                        <span class="badge bg-${areaColor}">${_esc(comp.area)}</span>
+                        <span class="badge" style="background:#E85D26;">${_esc(comp.area)}</span>
                         <strong>${_esc(comp.name)}</strong>
-                        ${startModuleLabel}
+                        ${evalModuleBadges}
                         <span class="ms-auto d-flex gap-2 small text-muted">
                             <span title="Herramientas seleccionadas"><i class="bi bi-tools me-1"></i>${selectedToolsCount}/${allToolsCount}</span>
                             <span title="Niveles"><i class="bi bi-bar-chart-steps me-1"></i>${levelsCount}</span>
@@ -203,17 +305,18 @@
                 <div class="accordion-body pt-2 pb-3">
                     ${comp.description ? `<p class="text-muted small mb-3">${_esc(comp.description)}</p>` : ''}
 
-                    <!-- Módulo de inicio -->
-                    <div class="mb-3 p-2 bg-light rounded border">
-                        <label class="form-label small fw-semibold mb-1">
-                            <i class="bi bi-play-circle me-1 text-primary"></i>Módulo en el que empieza a evaluarse
+                    <!-- Módulos de evaluación (multi-selección) -->
+                    <div class="mb-3 p-3 rounded border" style="background:#fff8f5; border-color:#E85D26 !important;">
+                        <label class="form-label small fw-semibold mb-2" style="color:#E85D26;">
+                            <i class="bi bi-folder2-open me-1"></i>Módulos en los que se evalúa esta competencia
                         </label>
-                        <select class="form-select form-select-sm"
-                            onchange="window.ProgramCompetences._setStartModule(${idx}, this.value, this.options[this.selectedIndex].text)">
-                            <option value="">— Sin asignar —</option>
-                            ${moduleOptions}
-                        </select>
-                        ${modules.length === 0 ? '<small class="text-muted">Crea módulos en la sección de Secciones para asignarlos aquí.</small>' : ''}
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-info-circle me-1"></i>Al guardar, la competencia se añade automáticamente a todos los proyectos de los módulos seleccionados.
+                        </p>
+                        ${modules.length === 0
+                            ? '<small class="text-muted fst-italic">Crea módulos en el Roadmap para poder asignarlos aquí.</small>'
+                            : `<div class="d-flex flex-wrap gap-3">${moduleCheckboxes}</div>`
+                        }
                     </div>
 
                     <div class="row g-3">
@@ -230,7 +333,7 @@
                             <div class="mb-2">
                                 ${toolBadges || '<span class="text-muted small fst-italic">Sin herramientas seleccionadas.</span>'}
                             </div>
-                            <button class="btn btn-sm btn-outline-primary mt-1"
+                            <button class="btn btn-sm btn-outline-secondary mt-1"
                                 onclick="window.ProgramCompetences._openToolsEditor(${idx})">
                                 <i class="bi bi-pencil me-1"></i>Editar herramientas
                             </button>
@@ -341,7 +444,7 @@
             levels: JSON.parse(JSON.stringify(source.levels)),
             allTools: [...(source.allTools || [])],
             selectedTools: [],
-            startModule: null
+            evalModules: []
         });
 
         // Rebuild modal content to update "Añadida" buttons, keep it open
@@ -357,45 +460,60 @@
         _markUnsaved();
     }
 
-    // ─── Asigna el módulo de inicio a una competencia ────────────────────────
-    function _setStartModule(idx, moduleId, moduleName) {
+    // ─── Activa/desactiva un módulo de evaluación para una competencia ────────
+    function _toggleEvalModule(idx, checkbox) {
         if (!_programCompetences[idx]) return;
-        if (!moduleId) {
-            _programCompetences[idx].startModule = null;
-        } else {
-            _programCompetences[idx].startModule = { id: moduleId, name: moduleName };
-        }
-        // Update accordion header badge without full re-render
-        const header = document.getElementById(`comp-header-${idx}`);
-        if (header) {
-            const btn = header.querySelector('.accordion-button');
-            if (btn) {
-                // Remove existing startModule badge if present
-                const existing = btn.querySelector('.start-module-badge');
-                if (existing) existing.remove();
-                if (moduleId) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge bg-light text-dark border ms-2 small start-module-badge';
-                    badge.innerHTML = `<i class="bi bi-play-circle me-1"></i>${_esc(moduleName)}`;
-                    btn.querySelector('strong').insertAdjacentElement('afterend', badge);
-                }
+        if (!_programCompetences[idx].evalModules) _programCompetences[idx].evalModules = [];
+
+        const moduleId = checkbox.value;
+        const moduleName = checkbox.dataset.modName || moduleId;
+
+        if (checkbox.checked) {
+            if (!_programCompetences[idx].evalModules.some(m => String(m.id) === String(moduleId))) {
+                _programCompetences[idx].evalModules.push({ id: moduleId, name: moduleName });
             }
+        } else {
+            _programCompetences[idx].evalModules = _programCompetences[idx].evalModules.filter(
+                m => String(m.id) !== String(moduleId)
+            );
         }
+
+        // Update collapsed header badges without full re-render
+        const headerBtn = document.querySelector(`#comp-header-${idx} .accordion-button`);
+        if (headerBtn) {
+            headerBtn.querySelectorAll('.eval-mod-badge').forEach(b => b.remove());
+            _programCompetences[idx].evalModules.forEach(m => {
+                const badge = document.createElement('span');
+                badge.className = 'badge ms-1 small eval-mod-badge';
+                badge.style.cssText = 'background:#E85D26;color:#fff;';
+                badge.innerHTML = `<i class="bi bi-folder2 me-1"></i>${_esc(m.name)}`;
+                headerBtn.querySelector('strong').insertAdjacentElement('afterend', badge);
+            });
+        }
+
         _markUnsaved();
+    }
+
+    /**
+     * Returns an array of { moduleId, competenceId } pairs for syncing to the roadmap.
+     * Used by promotion-detail.js saveExtendedInfo to auto-apply competences to module projects.
+     */
+    function getEvalModulesSyncData() {
+        const result = [];
+        _programCompetences.forEach(comp => {
+            // Migrate legacy
+            const mods = comp.evalModules || (comp.startModule ? [comp.startModule] : []);
+            mods.forEach(m => {
+                result.push({ moduleId: String(m.id), competenceId: String(comp.id) });
+            });
+        });
+        return result;
     }
 
     // ─── Quitar competencia ───────────────────────────────────────────────────
     function _removeCompetence(idx) {
         if (!confirm(`¿Quitar la competencia "${_programCompetences[idx]?.name}" del programa?`)) return;
         _programCompetences.splice(idx, 1);
-        _render();
-        _markUnsaved();
-    }
-
-    function _removeTool(idx, toolName) {
-        const comp = _programCompetences[idx];
-        if (!comp) return;
-        comp.selectedTools = (comp.selectedTools || []).filter(t => t !== toolName);
         _render();
         _markUnsaved();
     }
@@ -568,7 +686,8 @@
 
     // ─── Filtro de área en la vista del programa ───────────────────────────────
     function filterByArea() {
-        _render();
+        if (_viewOnlyMode) _renderViewOnly();
+        else _render();
     }
 
     // ─── Notifica al sistema principal que hay cambios sin guardar ────────────
@@ -607,18 +726,19 @@
     // ─── API pública ──────────────────────────────────────────────────────────
     window.ProgramCompetences = {
         init,
+        initViewOnly,
         getCompetences,
+        getEvalModulesSyncData,
         openAddCompetenceModal,
         filterByArea,
         _addFromCatalog,
         _filterCatalog,
         _removeCompetence,
-        _removeTool,
         _openToolsEditor,
         _addCustomToolToEditor,
         _removeCustomToolFromEditor,
         _saveToolsSelection,
-        _setStartModule
+        _toggleEvalModule
     };
 
 }(window));

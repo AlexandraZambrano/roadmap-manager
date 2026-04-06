@@ -12,6 +12,50 @@ function studentFullName(student) {
 }
 
 
+// ==================== GREETING & WELCOME MESSAGES ====================
+
+/**
+ * Renderiza el saludo dinámico en la sección Overview
+ * Saluda al docente deseándole un buen día, sin mencionar la promo
+ */
+function renderGreeting() {
+    const greetingContainer = document.getElementById('greeting-container');
+    if (!greetingContainer) return;
+
+    // Array de saludos amigables para el docente
+    const greetings = [
+        { text: '¡Que tengas un excelente día!', icon: '👋' },
+        { text: '¡Hola! Que tengas una buena jornada', icon: '🚀' },
+        { text: '¡Bienvenido! Espero que sea un gran día', icon: '☀️' },
+        { text: '¡Hola equipo! ¡A por un buen día!', icon: '💪' }
+    ];
+
+    // Seleccionar un saludo aleatorio
+    const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+
+    // Construir el HTML del saludo
+    const greetingHTML = `
+        <div class="greeting-icon">${greeting.icon}</div>
+        <div class="greeting-text">
+            ${greeting.text}
+        </div>
+    `;
+
+    greetingContainer.innerHTML = greetingHTML;
+}
+
+/**
+ * Renderiza el subtítulo "Hoy estás en la promo"
+ * @param {string} promotionName - Nombre de la promoción
+ */
+function renderPromoSubtitle(promotionName) {
+    const subtitleEl = document.getElementById('promo-subtitle');
+    if (!subtitleEl) return;
+
+    subtitleEl.textContent = `Hoy estás en la promo`;
+}
+
+
 // ==================== PROFILE MANAGEMENT ====================
 
 let profileModal;
@@ -117,64 +161,58 @@ window.saveProfileInfo = async function () {
 };
 
 window.changePassword = async function () {
-    const token = localStorage.getItem('token');
-    const currentPassword = document.getElementById('current-password').value;
-    const newPassword = document.getElementById('new-password').value;
-    const confirmPassword = document.getElementById('confirm-password').value;
-
     const alertEl = document.getElementById('password-alert');
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'All fields are required';
-        alertEl.classList.remove('hidden');
-        return;
-    }
+    const emailEl = document.getElementById('reset-email');
+    const email = emailEl ? emailEl.value.trim() : '';
 
-    if (newPassword !== confirmPassword) {
+    if (!email) {
         alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'New passwords do not match';
-        alertEl.classList.remove('hidden');
-        return;
-    }
-
-    if (newPassword.length < 8) {
-        alertEl.className = 'alert alert-warning';
-        alertEl.textContent = 'Password must be at least 8 characters';
+        alertEl.textContent = 'Por favor, introduce tu correo electrónico.';
         alertEl.classList.remove('hidden');
         return;
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/change-password`, {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === 'localhost';
+        const resetUrl = isLocal
+            ? 'http://localhost:8000/reset-password/api-request-reset'
+            : 'https://users.coderf5.es/reset-password/api-request-reset';
+
+        const response = await fetch(resetUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ currentPassword, newPassword })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
         });
+
+        // Many reset-password endpoints return 200/204 with no body, or a JSON message
+        let data = {};
+        const text = await response.text();
+        try { data = JSON.parse(text); } catch { /* no JSON body */ }
 
         if (response.ok) {
             alertEl.className = 'alert alert-success';
-            alertEl.textContent = 'Password changed successfully! Please log in again.';
+            alertEl.textContent = data.message || 'En breves recibirás un correo con el enlace para cambiar tu contraseña.';
             alertEl.classList.remove('hidden');
-
-            setTimeout(() => {
-                logout();
-            }, 2000);
+            // Do NOT close the modal — let the user read the confirmation
         } else {
-            const data = await response.json();
             alertEl.className = 'alert alert-danger';
-            alertEl.textContent = data.error || 'Error changing password';
+            alertEl.textContent = data.message || data.error || 'Error al enviar el correo. Inténtalo de nuevo.';
             alertEl.classList.remove('hidden');
         }
     } catch (error) {
-        console.error('Error changing password:', error);
+        console.error('Error sending reset password email:', error);
         alertEl.className = 'alert alert-danger';
-        alertEl.textContent = 'Error changing password';
+        alertEl.textContent = 'Error de conexión. Inténtalo de nuevo.';
         alertEl.classList.remove('hidden');
     }
+};
+
+window.logout = function () {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
+    window.location.href = 'login.html';
 };
 
 // (initProfileModal is called inside the main DOMContentLoaded block)
@@ -200,8 +238,16 @@ function togglePasswordVisibility(inputId) {
 
 
 let promotionId = null;
-let moduleModal, quickLinkModal, sectionModal, studentModal, studentProgressModal, teamModal, resourceModal, collaboratorModal, projectAssignmentDetailModal;
-const userRole = localStorage.getItem('role') || 'student';
+let moduleModal, quickLinkModal, sectionModal, studentModal, studentProgressModal, teamModal, editTeamModal, resourceModal,
+    collaboratorModal, projectAssignmentDetailModal;
+// Always read role fresh from localStorage so external auth (users.coderf5.es),
+// which writes 'role' after the page loads, is picked up correctly.
+// 'superadmin' has the same edit rights as 'teacher'.
+function getUserRole() { return localStorage.getItem('role') || 'student'; }
+function isTeacherOrAdmin() { const r = getUserRole(); return r === 'teacher' || r === 'superadmin'; }
+// Keep a module-level alias for the few places that still use `userRole` as a string.
+// This is re-evaluated at call time via the getter.
+Object.defineProperty(window, 'userRole', { get: getUserRole, configurable: true });
 let currentUser = {};
 let promotionModules = []; // Store promotion modules
 window.promotionModules = promotionModules; // Expose for program-competences.js
@@ -211,6 +257,19 @@ let deletePromotionModal;
 try {
     const userJson = localStorage.getItem('user');
     currentUser = userJson && userJson !== 'undefined' ? JSON.parse(userJson) : {};
+    // Display user name in navbar
+    if (currentUser && currentUser.name) {
+        const teacherNameEl = document.getElementById('teacher-name');
+        if (teacherNameEl) {
+            teacherNameEl.textContent = currentUser.name;
+        }
+    }
+    // Show admin panel button only for superadmin
+    const role = localStorage.getItem('role') || currentUser.role;
+    if (role === 'superadmin') {
+        document.getElementById('admin-panel-divider')?.classList.remove('d-none');
+        document.getElementById('admin-panel-item')?.classList.remove('d-none');
+    }
 } catch (e) {
     console.error('Error parsing user data', e);
 }
@@ -222,6 +281,9 @@ let extendedInfoData = {
     pildoras: [],
     pildorasAssignmentOpen: false
 };
+
+// Global calendar ID for use across the application
+let currentCalendarId = '';
 
 // Attendance state
 let currentAttendanceMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
@@ -243,25 +305,7 @@ function escapeHtml(text) {
     return text.toString().replace(/[&<>"']/g, function (m) { return map[m]; });
 }
 
-// Utility function to toggle password visibility
-function togglePasswordVisibility(inputId) {
-    const input = document.getElementById(inputId);
-    const button = event.target.closest('.password-toggle');
-    
-    if (input) {
-        if (input.type === 'password') {
-            input.type = 'text';
-            if (button) {
-                button.innerHTML = '<i class="bi bi-eye-slash"></i>';
-            }
-        } else {
-            input.type = 'password';
-            if (button) {
-                button.innerHTML = '<i class="bi bi-eye"></i>';
-            }
-        }
-    }
-}
+// (Immediate CSS injection for student view logic was here)
 
 // Immediate CSS injection for student view (to prevent flicker)
 if (userRole === 'student') {
@@ -287,7 +331,7 @@ function initMobileMenu() {
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const sidebar = document.querySelector('.sidebar');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
-    
+
     if (sidebarToggle && sidebar) {
         sidebarToggle.addEventListener('click', () => {
             sidebar.classList.toggle('show');
@@ -295,7 +339,7 @@ function initMobileMenu() {
                 sidebarOverlay.classList.toggle('show');
             }
         });
-        
+
         // Close sidebar when clicking overlay
         if (sidebarOverlay) {
             sidebarOverlay.addEventListener('click', () => {
@@ -303,7 +347,7 @@ function initMobileMenu() {
                 sidebarOverlay.classList.remove('show');
             });
         }
-        
+
         // Close sidebar when clicking on a nav link
         const navLinks = sidebar.querySelectorAll('.nav-link');
         navLinks.forEach(link => {
@@ -322,147 +366,148 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     promotionId = new URLSearchParams(window.location.search).get('id');
 
+    // Alias for search bar compatibility
+    window.filterStudents = filterStudentsTable;
+    window.exportStudentsCsv = exportAllStudentsExcel; // Map CSV buttons to Excel as requested
+    window.exportStudentsExcel = exportAllStudentsExcel;
+
     if (!promotionId) {
         window.location.href = 'dashboard.html';
         return;
     }
 
-    // Initialize mobile menu
-    initMobileMenu();
+    // Main initialization sequence
+    async function init() {
+        // Initialize mobile menu
+        initMobileMenu();
 
-    // Set up student dashboard preview iframe in Overview
-    const previewIframe = document.getElementById('student-preview-iframe');
-    if (previewIframe) {
-        const baseUrl = window.location.origin;
-        const isGitHubPages = window.location.hostname.includes('github.io');
+        // Setup calendar preview
+        setupCalendarPreviewHandler();
 
-        let previewPath;
-        if (isGitHubPages) {
-            // GitHub Pages needs the repository name in the path
-            const pathParts = window.location.pathname.split('/');
-            const repoName = pathParts[1];
-            previewPath = `/${repoName}/public-promotion.html`;
-        } else {
-            const path = window.location.pathname;
-            const directory = path.substring(0, path.lastIndexOf('/'));
-            previewPath = (directory === '/' ? '' : directory) + '/public-promotion.html';
-        }
+        // Initialize modals only if elements exist (teacher view)
+        const moduleModalEl = document.getElementById('moduleModal');
+        if (moduleModalEl) moduleModal = new bootstrap.Modal(moduleModalEl);
 
-        previewIframe.src = `${baseUrl}${previewPath}?id=${promotionId}&preview=1`;
-    }
+        const quickLinkModalEl = document.getElementById('quickLinkModal');
+        if (quickLinkModalEl) quickLinkModal = new bootstrap.Modal(quickLinkModalEl);
 
-    // Initialize modals only if elements exist (teacher view)
-    const moduleModalEl = document.getElementById('moduleModal');
-    if (moduleModalEl) moduleModal = new bootstrap.Modal(moduleModalEl);
+        const sectionModalEl = document.getElementById('sectionModal');
+        if (sectionModalEl) sectionModal = new bootstrap.Modal(sectionModalEl);
 
-    const quickLinkModalEl = document.getElementById('quickLinkModal');
-    if (quickLinkModalEl) quickLinkModal = new bootstrap.Modal(quickLinkModalEl);
+        const studentModalEl = document.getElementById('studentModal');
+        if (studentModalEl) studentModal = new bootstrap.Modal(studentModalEl);
 
-    const sectionModalEl = document.getElementById('sectionModal');
-    if (sectionModalEl) sectionModal = new bootstrap.Modal(sectionModalEl);
+        const studentProgressModalEl = document.getElementById('studentProgressModal');
+        if (studentProgressModalEl) studentProgressModal = new bootstrap.Modal(studentProgressModalEl);
 
-    const studentModalEl = document.getElementById('studentModal');
-    if (studentModalEl) studentModal = new bootstrap.Modal(studentModalEl);
+        const projectAssignmentDetailModalEl = document.getElementById('projectAssignmentDetailModal');
+        if (projectAssignmentDetailModalEl) projectAssignmentDetailModal = new bootstrap.Modal(projectAssignmentDetailModalEl);
 
-    const studentProgressModalEl = document.getElementById('studentProgressModal');
-    if (studentProgressModalEl) studentProgressModal = new bootstrap.Modal(studentProgressModalEl);
+        // New Modals (Teacher)
+        const teamModalEl = document.getElementById('teamModal');
+        if (teamModalEl) teamModal = new bootstrap.Modal(teamModalEl);
 
-    const projectAssignmentDetailModalEl = document.getElementById('projectAssignmentDetailModal');
-    if (projectAssignmentDetailModalEl) projectAssignmentDetailModal = new bootstrap.Modal(projectAssignmentDetailModalEl);
+        const resourceModalEl = document.getElementById('resourceModal');
+        if (resourceModalEl) resourceModal = new bootstrap.Modal(resourceModalEl);
 
-    // New Modals (Teacher)
-    const teamModalEl = document.getElementById('teamModal');
-    if (teamModalEl) teamModal = new bootstrap.Modal(teamModalEl);
+        const deletePromotionModalEl = document.getElementById('deletePromotionModal');
+        if (deletePromotionModalEl) deletePromotionModal = new bootstrap.Modal(deletePromotionModalEl);
 
-    const resourceModalEl = document.getElementById('resourceModal');
-    if (resourceModalEl) resourceModal = new bootstrap.Modal(resourceModalEl);
+        const collaboratorModalEl = document.getElementById('collaboratorModal');
+        if (collaboratorModalEl) collaboratorModal = new bootstrap.Modal(collaboratorModalEl);
 
-    const deletePromotionModalEl = document.getElementById('deletePromotionModal');
-    if (deletePromotionModalEl) deletePromotionModal = new bootstrap.Modal(deletePromotionModalEl);
+        const editTeamModalEl = document.getElementById('editTeamModal');
+        if (editTeamModalEl) editTeamModal = new bootstrap.Modal(editTeamModalEl);
 
-    const collaboratorModalEl = document.getElementById('collaboratorModal');
-    if (collaboratorModalEl) collaboratorModal = new bootstrap.Modal(collaboratorModalEl);
+        initEmployabilityModal();
+        initProfileModal();
 
-    initEmployabilityModal();
-    initProfileModal();
+        // Wire funder Enter key
+        document.getElementById('acta-funder-input')?.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); actaAddFunder(); }
+        });
 
-    // Wire funder Enter key
-    document.getElementById('acta-funder-input')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); actaAddFunder(); }
-    });
+        // 1. Load Promotion basics (Populates modules list for all other components)
+        await loadPromotion();
 
-    // Apply student-role view restrictions
-    setTimeout(() => {
-        const role = localStorage.getItem('role');
-        if (role === 'student') {
-            document.body.classList.add('student-view');
-            const previewBtn = document.querySelector('button[onclick="previewPromotion()"]');
-            if (previewBtn) previewBtn.remove();
-            const style = document.createElement('style');
-            style.innerHTML = `
-                .btn-primary, .btn-danger, .btn-outline-danger,
-                a[href="#students"] { display: none !important; }
-                #students-tab { display: none !important; }
-            `;
-            document.head.appendChild(style);
-            const studentsLink = document.querySelector('a[href="#students"]');
-            if (studentsLink && studentsLink.parentElement) {
-                studentsLink.parentElement.style.display = 'none';
-            }
-        }
-    }, 100);
+        if (isTeacherOrAdmin()) {
+            // 2. Load Extended info (Acta), Students, and Collaborators in parallel
+            _showExtendedInfoLoading(true);
+            await Promise.all([
+                loadExtendedInfo().finally(() => _showExtendedInfoLoading(false)),
+                loadStudents(),
+                loadCollaborators(),
+                loadAccessPassword()
+            ]);
 
-    if (userRole === 'teacher') {
-        // Overlay gates only on ExtendedInfo (Acta data) — students load independently in the background
-        _showExtendedInfoLoading(true);
-        loadExtendedInfo().finally(() => {
-            _showExtendedInfoLoading(false);
-            // Open Acta modal AFTER overlay finishes fading (320ms fade + buffer)
+            // Open Acta modal AFTER overlay finishes (if requested)
             if (new URLSearchParams(window.location.search).get('openActa') === '1') {
                 setTimeout(() => openActaModal(), 400);
             }
-        });
-        loadStudents(); // runs independently, no overlay dependency
-        loadCollaborators();
-    } else {
-        // Remove preview button for students
-        const previewBtn = document.querySelector('button[onclick="previewPromotion()"]');
-        if (previewBtn) previewBtn.remove();
+            
+            setupForms();
+        } else {
+            // Student role: Clean up Teacher-only UIs
+            const previewBtn = document.querySelector('button[onclick="previewPromotion()"]');
+            if (previewBtn) previewBtn.remove();
+        }
+
+        // 3. UI logic
+        loadQuickLinks();
+        loadQuickActions();
+        loadSections();
+
+        // 4. Feature modules
+        if (typeof NotesManager !== 'undefined' && typeof NotesUI !== 'undefined') {
+            const notesManager = new NotesManager('promotionNotes', promotionId);
+            const notesUI = new NotesUI(notesManager, 'notes-container');
+            notesUI.render();
+            window.notesManager = notesManager;
+            window.notesUI = notesUI;
+        }
+
+        if (typeof window.StudentTracking !== 'undefined') {
+            window.StudentTracking.init(promotionId);
+        }
+
+        // 5. Restore last active tab (Safe now because loadPromotion/loadCollaborators finished)
+        const validTabs = ['overview', 'info', 'students', 'attendance', 'collaborators', 'access-settings', 'evaluation'];
+        let savedTab = sessionStorage.getItem(`activeTab_${promotionId}`) || 'overview';
+        if (!validTabs.includes(savedTab)) savedTab = 'overview';
+        window.location.hash = savedTab;
+        switchTab(savedTab);
     }
 
-    loadPromotion();
-    loadModules();
-    loadQuickLinks();
-    loadSections();
-    loadCalendar();
-
-    if (userRole === 'teacher') {
-        setupForms();
-    }
-
-    // Restore last active tab (or default to overview)
-    const savedTab = sessionStorage.getItem(`activeTab_${promotionId}`) || 'overview';
-    window.location.hash = savedTab;
-    switchTab(savedTab);
-
-    // Inicializar módulo de Fichas de Seguimiento (independiente)
-    if (typeof window.StudentTracking !== 'undefined') {
-        window.StudentTracking.init(promotionId);
-    }
+    init().catch(err => console.error('[Init] Initialization failed:', err));
 });
+
+function setupCalendarPreviewHandler() {
+    const calendarPreviewIframe = document.getElementById('calendar-preview-iframe');
+    if (calendarPreviewIframe) {
+        window.setupCalendarPreview = function () {
+            const calendarId = currentCalendarId || '';
+            if (calendarId) {
+                const embedUrl = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calendarId)}&ctz=Europe/Madrid&mode=AGENDA`;
+                calendarPreviewIframe.src = embedUrl;
+            } else {
+                calendarPreviewIframe.src = '';
+            }
+        };
+    }
+}
 
 async function loadExtendedInfo() {
     const token = localStorage.getItem('token');
     try {
-        // Ensure Schedule tab is active on load (wrapped so a Bootstrap error doesn't abort the whole load)
+        // Ensure Roadmap sub-tab is active on load (wrapped so a Bootstrap error doesn't abort the whole load)
         try {
-            const scheduleTab = document.getElementById('program-details-schedule-tab');
-            if (scheduleTab && window.bootstrap) {
-                const tab = bootstrap.Tab.getOrCreateInstance(scheduleTab);
+            const roadmapTab = document.getElementById('program-details-roadmap-tab');
+            if (roadmapTab && window.bootstrap) {
+                const tab = bootstrap.Tab.getOrCreateInstance(roadmapTab);
                 tab.show();
             }
         } catch (tabErr) {
-            console.warn('[loadExtendedInfo] Could not activate schedule tab:', tabErr);
+            console.warn('[loadExtendedInfo] Could not activate roadmap tab:', tabErr);
         }
 
         const response = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`); // Public endpoint
@@ -476,17 +521,17 @@ async function loadExtendedInfo() {
             const sched = extendedInfoData.schedule || {};
             const _set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
             if (sched.online) {
-                _set('sched-online-entry',  sched.online.entry);
-                _set('sched-online-start',  sched.online.start);
-                _set('sched-online-break',  sched.online.break);
-                _set('sched-online-lunch',  sched.online.lunch);
+                _set('sched-online-entry', sched.online.entry);
+                _set('sched-online-start', sched.online.start);
+                _set('sched-online-break', sched.online.break);
+                _set('sched-online-lunch', sched.online.lunch);
                 _set('sched-online-finish', sched.online.finish);
             }
             if (sched.presential) {
-                _set('sched-presential-entry',  sched.presential.entry);
-                _set('sched-presential-start',  sched.presential.start);
-                _set('sched-presential-break',  sched.presential.break);
-                _set('sched-presential-lunch',  sched.presential.lunch);
+                _set('sched-presential-entry', sched.presential.entry);
+                _set('sched-presential-start', sched.presential.start);
+                _set('sched-presential-break', sched.presential.break);
+                _set('sched-presential-lunch', sched.presential.lunch);
                 _set('sched-presential-finish', sched.presential.finish);
             }
             _set('sched-notes', sched.notes);
@@ -536,9 +581,21 @@ Evaluación Global al Final del Bootcamp
                 assignmentToggle.checked = !!extendedInfoData.pildorasAssignmentOpen;
             }
 
-            // Init Competencias module
+            // Init Competencias module in view-only mode (only showing those used in projects)
             if (window.ProgramCompetences) {
-                window.ProgramCompetences.init(extendedInfoData.competences || []);
+                const usedCompIds = new Set();
+                if (Array.isArray(extendedInfoData.projectCompetences)) {
+                    extendedInfoData.projectCompetences.forEach(pc => {
+                        (pc.competenceIds || []).forEach(cid => usedCompIds.add(String(cid)));
+                    });
+                }
+                const filteredComps = (extendedInfoData.competences || []).filter(c => usedCompIds.has(String(c.id)));
+
+                if (window.ProgramCompetences.initViewOnly) {
+                    window.ProgramCompetences.initViewOnly(filteredComps);
+                } else {
+                    window.ProgramCompetences.init(filteredComps);
+                }
             }
 
         }
@@ -581,14 +638,36 @@ function displayTeam() {
     const tbody = document.getElementById('team-list-body');
     if (!tbody) return;
     tbody.innerHTML = '';
+
     (extendedInfoData.team || []).forEach((member, index) => {
-        const tr = document.createElement('tr');
-        const moduleCell = member.moduleName
-            ? `<span class="badge bg-light text-dark border">${escapeHtml(member.moduleName)}</span>`
+        // Find assigned modules from central state (currentPromotion)
+        let moduleIds = [];
+        const promo = window.currentPromotion || {};
+        const isOwner = promo.teacherId === member.collaboratorId;
+        
+        if (isOwner) {
+            moduleIds = promo.ownerModules || [];
+        } else {
+            const entry = (promo.collaboratorModules || []).find(m => m.teacherId === member.collaboratorId);
+            moduleIds = entry ? (entry.moduleIds || []) : [];
+        }
+
+        // Map to names
+        const modNames = [];
+        (moduleIds || []).forEach(mid => {
+            const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+            if (found) modNames.push(found.name);
+        });
+
+        const moduleCell = modNames.length > 0
+            ? modNames.map(name => `<span class="badge bg-light text-dark border me-1">${escapeHtml(name)}</span>`).join('')
             : '<span class="text-muted small">—</span>';
+
         const linkedinCell = member.linkedin
             ? `<a href="${escapeHtml(member.linkedin)}" target="_blank"><i class="bi bi-linkedin"></i></a>`
             : '<span class="text-muted small">—</span>';
+            
+        const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${escapeHtml(member.name)}</td>
             <td>${escapeHtml(member.role || '')}</td>
@@ -596,7 +675,8 @@ function displayTeam() {
             <td>${moduleCell}</td>
             <td>${linkedinCell}</td>
             <td>
-                <button class="btn btn-sm btn-danger" onclick="deleteTeamMember(${index})"><i class="bi bi-trash"></i></button>
+                <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditTeamModal(${index})" title="Editar"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteTeamMember(${index})" title="Eliminar"><i class="bi bi-trash"></i></button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -609,10 +689,33 @@ function displayResources() {
     tbody.innerHTML = '';
     (extendedInfoData.resources || []).forEach((res, index) => {
         const tr = document.createElement('tr');
+
+        // Build category/type cell
+        const categoryHtml = (res.types && res.types.length)
+            ? res.types.map(t => `<span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1">${escapeHtml(t.name)}</span>`).join('')
+            : `<span class="badge bg-info text-dark">${escapeHtml(res.category || '')}</span>`;
+
+        // Build area badges
+        const areaBadges = (res.areas && res.areas.length)
+            ? res.areas.slice(0, 3).map(a => `<span class="badge bg-light text-dark border small me-1">${escapeHtml(a.name)}</span>`).join('')
+            : '';
+
+        // Build tool chips
+        const toolChips = (res.tools && res.tools.length)
+            ? res.tools.slice(0, 4).map(t => `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small me-1">${escapeHtml(t.name)}</span>`).join('')
+            : '';
+
+        const extraHtml = (areaBadges || toolChips)
+            ? `<div class="mt-1">${areaBadges}${toolChips}</div>`
+            : '';
+
         tr.innerHTML = `
-            <td>${escapeHtml(res.title)}</td>
-            <td><span class="badge bg-info text-dark">${escapeHtml(res.category)}</span></td>
-            <td><a href="${escapeHtml(res.url)}" target="_blank" class="text-truncate d-inline-block" style="max-width: 150px;">${escapeHtml(res.url)}</a></td>
+            <td>
+                <div class="fw-semibold">${escapeHtml(res.title)}</div>
+                ${extraHtml}
+            </td>
+            <td>${categoryHtml}</td>
+            <td><a href="${escapeHtml(res.url)}" target="_blank" class="text-truncate d-inline-block" style="max-width: 180px;">${escapeHtml(res.url)}</a></td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="deleteResource(${index})"><i class="bi bi-trash"></i></button>
             </td>
@@ -1061,117 +1164,34 @@ function updatePildoraStudentSelection(pildoraIndex, studentId, isChecked) {
     }
 }
 
-function importPildorasFromCsv(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
+function downloadPildorasExcelTemplate() {
+    const headers = [
+        'Presentación', 'Fecha', 'Píldora', 'Student', 'Estado'
+    ];
 
-    const reader = new FileReader();
-    reader.onload = e => {
-        try {
-            const text = e.target.result || '';
-            const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-            if (lines.length <= 1) {
-                alert('CSV file is empty or missing data.');
-                return;
-            }
+    const hints = [
+        'Virtual | Presencial',
+        'YYYY-MM-DD',
+        'Título de la píldora',
+        'Nombre Apellido, Nombre2 Apellido2',
+        'Pendiente | Completada | Cancelada'
+    ];
 
-            const headerCols = lines[0].split(';').map(h => h.trim().toLowerCase());
-            const idxPresentacion = headerCols.indexOf('presentación') !== -1 ? headerCols.indexOf('presentación') : headerCols.indexOf('presentacion');
-            const idxFecha = headerCols.indexOf('fecha');
-            const idxPildora = headerCols.indexOf('píldora') !== -1 ? headerCols.indexOf('píldora') : headerCols.indexOf('pildora');
-            const idxStudent = headerCols.indexOf('student') !== -1 ? headerCols.indexOf('student') : headerCols.indexOf('coders');
-            const idxEstado = headerCols.indexOf('estado');
-
-            if (idxPresentacion === -1 || idxFecha === -1 || idxPildora === -1 || idxStudent === -1 || idxEstado === -1) {
-                alert('CSV header must include: Presentación;Fecha;Píldora;Student;Estado');
-                return;
-            }
-
-            const students = window.currentStudents || [];
-            const pildoras = [];
-            const currentModule = promotionModules[currentModuleIndex];
-
-            if (!currentModule) {
-                alert('No module selected. Please select a module first.');
-                input.value = '';
-                return;
-            }
-
-            for (let i = 1; i < lines.length; i++) {
-                const raw = lines[i];
-                if (!raw) continue;
-                const cols = raw.split(';');
-                if (cols.length <= Math.min(idxPresentacion, idxFecha, idxPildora, idxStudent, idxEstado)) continue;
-
-                const mode = (cols[idxPresentacion] || '').trim();
-                const dateText = (cols[idxFecha] || '').trim();
-                const title = (cols[idxPildora] || '').trim();
-                const studentText = (cols[idxStudent] || '').trim();
-                const status = (cols[idxEstado] || '').trim();
-
-                const studentsForPildora = [];
-                if (studentText && studentText.toLowerCase() !== 'desierta') {
-                    const parts = studentText.split(',').map(p => p.trim()).filter(Boolean);
-                    parts.forEach(part => {
-                        const lowerPart = part.toLowerCase();
-                        const s = students.find(st => {
-                            const full = `${st.name || ''} ${st.lastname || ''}`.trim().toLowerCase();
-                            return full && (full === lowerPart || full.includes(lowerPart) || lowerPart.includes(full));
-                        });
-                        if (s) {
-                            if (!studentsForPildora.some(x => x.id === s.id)) {
-                                studentsForPildora.push({
-                                    id: s.id,
-                                    name: s.name || '',
-                                    lastname: s.lastname || ''
-                                });
-                            }
-                        }
-                    });
-                }
-
-                let isoDate = '';
-                if (dateText && /^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-                    isoDate = dateText;
-                }
-
-                pildoras.push({
-                    mode: mode || 'Virtual',
-                    date: isoDate,
-                    title,
-                    students: studentsForPildora,
-                    status
-                });
-            }
-
-            // Add píldoras to the current module instead of the global pildoras array
-            if (!extendedInfoData.modulesPildoras) {
-                extendedInfoData.modulesPildoras = [];
-            }
-
-            // Find or create module píldoras entry
-            let modulePildoras = extendedInfoData.modulesPildoras.find(mp => mp.moduleId === currentModule.id);
-            if (!modulePildoras) {
-                modulePildoras = {
-                    moduleId: currentModule.id,
-                    moduleName: currentModule.name,
-                    pildoras: []
-                };
-                extendedInfoData.modulesPildoras.push(modulePildoras);
-            }
-
-            // Add imported píldoras to current module
-            modulePildoras.pildoras.push(...pildoras);
-
-            alert(`Successfully imported ${pildoras.length} píldoras to module "${currentModule.name}"`);
-            displayPildoras();
-            input.value = '';
-        } catch (err) {
-            console.error('Error importing CSV:', err);
-            alert('Error importing CSV file');
-        }
-    };
-    reader.readAsText(file);
+    const escape = v => `"${String(v).replace(/"/g, '""')}"`;
+    const rows = [
+        headers.map(escape).join(','),
+        hints.map(escape).join(',')
+    ];
+    const csvContent = rows.join('\r\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'plantilla_importar_pildoras.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function importPildorasFromExcel(input) {
@@ -1195,9 +1215,12 @@ function importPildorasFromExcel(input) {
     }
 
     // Show loading indicator
-    const originalText = document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML;
-    document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML =
-        '<i class="bi bi-hourglass-split"></i> Importing...';
+    const importBtn = document.getElementById('pildoras-import-excel-btn');
+    const originalText = importBtn ? importBtn.innerHTML : '';
+    if (importBtn) {
+        importBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Importando...';
+        importBtn.disabled = true;
+    }
 
     // Use module-specific endpoint
     fetch(`${API_URL}/api/promotions/${promotionId}/modules/${currentModule.id}/pildoras/upload-excel`, {
@@ -1244,7 +1267,10 @@ function importPildorasFromExcel(input) {
         })
         .finally(() => {
             // Restore button text
-            document.querySelector('button[onclick="document.getElementById(\'pildoras-excel-input\').click()"]').innerHTML = originalText;
+            if (importBtn) {
+                importBtn.innerHTML = originalText;
+                importBtn.disabled = false;
+            }
         });
 }
 
@@ -1252,17 +1278,8 @@ async function openTeamModal() {
     document.getElementById('team-form').reset();
     document.getElementById('team-collab-preview').classList.add('d-none');
 
-    // Populate module dropdown
-    const moduleSelect = document.getElementById('team-module');
-    moduleSelect.innerHTML = '<option value="">— No specific module —</option>';
-    (window.promotionModules || []).forEach(mod => {
-        const opt = document.createElement('option');
-        opt.value = mod.id;
-        opt.textContent = mod.name;
-        moduleSelect.appendChild(opt);
-    });
-
     // Populate collaborators dropdown (required — only collaborators can be added)
+
     const collabSelect = document.getElementById('team-from-collaborator');
     collabSelect.innerHTML = '<option value="">— Select a collaborator —</option>';
     collabSelect._collabData = {};
@@ -1312,22 +1329,23 @@ function fillTeamFromCollaborator() {
     const role = collab.userRole || 'Formador/a';
     roleBadge.className = `badge ${roleColors[role] || 'bg-secondary'}`;
     roleBadge.textContent = role;
-    preview.classList.remove('d-none');
 
-    // Pre-select the collaborator's first assigned module if any
-    const moduleSelect = document.getElementById('team-module');
+    // Show assigned modules in preview if any
     const assignedModules = collab.moduleIds || [];
     if (assignedModules.length > 0) {
-        // Select the first assigned module that exists in the dropdown
-        for (const opt of moduleSelect.options) {
-            if (assignedModules.includes(opt.value)) {
-                moduleSelect.value = opt.value;
-                break;
-            }
+        const modNames = [];
+        assignedModules.forEach(mid => {
+            const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+            if (found) modNames.push(found.name);
+        });
+        const modulesText = modNames.length > 0 ? `Asignado a: ${modNames.join(', ')}` : '';
+        const previewEmail = document.getElementById('team-preview-email');
+        if (previewEmail) {
+            previewEmail.innerHTML = `${escapeHtml(collab.email || '')}<br><span class="text-primary fw-bold" style="font-size:0.75rem;">${escapeHtml(modulesText)}</span>`;
         }
-    } else {
-        moduleSelect.value = '';
     }
+
+    preview.classList.remove('d-none');
 }
 
 function addTeamMember() {
@@ -1347,9 +1365,21 @@ function addTeamMember() {
     }
 
     const linkedin = document.getElementById('team-linkedin').value;
-    const moduleEl = document.getElementById('team-module');
-    const moduleId = moduleEl.value;
-    const moduleName = moduleId ? moduleEl.options[moduleEl.selectedIndex].text : '';
+
+    const assignedModules = collab.moduleIds || [];
+    let finalModuleIds = assignedModules;
+    let finalModuleName = '';
+    
+    if (finalModuleIds.length > 0) {
+        const modNames = [];
+        finalModuleIds.forEach(mid => {
+           const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+           if (found) modNames.push(found.name);
+        });
+        if (modNames.length > 0) {
+            finalModuleName = modNames.join(', ');
+        }
+    }
 
     extendedInfoData.team.push({
         collaboratorId: collab.id,
@@ -1357,41 +1387,323 @@ function addTeamMember() {
         role: collab.userRole || 'Formador/a',
         email: collab.email || '',
         linkedin,
-        moduleId,
-        moduleName
+        moduleIds: finalModuleIds,
+        moduleName: finalModuleName
     });
     displayTeam();
     teamModal.hide();
 }
 
 function deleteTeamMember(index) {
-    if (confirm('Delete this member?')) {
+    if (confirm('¿Eliminar este miembro del equipo?')) {
         extendedInfoData.team.splice(index, 1);
         displayTeam();
     }
 }
 
-function openResourceModal() {
-    document.getElementById('resource-form').reset();
+function openEditTeamModal(index) {
+    const member = (extendedInfoData.team || [])[index];
+    if (!member) return;
+
+    document.getElementById('edit-team-index').value = index;
+    document.getElementById('edit-team-name').value = member.name || '';
+    document.getElementById('edit-team-role').value = member.role || '';
+    document.getElementById('edit-team-email').value = member.email || '';
+    document.getElementById('edit-team-linkedin').value = member.linkedin || '';
+
+    // Find assigned modules from central state (currentPromotion)
+    let moduleIds = [];
+    const promo = window.currentPromotion || {};
+    const isOwner = promo.teacherId === member.collaboratorId;
+    
+    if (isOwner) {
+        moduleIds = promo.ownerModules || [];
+    } else {
+        const entry = (promo.collaboratorModules || []).find(m => m.teacherId === member.collaboratorId);
+        moduleIds = entry ? (entry.moduleIds || []) : [];
+    }
+
+    // Populate read-only list
+    const modules = window.promotionModules || [];
+    const displayList = document.getElementById('edit-team-module-list');
+    displayList.innerHTML = '';
+    
+    if (moduleIds.length === 0) {
+        displayList.innerHTML = '<span class="text-muted small">Sin módulos asignados.</span>';
+    } else {
+        moduleIds.forEach(mid => {
+            const found = modules.find(m => String(m.id) === String(mid));
+            if (found) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-light text-dark border me-1';
+                badge.textContent = found.name;
+                displayList.appendChild(badge);
+            }
+        });
+    }
+
+    editTeamModal.show();
+}
+
+function updateTeamMember() {
+    const index = parseInt(document.getElementById('edit-team-index').value);
+    if (isNaN(index)) return;
+
+    const member = extendedInfoData.team[index];
+    if (!member) return;
+
+    // We no longer get modules from here, they are automatic reflections of collaborators tab
+    member.linkedin = document.getElementById('edit-team-linkedin').value.trim();
+
+    displayTeam();
+    editTeamModal.hide();
+}
+
+// ── Resource Catalog (evaluation.coderf5.es/v1/resources — via local proxy) ──
+
+let _resourceCatalogAll = [];   // full list fetched from API
+let _resourceCatalogFiltered = [];
+
+async function openResourceModal() {
     resourceModal.show();
+
+    const grid = document.getElementById('resource-catalog-grid');
+    const loading = document.getElementById('resource-catalog-loading');
+    const emptyEl = document.getElementById('resource-catalog-empty');
+    const countEl = document.getElementById('resource-catalog-count');
+
+    // Reset inputs
+    document.getElementById('resource-search-input').value = '';
+    document.getElementById('resource-area-filter').value = '';
+    document.getElementById('resource-type-filter').value = '';
+
+    // If we already have the catalog cached, just re-render
+    if (_resourceCatalogAll.length) {
+        _buildResourceFilterOptions();
+        _resourceCatalogFiltered = [..._resourceCatalogAll];
+        _renderResourceCatalog();
+        return;
+    }
+
+    // Show loading state
+    grid.innerHTML = '';
+    emptyEl.classList.add('d-none');
+    loading.classList.remove('d-none');
+    countEl.textContent = '…';
+
+    try {
+        const token = localStorage.getItem('token');
+        // Use the local backend proxy which forwards the JWT to evaluation.coderf5.es
+        const res = await fetch(`${API_URL}/api/resources`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // Backend returns { count, results } (paginated DRF) or a plain array
+        _resourceCatalogAll = Array.isArray(data) ? data : (data.results || []);
+    } catch (err) {
+        console.error('[ResourceCatalog] Error fetching:', err);
+        loading.classList.add('d-none');
+        grid.innerHTML = `<div class="alert alert-danger m-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            No se pudo cargar el catálogo de recursos. Comprueba la conexión e inténtalo de nuevo.
+        </div>`;
+        countEl.textContent = 'Error';
+        return;
+    }
+
+    loading.classList.add('d-none');
+    _buildResourceFilterOptions();
+    _resourceCatalogFiltered = [..._resourceCatalogAll];
+    _renderResourceCatalog();
 }
 
-function addResource() {
-    const title = document.getElementById('resource-title').value;
-    const category = document.getElementById('resource-category').value;
-    const url = document.getElementById('resource-url').value;
+/** Populate Area and Type <select> options from the fetched catalog */
+function _buildResourceFilterOptions() {
+    const areaSelect = document.getElementById('resource-area-filter');
+    const typeSelect = document.getElementById('resource-type-filter');
 
-    if (!title || !url) return;
+    // Collect unique areas + types
+    const areasMap = new Map();
+    const typesMap = new Map();
 
-    extendedInfoData.resources.push({ title, category, url });
+    _resourceCatalogAll.forEach(r => {
+        (r.areas || []).forEach(a => { if (!areasMap.has(a.id)) areasMap.set(a.id, a.name); });
+        (r.types || []).forEach(t => { if (!typesMap.has(t.id)) typesMap.set(t.id, t.name); });
+    });
+
+    const makeOptions = (map) => [...map.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`)
+        .join('');
+
+    areaSelect.innerHTML = '<option value="">Todas las áreas</option>' + makeOptions(areasMap);
+    typeSelect.innerHTML = '<option value="">Todos los tipos</option>' + makeOptions(typesMap);
+}
+
+/** Filter the catalog list and re-render */
+function filterResourceCatalog() {
+    const query = (document.getElementById('resource-search-input').value || '').toLowerCase().trim();
+    const areaId = document.getElementById('resource-area-filter').value;
+    const typeId = document.getElementById('resource-type-filter').value;
+
+    _resourceCatalogFiltered = _resourceCatalogAll.filter(r => {
+        // Area filter
+        if (areaId && !(r.areas || []).some(a => String(a.id) === String(areaId))) return false;
+        // Type filter
+        if (typeId && !(r.types || []).some(t => String(t.id) === String(typeId))) return false;
+        // Text search across label, comments, tools, providers
+        if (query) {
+            const searchable = [
+                r.label || '',
+                r.comments || '',
+                ...(r.tools || []).map(t => t.name),
+                ...(r.providers || []).map(p => p.name),
+                ...(r.areas || []).map(a => a.name)
+            ].join(' ').toLowerCase();
+            if (!searchable.includes(query)) return false;
+        }
+        return true;
+    });
+
+    _renderResourceCatalog();
+}
+
+/** Render the filtered resource cards inside the grid */
+function _renderResourceCatalog() {
+    const grid = document.getElementById('resource-catalog-grid');
+    const emptyEl = document.getElementById('resource-catalog-empty');
+    const countEl = document.getElementById('resource-catalog-count');
+
+    // Check which resources are already added
+    const addedIds = new Set((extendedInfoData.resources || []).map(r => r.externalId).filter(Boolean));
+
+    countEl.textContent = `${_resourceCatalogFiltered.length} recurso${_resourceCatalogFiltered.length !== 1 ? 's' : ''}`;
+
+    if (!_resourceCatalogFiltered.length) {
+        grid.innerHTML = '';
+        emptyEl.classList.remove('d-none');
+        return;
+    }
+
+    emptyEl.classList.add('d-none');
+
+    grid.innerHTML = `<div class="row g-3">
+        ${_resourceCatalogFiltered.map(r => _resourceCardHtml(r, addedIds.has(r.id))).join('')}
+    </div>`;
+}
+
+/** Build the HTML for a single resource card */
+function _resourceCardHtml(r, alreadyAdded) {
+    const typeNames = (r.types || []).map(t => `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">${escapeHtml(t.name)}</span>`).join(' ');
+    const areaBadges = (r.areas || []).slice(0, 3).map(a =>
+        `<span class="badge bg-light text-dark border small">${escapeHtml(a.name)}</span>`).join(' ');
+    const toolBadges = (r.tools || []).slice(0, 4).map(t =>
+        `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small">${escapeHtml(t.name)}</span>`).join(' ');
+    const provider = (r.providers || [])[0];
+    const providerHtml = provider
+        ? `<span class="text-muted small"><i class="bi bi-building me-1"></i>${escapeHtml(provider.name)}</span>`
+        : '';
+
+    // Show first ~100 chars of comments (before the first '|')
+    const commentShort = (r.comments || '').split('|')[0].trim();
+
+    const btnHtml = alreadyAdded
+        ? `<button class="btn btn-sm btn-outline-danger w-100" onclick="removeResourceFromCatalog(${r.id})">
+               <i class="bi bi-dash-circle me-1"></i>Quitar
+           </button>`
+        : `<button class="btn btn-sm btn-primary w-100" onclick="addResourceFromCatalog(${r.id})">
+               <i class="bi bi-plus-circle me-1"></i>Agregar
+           </button>`;
+
+    return `
+    <div class="col-md-6 col-xl-4" id="resource-card-${r.id}">
+        <div class="card h-100 border shadow-sm resource-catalog-card" style="border-radius:.75rem;transition:box-shadow .15s;">
+            <div class="card-body d-flex flex-column gap-2 pb-2">
+                <div class="d-flex align-items-start justify-content-between gap-2">
+                    <h6 class="mb-0 fw-semibold lh-sm" style="font-size:.9rem;">
+                        <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" class="text-decoration-none text-dark stretched-link-sibling">
+                            ${escapeHtml(r.label)}
+                        </a>
+                    </h6>
+                    <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" class="text-muted flex-shrink-0" title="Abrir enlace">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                </div>
+                <div class="d-flex flex-wrap gap-1">${typeNames}</div>
+                ${commentShort ? `<p class="text-muted small mb-0 flex-grow-1" style="font-size:.78rem;line-height:1.4;">${escapeHtml(commentShort)}</p>` : ''}
+                <div class="d-flex flex-wrap gap-1 mt-1">${areaBadges}</div>
+                ${toolBadges ? `<div class="d-flex flex-wrap gap-1">${toolBadges}</div>` : ''}
+                ${providerHtml}
+            </div>
+            <div class="card-footer bg-transparent pt-0 pb-2 px-3">${btnHtml}</div>
+        </div>
+    </div>`;
+}
+
+/** Called when user clicks "Agregar" on a catalog card */
+function addResourceFromCatalog(resourceId) {
+    const r = _resourceCatalogAll.find(x => x.id === resourceId);
+    if (!r) return;
+
+    // Build a resource entry compatible with the existing extendedInfoData.resources shape
+    const type = (r.types || [])[0];
+    const entry = {
+        externalId: r.id,
+        title: r.label,
+        category: type ? type.name : 'Other',
+        url: r.url,
+        comments: r.comments || '',
+        areas: (r.areas || []).map(a => ({ id: a.id, name: a.name })),
+        tools: (r.tools || []).map(t => ({ id: t.id, name: t.name })),
+        types: (r.types || []).map(t => ({ id: t.id, name: t.name })),
+        providers: (r.providers || []).map(p => ({ id: p.id, name: p.name }))
+    };
+
+    extendedInfoData.resources.push(entry);
     displayResources();
-    resourceModal.hide();
+
+    // Update the card button to "Quitar" without re-rendering the whole grid
+    const card = document.getElementById(`resource-card-${resourceId}`);
+    if (card) {
+        const footer = card.querySelector('.card-footer');
+        if (footer) {
+            footer.innerHTML = `<button class="btn btn-sm btn-outline-danger w-100" onclick="removeResourceFromCatalog(${resourceId})">
+                <i class="bi bi-dash-circle me-1"></i>Quitar
+            </button>`;
+        }
+    }
 }
+
+/** Called when user clicks "Quitar" on a catalog card */
+function removeResourceFromCatalog(resourceId) {
+    const rIndex = extendedInfoData.resources.findIndex(res => res.externalId === resourceId);
+    if (rIndex === -1) return;
+
+    extendedInfoData.resources.splice(rIndex, 1);
+    displayResources();
+
+    // Update the card button back to "Agregar"
+    const card = document.getElementById(`resource-card-${resourceId}`);
+    if (card) {
+        const footer = card.querySelector('.card-footer');
+        if (footer) {
+            footer.innerHTML = `<button class="btn btn-sm btn-primary w-100" onclick="addResourceFromCatalog(${resourceId})">
+                <i class="bi bi-plus-circle me-1"></i>Agregar
+            </button>`;
+        }
+    }
+}
+
+// Legacy stub kept so any lingering calls don't crash
+function addResource() { /* replaced by addResourceFromCatalog */ }
 
 function deleteResource(index) {
-    if (confirm('Delete this resource?')) {
+    if (confirm('¿Eliminar este recurso?')) {
         extendedInfoData.resources.splice(index, 1);
         displayResources();
+        // Invalidate catalog rendering so that "Ya agregado" state refreshes on next open
+        if (_resourceCatalogAll.length) _renderResourceCatalog();
     }
 }
 
@@ -1416,7 +1728,11 @@ function openEmployabilityModal() {
 function editEmployabilityItem(index) {
     if (!employabilityModal) initEmployabilityModal();
 
-    const promotion = window.currentPromotion; // Will store this globally
+    const promotion = window.currentPromotion;
+    if (!promotion || !promotion.employability) {
+        console.error('editEmployabilityItem: window.currentPromotion not loaded yet');
+        return;
+    }
     const item = promotion.employability[index];
 
     if (!item) {
@@ -1483,7 +1799,7 @@ async function saveEmployabilityItem() {
 
         if (updateResponse.ok) {
             employabilityModal.hide();
-            location.reload();
+            loadModules();
         } else {
             alert('Error saving employability item');
         }
@@ -1523,7 +1839,7 @@ async function deleteEmployabilityItem(index) {
             });
 
             if (updateResponse.ok) {
-                location.reload();
+                loadModules();
             } else {
                 alert('Error deleting employability item');
             }
@@ -1629,13 +1945,38 @@ async function saveExtendedInfo() {
     extendedInfoData.schedule = schedule;
     extendedInfoData.evaluation = evaluation;
 
-    // Gather Competencias from ProgramCompetences module
-    if (window.ProgramCompetences) {
-        extendedInfoData.competences = window.ProgramCompetences.getCompetences();
-        // Clear unsaved badge
-        const badge = document.getElementById('competences-unsaved-badge');
-        if (badge) badge.classList.add('d-none');
+    // Gather Competencias — now aggregated from per-project definitions (in evaluation tab)
+    // If there are no project-competences yet, fall back to ProgramCompetences for backward compat
+    if (window._evalState && window._evalState.projectCompetences && window._evalState.projectCompetences.length) {
+        // Re-aggregate and save (honors any manual edits since last save)
+        const catalog = window._evalState.catalog || window._extendedInfoCompetences || [];
+        const compMap = new Map();
+        window._evalState.projectCompetences.forEach(pc => {
+            (pc.competenceIds || []).forEach(cid => {
+                const cidStr = String(cid);
+                const catalogEntry = catalog.find(c => String(c.id) === cidStr);
+                if (!catalogEntry) return;
+                if (!compMap.has(cidStr)) compMap.set(cidStr, { ...catalogEntry, selectedTools: new Set() });
+                ((pc.competenceTools && pc.competenceTools[cidStr]) || []).forEach(t => compMap.get(cidStr).selectedTools.add(t));
+            });
+        });
+        extendedInfoData.competences = [...compMap.values()].map(c => ({
+            id: c.id, name: c.name, area: c.area, description: c.description || '',
+            levels: c.levels || [], allTools: c.allTools || [],
+            selectedTools: [...c.selectedTools],
+            toolsWithIndicators: c.toolsWithIndicators || [],
+            competenceIndicators: c.competenceIndicators || { initial: [], medio: [], advance: [] },
+            evalModules: []
+        }));
+    } else if (window.ProgramCompetences) {
+        // Legacy fallback: if competences were defined in program tab
+        const freshComps = window.ProgramCompetences.getCompetences();
+        if (freshComps && freshComps.length > 0) {
+            extendedInfoData.competences = freshComps;
+        }
     }
+    const badge = document.getElementById('competences-unsaved-badge');
+    if (badge) badge.classList.add('d-none');
 
     // Keep legacy pildoras for backward compatibility (flatten all module pildoras)
     const allPildoras = [];
@@ -1647,6 +1988,35 @@ async function saveExtendedInfo() {
         });
     }
     extendedInfoData.pildoras = allPildoras;
+    
+    // ── Sync Virtual Classroom state ──────────────────────────────────────────
+    // Ensure we don't overwrite the virtualClassroom with stale data if it was updated in its own tab
+    const vcSelectEl = document.getElementById('vc-project-select');
+    const vcStatusBadge = document.getElementById('vc-status-badge');
+    if (vcSelectEl && vcStatusBadge) {
+        const val = vcSelectEl.value;
+        const [vMid, vPname] = val ? val.split('__') : ['', ''];
+        const vRepo = document.getElementById('vc-repo-base')?.value || '';
+        const vBrief = document.getElementById('vc-briefing-url')?.value || '';
+        const vActive = vcStatusBadge.classList.contains('bg-success');
+        
+        // Find project type for the selected project
+        const savedEvaluations = window._evalState?.savedEvaluations || [];
+        const existingEval = savedEvaluations.find(e => e.moduleId === vMid && e.projectName === vPname);
+        const vType = existingEval ? (existingEval.type || 'individual') : 'individual';
+
+        extendedInfoData.virtualClassroom = {
+            isActive: vActive,
+            moduleId: vMid,
+            projectName: vPname,
+            projectType: vType,
+            repoBaseUrl: vRepo,
+            briefingUrl: vBrief
+        };
+    } else if (window._evalState && window._evalState.virtualClassroom) {
+        // Fallback to memory state if DOM is not present 
+        extendedInfoData.virtualClassroom = window._evalState.virtualClassroom;
+    }
 
     console.log('Saving extended info for promotion:', promotionId);
     console.log('Data to save:', extendedInfoData);
@@ -1666,6 +2036,16 @@ async function saveExtendedInfo() {
         if (response.ok) {
             const savedData = await response.json();
             console.log('Data saved successfully:', savedData);
+
+            // ── Auto-sync competences → roadmap module projects ───────────────
+            if (window.ProgramCompetences && window.ProgramCompetences.getEvalModulesSyncData) {
+                try {
+                    await _syncCompetencesToRoadmap();
+                } catch (syncErr) {
+                    console.error('[saveExtendedInfo] Error syncing competences to roadmap:', syncErr);
+                }
+            }
+
             location.reload();
         } else {
             try {
@@ -1682,16 +2062,71 @@ async function saveExtendedInfo() {
     }
 }
 
+/**
+ * Auto-syncs program competences to roadmap module projects.
+ * For each competence that has evalModules defined, adds that competence's id
+ * to the competenceIds of ALL projects inside those modules.
+ * Competences NOT assigned to a module are ignored (not removed from projects they may already have).
+ */
+async function _syncCompetencesToRoadmap() {
+    const token = localStorage.getItem('token');
+    const syncData = window.ProgramCompetences.getEvalModulesSyncData(); // [{moduleId, competenceId}]
+    if (!syncData.length) return;
+
+    // Fetch current promotion data
+    const res = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) return;
+    const promotion = await res.json();
+    const modules = promotion.modules || [];
+
+    // Build a map: moduleId → Set of competenceIds to add
+    const moduleCompMap = {};
+    syncData.forEach(({ moduleId, competenceId }) => {
+        if (!moduleCompMap[moduleId]) moduleCompMap[moduleId] = new Set();
+        moduleCompMap[moduleId].add(String(competenceId));
+    });
+
+    let changed = false;
+    modules.forEach(mod => {
+        const key = String(mod.id || '');
+        const toAdd = moduleCompMap[key];
+        if (!toAdd || !toAdd.size) return;
+        (mod.projects || []).forEach(proj => {
+            if (!proj.competenceIds) proj.competenceIds = [];
+            toAdd.forEach(cid => {
+                if (!proj.competenceIds.map(String).includes(cid)) {
+                    proj.competenceIds.push(cid);
+                    changed = true;
+                }
+            });
+        });
+    });
+
+    if (!changed) return;
+
+    await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ modules })
+    });
+    console.log('[Sync] Competencias sincronizadas al roadmap correctamente.');
+}
+
 // ── Acta de Inicio modal ─────────────────────────────────────────────────────
 
-const WEEKDAYS = ['lunes','martes','miércoles','jueves','viernes'];
+const WEEKDAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
 // Map each weekday to its checkbox id suffix (avoids issues with accented chars in substring)
-const WEEKDAY_IDS = { 'lunes':'lun', 'martes':'mar', 'miércoles':'mie', 'jueves':'jue', 'viernes':'vie' };
+const WEEKDAY_IDS = { 'lunes': 'lun', 'martes': 'mar', 'miércoles': 'mie', 'jueves': 'jue', 'viernes': 'vie' };
 
 /** Build a weekday <select> with given id and optional selected value */
 function _actaDaySelect(id, selected) {
     const opts = WEEKDAYS.map(d =>
-        `<option value="${d}"${d === selected ? ' selected' : ''}>${d.charAt(0).toUpperCase()+d.slice(1)}</option>`
+        `<option value="${d}"${d === selected ? ' selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
     ).join('');
     return `<select class="form-select form-select-sm" id="${id}" style="min-width:130px;">${opts}</select>`;
 }
@@ -1699,7 +2134,7 @@ function _actaDaySelect(id, selected) {
 /** Re-render the KPI textareas per funder */
 function actaRenderFunderKpis() {
     const container = document.getElementById('acta-funder-kpis-container');
-    const emptyMsg  = document.getElementById('acta-funder-kpis-empty');
+    const emptyMsg = document.getElementById('acta-funder-kpis-empty');
     const tags = document.querySelectorAll('#acta-funders-tags .acta-tag');
     const funders = Array.from(tags).map(t => t.dataset.value);
 
@@ -1733,7 +2168,7 @@ function actaAddFunder(value) {
     // Check uniqueness
     const existing = Array.from(document.querySelectorAll('#acta-funders-tags .acta-tag'))
         .map(t => t.dataset.value);
-    if (existing.includes(val)) { if (!value) { input.value=''; } return; }
+    if (existing.includes(val)) { if (!value) { input.value = ''; } return; }
 
     const tag = document.createElement('span');
     tag.className = 'acta-tag';
@@ -1751,7 +2186,7 @@ function actaAddDayOffRow(type, moduleName, dayValue) {
     const div = document.createElement('div');
     div.className = 'acta-dayoff-row';
     div.innerHTML = `
-        <input type="text" class="form-control form-control-sm" placeholder="Buscar persona..." list="acta-users-datalist" value="${moduleName||''}">
+        <input type="text" class="form-control form-control-sm" placeholder="Buscar persona..." list="acta-users-datalist" value="${moduleName || ''}">
         ${_actaDaySelect(`${rowId}-day`, dayValue || 'lunes')}
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()">
             <i class="bi bi-trash"></i>
@@ -1764,7 +2199,7 @@ function _actaReadDayOffRows(type) {
     const rows = document.querySelectorAll(`#acta-${type}-dayoff-rows .acta-dayoff-row`);
     return Array.from(rows).map(row => {
         const name = row.querySelector('input[type=text]')?.value.trim() || '';
-        const day  = row.querySelector('select')?.value || '';
+        const day = row.querySelector('select')?.value || '';
         return name ? `${name} (${day})` : day;
     }).filter(Boolean).join('. ');
 }
@@ -1797,25 +2232,25 @@ function openActaModal() {
     const d = extendedInfoData;
 
     // Simple fields
-    document.getElementById('acta-school').value         = d.school || '';
-    document.getElementById('acta-project-type').value   = d.projectType || 'Bootcamp';
-    document.getElementById('acta-total-hours').value    = d.totalHours || '';
-    document.getElementById('acta-modality').value       = d.modality || '';
-    document.getElementById('acta-materials').value      = d.materials || 'No son necesarios recursos adicionales.';
+    document.getElementById('acta-school').value = d.school || '';
+    document.getElementById('acta-project-type').value = d.projectType || 'Bootcamp';
+    document.getElementById('acta-total-hours').value = d.totalHours || '';
+    document.getElementById('acta-modality').value = d.modality || '';
+    document.getElementById('acta-materials').value = d.materials || 'No son necesarios recursos adicionales.';
     document.getElementById('acta-funder-deadlines').value = d.funderDeadlines || '';
-    document.getElementById('acta-okr-kpis').value       = d.okrKpis ||
+    document.getElementById('acta-okr-kpis').value = d.okrKpis ||
         'PIPO3.R1 Satisfacción 4,2/5 de coders sobre la excelencia del equipo formativo de la formación\nISEC2.R1 Jornadas de selección con un 40% de personas participantes con el proceso 100% finalizado.\nISEC3.R2 Resultado 78% salida positiva.\nISECR2 Finalizar cada programa con un máximo de bajas de 10%.';
     document.getElementById('acta-project-meetings').value = d.projectMeetings || 'Ver el calendario de reuniones en Asana.';
 
     // Date inputs
     const today = _actaToday();
     const startEl = document.getElementById('acta-positive-exit-start');
-    const endEl   = document.getElementById('acta-positive-exit-end');
+    const endEl = document.getElementById('acta-positive-exit-end');
     startEl.min = today;
-    endEl.min   = today;
+    endEl.min = today;
     // stored as YYYY-MM-DD or human string — if it looks like a date input value use it, else keep blank
     startEl.value = /^\d{4}-\d{2}-\d{2}$/.test(d.positiveExitStart) ? d.positiveExitStart : '';
-    endEl.value   = /^\d{4}-\d{2}-\d{2}$/.test(d.positiveExitEnd)   ? d.positiveExitEnd   : '';
+    endEl.value = /^\d{4}-\d{2}-\d{2}$/.test(d.positiveExitEnd) ? d.positiveExitEnd : '';
 
     // Presential days checkboxes
     const storedDays = (d.presentialDays || '').toLowerCase();
@@ -1827,7 +2262,7 @@ function openActaModal() {
     // Presential location — extract from stored string if possible
     const locationSelect = document.getElementById('acta-presential-location');
     const locations = Array.from(locationSelect.options).map(o => o.value).filter(Boolean);
-    const matchedLoc = locations.find(l => (d.presentialDays||'').includes(l));
+    const matchedLoc = locations.find(l => (d.presentialDays || '').includes(l));
     locationSelect.value = matchedLoc || '';
 
     // Internships
@@ -1864,9 +2299,9 @@ function openActaModal() {
     }
 
     // Day-off rows
-    _actaPopulateDayOffRows('trainer',   d.trainerDayOff   || '');
+    _actaPopulateDayOffRows('trainer', d.trainerDayOff || '');
     _actaPopulateDayOffRows('cotrainer', d.cotrainerDayOff || '');
-    if (!document.querySelector('#acta-trainer-dayoff-rows .acta-dayoff-row'))   actaAddDayOffRow('trainer');
+    if (!document.querySelector('#acta-trainer-dayoff-rows .acta-dayoff-row')) actaAddDayOffRow('trainer');
     if (!document.querySelector('#acta-cotrainer-dayoff-rows .acta-dayoff-row')) actaAddDayOffRow('cotrainer');
 
     // Team meeting
@@ -1876,7 +2311,7 @@ function openActaModal() {
         const day = tmParts[1].toLowerCase();
         if (WEEKDAYS.includes(day)) dayEl.value = day;
         document.getElementById('acta-team-meeting-start').value = tmParts[2];
-        document.getElementById('acta-team-meeting-end').value   = tmParts[3];
+        document.getElementById('acta-team-meeting-end').value = tmParts[3];
     }
 
     // Approval fields
@@ -1893,14 +2328,14 @@ async function saveActaData() {
     const token = localStorage.getItem('token');
 
     // Simple fields
-    extendedInfoData.school          = document.getElementById('acta-school').value;
-    extendedInfoData.projectType     = document.getElementById('acta-project-type').value;
-    extendedInfoData.materials       = document.getElementById('acta-materials').value;
+    extendedInfoData.school = document.getElementById('acta-school').value;
+    extendedInfoData.projectType = document.getElementById('acta-project-type').value;
+    extendedInfoData.materials = document.getElementById('acta-materials').value;
     extendedInfoData.funderDeadlines = document.getElementById('acta-funder-deadlines').value;
-    extendedInfoData.okrKpis         = document.getElementById('acta-okr-kpis').value;
+    extendedInfoData.okrKpis = document.getElementById('acta-okr-kpis').value;
     extendedInfoData.projectMeetings = document.getElementById('acta-project-meetings').value;
-    extendedInfoData.totalHours      = document.getElementById('acta-total-hours').value;
-    extendedInfoData.modality        = document.getElementById('acta-modality').value;
+    extendedInfoData.totalHours = document.getElementById('acta-total-hours').value;
+    extendedInfoData.modality = document.getElementById('acta-modality').value;
 
     // Internships
     const inRaw = document.getElementById('acta-internships').value;
@@ -1908,7 +2343,7 @@ async function saveActaData() {
 
     // Dates (stored as YYYY-MM-DD)
     extendedInfoData.positiveExitStart = document.getElementById('acta-positive-exit-start').value;
-    extendedInfoData.positiveExitEnd   = document.getElementById('acta-positive-exit-end').value;
+    extendedInfoData.positiveExitEnd = document.getElementById('acta-positive-exit-end').value;
 
     // Presential days + location
     const checkedDays = WEEKDAYS.filter(day => {
@@ -1918,7 +2353,7 @@ async function saveActaData() {
     const location = document.getElementById('acta-presential-location').value;
     const dayCount = checkedDays.length;
     extendedInfoData.presentialDays = dayCount
-        ? `${dayCount} día${dayCount>1?'s':''}, ${checkedDays.join(' y ')}${location ? ', '+location : ''}`
+        ? `${dayCount} día${dayCount > 1 ? 's' : ''}, ${checkedDays.join(' y ')}${location ? ', ' + location : ''}`
         : (location || '');
 
     // Funders (unique tags → newline-separated)
@@ -1934,13 +2369,13 @@ async function saveActaData() {
     extendedInfoData.funderKpis = kpiBlocks.join('\n---\n');
 
     // Day-off rows
-    extendedInfoData.trainerDayOff   = _actaReadDayOffRows('trainer');
+    extendedInfoData.trainerDayOff = _actaReadDayOffRows('trainer');
     extendedInfoData.cotrainerDayOff = _actaReadDayOffRows('cotrainer');
 
     // Team meetings
-    const tmDay   = document.getElementById('acta-team-meeting-day').value;
+    const tmDay = document.getElementById('acta-team-meeting-day').value;
     const tmStart = document.getElementById('acta-team-meeting-start').value;
-    const tmEnd   = document.getElementById('acta-team-meeting-end').value;
+    const tmEnd = document.getElementById('acta-team-meeting-end').value;
     extendedInfoData.teamMeetings = `Semanal - ${tmDay} (${tmStart}-${tmEnd})`;
 
     // Approval fields
@@ -1948,10 +2383,33 @@ async function saveActaData() {
     extendedInfoData.approvalRole = document.getElementById('acta-approval-role').value.trim();
 
     try {
+        // Build a payload with ONLY the acta fields — do NOT send unrelated fields
+        // (competences, team, resources, schedule, pildoras, etc.) to avoid wiping them.
+        const actaPayload = {
+            school: extendedInfoData.school,
+            projectType: extendedInfoData.projectType,
+            materials: extendedInfoData.materials,
+            funderDeadlines: extendedInfoData.funderDeadlines,
+            okrKpis: extendedInfoData.okrKpis,
+            projectMeetings: extendedInfoData.projectMeetings,
+            totalHours: extendedInfoData.totalHours,
+            modality: extendedInfoData.modality,
+            internships: extendedInfoData.internships,
+            positiveExitStart: extendedInfoData.positiveExitStart,
+            positiveExitEnd: extendedInfoData.positiveExitEnd,
+            presentialDays: extendedInfoData.presentialDays,
+            funders: extendedInfoData.funders,
+            funderKpis: extendedInfoData.funderKpis,
+            trainerDayOff: extendedInfoData.trainerDayOff,
+            cotrainerDayOff: extendedInfoData.cotrainerDayOff,
+            teamMeetings: extendedInfoData.teamMeetings,
+            approvalName: extendedInfoData.approvalName,
+            approvalRole: extendedInfoData.approvalRole,
+        };
         const response = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(extendedInfoData)
+            body: JSON.stringify(actaPayload)
         });
         if (response.ok) {
             bootstrap.Modal.getInstance(document.getElementById('actaInicioModal'))?.hide();
@@ -1972,13 +2430,14 @@ async function togglePildorasAssignment(isOpen) {
 
     const token = localStorage.getItem('token');
     try {
+        // Send ONLY the field being toggled — avoids overwriting unrelated data
         const response = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(extendedInfoData)
+            body: JSON.stringify({ pildorasAssignmentOpen: isOpen })
         });
 
         if (!response.ok) {
@@ -2003,6 +2462,17 @@ function checkAuth() {
     }
 }
 
+/**
+ * Update the navbar to display the current promotion name
+ * @param {string} promotionName - Name of the promotion to display
+ */
+function updateNavbarPromotionName(promotionName) {
+    const navbarElement = document.getElementById('navbar-promotion-name');
+    if (navbarElement && promotionName) {
+        navbarElement.textContent = promotionName;
+    }
+}
+
 function switchTab(tabId) {
     // Persist active tab so page reloads land on the same section
     sessionStorage.setItem(`activeTab_${promotionId}`, tabId);
@@ -2011,20 +2481,38 @@ function switchTab(tabId) {
         section.classList.add('hidden');
     });
 
+    // Redirect these legacy tabs to the unified Teacher Area
+    if (tabId === 'students' || tabId === 'attendance' || tabId === 'evaluation') {
+        const targetTab = tabId;
+        // First switch to teacher-area container
+        switchTab('teacher-area');
+        // Then switch to the specific sub-tab inside it
+        switchTeacherAreaSubTab(targetTab);
+        return;
+    }
+
     const activeTab = document.getElementById(`${tabId}-tab`);
     if (activeTab) {
         activeTab.classList.remove('hidden');
     }
 
     // Refresh data if needed
-    if (tabId === 'calendar') loadCalendar();
-    if (tabId === 'roadmap') loadModules();
     if (tabId === 'students') loadStudents();
     if (tabId === 'attendance') loadAttendance();
-    if (tabId === 'info') loadExtendedInfo();
+    if (tabId === 'info') {
+        loadExtendedInfo();
+        // Default to roadmap sub-tab when entering Contenido del Programa
+        switchProgramDetailsTab('roadmap');
+    }
     if (tabId === 'collaborators') loadCollaborators();
     if (tabId === 'access-settings') loadAccessPassword();
     if (tabId === 'evaluation') loadEvaluation();
+    if (tabId === 'teacher-area') {
+        // Load teacher area with default overview tab
+        switchTeacherAreaSubTab('overview');
+    }
+
+
 
     // Update active state in sidebar
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -2034,12 +2522,430 @@ function switchTab(tabId) {
         }
     });
 
-    // Handle iframe height to fit content if possible
+    // Load calendar data for Overview from backend
     if (tabId === 'overview') {
-        const previewIframe = document.getElementById('student-preview-iframe');
-        if (previewIframe) {
-            previewIframe.style.height = '600px';
+        loadOverviewCalendarId();
+        loadOverviewPildoraAlert();
+        loadOverviewAttendanceAlert();
+
+        // Update progress info with current students
+        if (window.currentPromotion) {
+            const students = window.currentStudents || [];
+            updateProgressInfo(window.currentPromotion, students);
         }
+    }
+}
+
+function switchToVirtualClassroom() {
+    switchTab('info');
+    setTimeout(() => {
+        switchProgramDetailsTab('virtual-classroom');
+    }, 100);
+}
+
+
+// ==================== TEACHER AREA SECTION ====================
+// Consolidated handler for switching between sub-sections in Área del Docente
+function switchTeacherAreaSubTab(tabName) {
+    const tabNameMap = {
+        'overview': { tabId: 'teacher-area-overview', buttonId: 'teacher-area-overview-tab' },
+        'students': { tabId: 'teacher-area-students', buttonId: 'teacher-area-students-tab' },
+        'attendance': { tabId: 'teacher-area-attendance', buttonId: 'teacher-area-attendance-tab' },
+        'evaluation': { tabId: 'teacher-area-evaluation', buttonId: 'teacher-area-evaluation-tab' },
+        'accesos': { tabId: 'teacher-area-accesos', buttonId: 'teacher-area-accesos-tab' }
+    };
+
+    const tab = tabNameMap[tabName];
+    if (!tab) {
+        console.error('Invalid teacher area sub-tab:', tabName);
+        return;
+    }
+
+    // Update active tab styling for main teacher area tabs
+    document.querySelectorAll('#teacher-area-subtabs .nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    document.getElementById(`teacher-area-${tabName}-tab`)?.classList.add('active');
+
+    // Hide all panes
+    document.querySelectorAll('#teacher-area-subtabs-content .tab-pane').forEach(pane => {
+        pane.classList.remove('show', 'active');
+        pane.style.display = 'none'; // Ensure it's hidden
+    });
+
+    // Remove active class from all sub-tab buttons
+    const allButtons = document.querySelectorAll('#teacher-area-subtabs .nav-link');
+    allButtons.forEach(btn => {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-selected', 'false');
+    });
+
+    // Show selected tab and activate its button
+    const selectedTab = document.getElementById(tab.tabId);
+    const selectedButton = document.getElementById(tab.buttonId);
+
+    if (selectedTab && selectedButton) {
+        selectedTab.style.display = 'block';
+        selectedTab.classList.add('show', 'active');
+        selectedButton.classList.add('active');
+        selectedButton.setAttribute('aria-selected', 'true');
+
+        // Trigger appropriate loader based on tab
+        if (tabName === 'overview') {
+            loadTeacherAreaOverview();
+        } else if (tabName === 'students') {
+            loadStudents(); // Ensure loadStudents is called for the students tab
+        } else if (tabName === 'attendance') {
+            loadAttendance();
+        } else if (tabName === 'evaluation') {
+            loadEvaluation();
+        } else if (tabName === 'accesos') {
+            loadAccessSettingsInTeacherArea();
+        }
+    }
+}
+
+/**
+ * Load access settings for the Accesos tab in Área del docente
+ * Reuses the existing loadAccessPassword, loadTeachingContent, and loadAsanaWorkspace
+ * but syncs data to teacher-area specific input fields
+ */
+async function loadAccessSettingsInTeacherArea() {
+    if (!isTeacherOrAdmin()) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        // Load access password
+        const responseAccessPassword = await fetch(`${API_URL}/api/promotions/${promotionId}/access-password`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (responseAccessPassword.ok) {
+            const data = await responseAccessPassword.json();
+            const passwordInput = document.getElementById('teacher-area-access-password-input');
+            const accessLinkInput = document.getElementById('teacher-area-student-access-link');
+
+            if (passwordInput) {
+                passwordInput.value = data.accessPassword || '';
+            }
+
+            // Update the access link in teacher area
+            if (accessLinkInput) {
+                const baseUrl = window.location.origin;
+                const isGitHubPages = window.location.hostname.includes('github.io');
+
+                let path;
+                if (isGitHubPages) {
+                    const pathParts = window.location.pathname.split('/');
+                    const repoName = pathParts[1];
+                    path = `/${repoName}/public-promotion.html`;
+                } else {
+                    path = '/public-promotion.html';
+                }
+
+                let url = `${baseUrl}${path}?id=${promotionId}`;
+                accessLinkInput.value = url;
+            }
+        }
+
+        // Load teaching content and asana workspace in parallel
+        await Promise.all([
+            _loadTeachingContentInTeacherArea(),
+            _loadAsanaWorkspaceInTeacherArea()
+        ]);
+
+    } catch (error) {
+        console.error('Error loading access settings in teacher area:', error);
+    }
+}
+
+/**
+ * Load teaching content and display in teacher area accesos tab
+ */
+async function _loadTeachingContentInTeacherArea() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/teaching-content`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            console.error('[_loadTeachingContentInTeacherArea] API error:', response.status);
+            return;
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('teacher-area-teaching-content-url');
+            const previewBtn = document.getElementById('teacher-area-teaching-content-preview-btn');
+            const noContentMsg = document.getElementById('teacher-area-no-content-message');
+            const removeBtn = document.getElementById('teacher-area-remove-teaching-btn');
+
+            if (data.teachingContentUrl) {
+                if (urlInput) {
+                    urlInput.value = data.teachingContentUrl;
+                }
+                if (previewBtn) {
+                    previewBtn.href = data.teachingContentUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'none';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'inline-block';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noContentMsg) {
+                    noContentMsg.style.display = 'inline';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'none';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading teaching content in teacher area:', error);
+    }
+}
+
+/**
+ * Load Asana workspace and display in teacher area accesos tab
+ */
+async function _loadAsanaWorkspaceInTeacherArea() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-workspace`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            console.error('[_loadAsanaWorkspaceInTeacherArea] API error:', response.status);
+            return;
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('teacher-area-asana-workspace-url');
+            const previewBtn = document.getElementById('teacher-area-asana-workspace-preview-btn');
+            const noAsanaMsg = document.getElementById('teacher-area-no-asana-message');
+            const removeBtn = document.getElementById('teacher-area-remove-asana-btn');
+
+            if (data.asanaWorkspaceUrl) {
+                if (urlInput) {
+                    urlInput.value = data.asanaWorkspaceUrl;
+                }
+                if (previewBtn) {
+                    previewBtn.href = data.asanaWorkspaceUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'none';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'inline-block';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'inline';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'none';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading Asana workspace in teacher area:', error);
+    }
+}
+
+// Load teacher quick actions overview
+async function loadTeacherAreaOverview() {
+    const container = document.getElementById('teacher-area-quick-actions');
+    if (!container) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const promotion = await response.json();
+            displayTeacherAreaQuickActions(promotion);
+        }
+    } catch (error) {
+        console.error('Error loading teacher area overview:', error);
+    }
+}
+
+function displayTeacherAreaQuickActions(promotion) {
+    const container = document.getElementById('teacher-area-quick-actions');
+    if (!container) return;
+
+    // Same teacher actions from Área Docente in Overview
+    const teacherActions = [
+        {
+            id: 'asana-promo-action',
+            icon: 'bi-kanban',
+            label: 'Asana Promo',
+            color: '#FF6B6B',
+            url: promotion.asanaWorkspaceUrl,
+            title: 'Abrir Asana (Promo)'
+        },
+        {
+            id: 'content-action',
+            icon: 'bi-book',
+            label: 'Contenido Docente',
+            color: '#0d6efd',
+            url: promotion.teachingContentUrl,
+            title: 'Abrir contenido docente'
+        },
+        {
+            id: 'dashboard-action',
+            icon: 'bi-eye',
+            label: 'Preview Roadmap',
+            color: '#6f42c1',
+            url: '#',
+            title: 'Vista previa del roadmap',
+            isButton: true,
+            onclick: 'previewPromotion()'
+        },
+        {
+            id: 'acta-action',
+            icon: 'bi-file-text',
+            label: 'Acta de Inicio',
+            color: '#198754',
+            url: '#',
+            title: 'Abrir acta de inicio',
+            isButton: true,
+            onclick: 'openActaModal()'
+        }
+    ];
+
+    container.innerHTML = '';
+
+    // Render using CSS Grid (same as quick actions)
+    const gridContainer = document.createElement('div');
+    gridContainer.style.cssText = `
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+    `;
+
+    teacherActions.forEach(action => {
+        if (action.isButton) {
+            const buttonHTML = `
+                <div class="quick-action-card" id="${action.id}">
+                    <button type="button"
+                            class="quick-action-link"
+                            style="background: none; border: none; cursor: pointer; width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;"
+                            onclick="${action.onclick}"
+                            title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                    </button>
+                </div>
+            `;
+            gridContainer.insertAdjacentHTML('beforeend', buttonHTML);
+        } else {
+            const isDisabled = !action.url;
+            const cardHTML = `
+                <div class="quick-action-card ${isDisabled ? 'disabled' : ''}" id="${action.id}">
+                    <a href="${action.url || '#'}" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       class="quick-action-link ${isDisabled ? 'disabled' : ''}"
+                       style="${isDisabled ? 'pointer-events: none; opacity: 0.5;' : ''}"
+                       title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                        ${isDisabled ? '<div class="quick-action-status">No configurado</div>' : ''}
+                    </a>
+                </div>
+            `;
+            gridContainer.insertAdjacentHTML('beforeend', cardHTML);
+        }
+    });
+
+    container.appendChild(gridContainer);
+}
+
+
+function renderTeacherAreaEvaluation(container, promo, programCompetences, students) {
+    if (!promo.projects || promo.projects.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-5">No hay proyectos para evaluar.</p>';
+        return;
+    }
+
+    let html = `
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="mb-0">Evaluación de Proyectos</h5>
+        </div>
+        <div class="row g-3" id="eval-projects-grid">
+    `;
+
+    promo.projects.forEach((project, idx) => {
+        const evaluatedCount = (project.evaluations || []).length;
+        const totalStudents = students.length;
+        const progress = totalStudents > 0 ? Math.round((evaluatedCount / totalStudents) * 100) : 0;
+
+        html += `
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-sm h-100 eval-project-card" onclick="openTeacherAreaEvaluationDetail('${project.id}', '${project.name}')">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2">
+                            <i class="bi bi-laptop me-2" style="color: #FF4700;"></i>${project.name}
+                        </h6>
+                        <p class="text-muted small mb-3">${project.description || 'Sin descripción'}</p>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="text-muted">Evaluaciones</small>
+                                <small class="fw-bold">${evaluatedCount}/${totalStudents}</small>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" role="progressbar" 
+                                     style="width: ${progress}%; background: #FF4700;" 
+                                     aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100" 
+                                onclick="openTeacherAreaEvaluationDetail('${project.id}', '${project.name}'); return false;">
+                            <i class="bi bi-pencil me-1"></i>Evaluar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+function openTeacherAreaEvaluationDetail(projectId, projectName) {
+    // For now, open the main evaluation modal (can be customized later)
+    const project = window.evalPromo.projects.find(p => p.id === projectId);
+    if (project) {
+        openEvaluationModal(projectId, projectName);
     }
 }
 
@@ -2053,13 +2959,21 @@ async function loadPromotion() {
         if (response.ok) {
             const promotion = await response.json();
             window.currentPromotion = promotion; // Store globally for editing
+            promotionModules = promotion.modules || [];
+            window.promotionModules = promotionModules;
             const _setTC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
             _setTC('promotion-title', promotion.name);
             _setTC('promotion-desc', promotion.description || '');
-            _setTC('promotion-weeks', promotion.weeks || '-');
-            _setTC('promotion-start', promotion.startDate || '-');
-            _setTC('promotion-end', promotion.endDate || '-');
             _setTC('modules-count', (promotion.modules || []).length);
+
+            // Update navbar with promotion name
+            updateNavbarPromotionName(promotion.name);
+
+            // Render dynamic greeting (generic, without mentioning promo)
+            renderGreeting();
+
+            // Render promo subtitle "Hoy estás en la promo"
+            renderPromoSubtitle(promotion.name);
 
             // Load teaching content button
             if (promotion.teachingContentUrl) {
@@ -2070,8 +2984,15 @@ async function loadPromotion() {
                 }
             }
 
+            // Update course progress bar
+            updateCourseProgressBar(promotion);
+
+            // Update progress info with students if available
+            const students = window.currentStudents || [];
+            updateProgressInfo(promotion, students);
+
             // Check if current user is owner (to enable/disable collaborator management)
-            if (userRole === 'teacher') {
+            if (isTeacherOrAdmin()) {
                 const isOwner = promotion.teacherId === currentUser.id;
                 const addCollabBtn = document.getElementById('add-collaborator-btn');
                 if (addCollabBtn) {
@@ -2093,11 +3014,170 @@ async function loadModules() {
 
         if (response.ok) {
             const promotion = await response.json();
+            // Keep global state in sync so editEmployabilityItem / collaborator
+            // module pickers always read fresh data from the same fetch.
+            window.currentPromotion = promotion;
+            promotionModules = promotion.modules || [];
+            window.promotionModules = promotionModules;
             displayModules(promotion.modules || []);
             generateGanttChart(promotion);
         }
     } catch (error) {
         console.error('Error loading modules:', error);
+    }
+}
+
+/**
+ * Calculate and display course progress based on start/end dates
+ * @param {Object} promotion - Promotion object with startDate and endDate
+ */
+function updateCourseProgressBar(promotion) {
+    try {
+        if (!promotion.startDate || !promotion.endDate) return;
+
+        // Parse dates
+        const startDate = new Date(promotion.startDate);
+        const endDate = new Date(promotion.endDate);
+        const now = new Date();
+
+        // Calculate progress percentage
+        const totalDuration = endDate - startDate;
+        const elapsed = now - startDate;
+        let progressPercent = Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
+        progressPercent = Math.round(progressPercent);
+
+        // Calculate remaining days
+        const remainingMs = endDate - now;
+        const remainingDays = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
+
+        // Calculate current week
+        const totalWeeks = Math.ceil(totalDuration / (1000 * 60 * 60 * 24 * 7));
+        const elapsedWeeks = Math.floor(elapsed / (1000 * 60 * 60 * 24 * 7)) + 1;
+        const currentWeek = Math.min(elapsedWeeks, totalWeeks);
+
+        // Update progress bar
+        const progressBar = document.getElementById('progress-bar');
+        if (progressBar) {
+            progressBar.style.width = progressPercent + '%';
+            progressBar.setAttribute('aria-valuenow', progressPercent);
+            progressBar.textContent = progressPercent > 10 ? progressPercent + '%' : '';
+        }
+
+        // Update progress label with remaining days
+        const progressLabel = document.getElementById('progress-label');
+        if (progressLabel) {
+            if (now < startDate) {
+                progressLabel.textContent = 'Próximo a comenzar';
+            } else if (now > endDate) {
+                progressLabel.textContent = 'Curso finalizado';
+            } else {
+                // Show remaining days
+                const daysText = remainingDays === 1 ? 'día' : 'días';
+                progressLabel.textContent = 'finaliza en ' + remainingDays + ' ' + daysText;
+            }
+        }
+
+        // Update date info (left) - start date
+        const startInfo = document.getElementById('progress-start-info');
+        if (startInfo) {
+            startInfo.textContent = 'Inicio: ' + new Date(promotion.startDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
+        }
+
+        // Note: progress-week-info (center) is managed by updateProgressInfo() for student counts
+        // Update end date info (right)
+        const endInfo = document.getElementById('progress-end-info');
+        if (endInfo) {
+            endInfo.textContent = 'Fin: ' + new Date(promotion.endDate).toLocaleDateString('es-ES', { day: 'short', month: 'short' });
+        }
+    } catch (error) {
+        console.error('Error updating course progress bar:', error);
+    }
+}
+
+/**
+ * Calculate student counts and statuses
+ * @param {Array} students - Array of student objects
+ * @returns {Object} Object with { active: number, withdrawn: number, total: number }
+ */
+function calculateStudentCounts(students) {
+    if (!Array.isArray(students)) {
+        return { active: 0, withdrawn: 0, total: 0 };
+    }
+
+    const active = students.filter(s => !s.isWithdrawn).length;
+    const withdrawn = students.filter(s => s.isWithdrawn).length;
+
+    return {
+        active: active,
+        withdrawn: withdrawn,
+        total: students.length
+    };
+}
+
+/**
+ * Format date to readable string (e.g., "12 Feb 2026")
+ * @param {string|Date} date - ISO date string or Date object
+ * @param {string} locale - Locale code (default: 'es-ES')
+ * @returns {string} Formatted date string
+ */
+function formatDateShort(date, locale = 'es-ES') {
+    if (!date) return '-';
+
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+
+    if (isNaN(dateObj.getTime())) return '-';
+
+    return dateObj.toLocaleDateString(locale, {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+}
+
+/**
+ * Update progress info section with course dates and student counts
+ * @param {Object} promotion - Promotion object with startDate, endDate
+ * @param {Array} students - Array of student objects
+ */
+function updateProgressInfo(promotion, students) {
+    try {
+        if (!promotion) return;
+
+        // Calculate student counts
+        const counts = calculateStudentCounts(students);
+
+        // Update start date info (left side)
+        const startInfo = document.getElementById('progress-start-info');
+        if (startInfo) {
+            const startDate = formatDateShort(promotion.startDate);
+            startInfo.textContent = 'Inicio: ' + startDate;
+        }
+
+        // Update student info (center/left)
+        const activeStudentsEl = document.getElementById('active-students-count');
+        if (activeStudentsEl) {
+            if (counts.active > 0) {
+                activeStudentsEl.textContent = counts.active + ' estudiante' + (counts.active === 1 ? '' : 's') + ' en activo';
+            } else {
+                activeStudentsEl.textContent = '-';
+            }
+        }
+
+        // Update withdrawn students info
+        const withdrawnContainer = document.getElementById('withdrawn-students-container');
+        const withdrawnCountEl = document.getElementById('withdrawn-students-count');
+        if (withdrawnContainer && withdrawnCountEl) {
+            withdrawnCountEl.textContent = counts.withdrawn + ' baja' + (counts.withdrawn === 1 ? '' : 's');
+        }
+
+        // Update end date info (right side)
+        const endInfo = document.getElementById('progress-end-info');
+        if (endInfo) {
+            const endDate = formatDateShort(promotion.endDate);
+            endInfo.textContent = 'Fin: ' + endDate;
+        }
+    } catch (error) {
+        console.error('Error updating progress info:', error);
     }
 }
 
@@ -2139,6 +3219,9 @@ function displayModules(modules) {
 function generateGanttChart(promotion) {
     const table = document.getElementById('gantt-table');
     table.innerHTML = '';
+
+    // Use the module-level helper so superadmin also gets edit buttons.
+    const isTeacher = isTeacherOrAdmin();
 
     const weeks = promotion.weeks || 0;
     const modules = promotion.modules || [];
@@ -2239,9 +3322,9 @@ function generateGanttChart(promotion) {
 
     // Compute overall span for the header bar
     const empStarts = employability.map(e => (e.startMonth - 1) * 4);
-    const empEnds   = employability.map(e => (e.startMonth - 1) * 4 + e.duration * 4);
+    const empEnds = employability.map(e => (e.startMonth - 1) * 4 + e.duration * 4);
     const empMin = empStarts.length ? Math.min(...empStarts) : -1;
-    const empMax = empEnds.length   ? Math.min(Math.max(...empEnds), weeks) : -1;
+    const empMax = empEnds.length ? Math.min(Math.max(...empEnds), weeks) : -1;
 
     // Header row (always visible — lives in empTbody)
     const empHeaderRow = document.createElement('tr');
@@ -2259,7 +3342,7 @@ function generateGanttChart(promotion) {
     // Build inline span bar: a thin colored strip showing the overall range
     let spanBarHtml = '';
     if (empMin >= 0 && empMax > empMin) {
-        const leftPct  = ((empMin / weeks) * 100).toFixed(1);
+        const leftPct = ((empMin / weeks) * 100).toFixed(1);
         const widthPct = (((empMax - empMin) / weeks) * 100).toFixed(1);
         spanBarHtml = `
             <div style="position:relative;height:4px;background:#f3e5ab;border-radius:2px;margin-top:2px;overflow:hidden;">
@@ -2293,9 +3376,9 @@ function generateGanttChart(promotion) {
         const itemUrl = item.url
             ? `<a href="${escapeHtml(item.url)}" target="_blank" class="text-decoration-none">${escapeHtml(item.name)}</a>`
             : escapeHtml(item.name);
-        const editBtn = userRole === 'teacher'
+        const editBtn = isTeacher
             ? `<button class="btn btn-xs btn-outline-warning py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();editEmployabilityItem(${index})"><i class="bi bi-pencil"></i></button>` : '';
-        const delBtn = userRole === 'teacher'
+        const delBtn = isTeacher
             ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteEmployabilityItem(${index})"><i class="bi bi-trash"></i></button>` : '';
 
         itemCell.innerHTML = `
@@ -2338,9 +3421,9 @@ function generateGanttChart(promotion) {
         const moduleCell = document.createElement('td');
         moduleCell.className = 'gantt-label-cell';
 
-        const editBtn   = userRole === 'teacher'
+        const editBtn = isTeacher
             ? `<button class="btn btn-xs btn-outline-warning py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();editModule('${escapeHtml(module.id)}')"><i class="bi bi-pencil"></i></button>` : '';
-        const deleteBtn = userRole === 'teacher'
+        const deleteBtn = isTeacher
             ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteModule('${escapeHtml(module.id)}')"><i class="bi bi-trash"></i></button>` : '';
 
         moduleCell.innerHTML = `
@@ -2373,9 +3456,9 @@ function generateGanttChart(promotion) {
         // Course rows
         (module.courses || []).forEach((courseObj, courseIndex) => {
             const courseName = typeof courseObj === 'string' ? courseObj : (courseObj.name || 'Unnamed');
-            const courseUrl  = typeof courseObj === 'object' ? (courseObj.url || '') : '';
-            const courseDur  = typeof courseObj === 'object' ? (Number(courseObj.duration) || 1) : 1;
-            const courseOff  = typeof courseObj === 'object' ? (Number(courseObj.startOffset) || 0) : 0;
+            const courseUrl = typeof courseObj === 'object' ? (courseObj.url || '') : '';
+            const courseDur = typeof courseObj === 'object' ? (Number(courseObj.duration) || 1) : 1;
+            const courseOff = typeof courseObj === 'object' ? (Number(courseObj.startOffset) || 0) : 0;
 
             const courseRow = document.createElement('tr');
             const courseCell = document.createElement('td');
@@ -2385,7 +3468,7 @@ function generateGanttChart(promotion) {
             const link = courseUrl
                 ? `<a href="${escapeHtml(courseUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(courseName)}</a>`
                 : escapeHtml(courseName);
-            const delBtn = userRole === 'teacher'
+            const delBtn = isTeacher
                 ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteCourseFromModule('${escapeHtml(module.id)}',${courseIndex})"><i class="bi bi-trash"></i></button>` : '';
 
             courseCell.innerHTML = `
@@ -2408,9 +3491,9 @@ function generateGanttChart(promotion) {
         // Project rows
         (module.projects || []).forEach((projectObj, projectIndex) => {
             const projectName = typeof projectObj === 'string' ? projectObj : (projectObj.name || 'Unnamed');
-            const projectUrl  = typeof projectObj === 'object' ? (projectObj.url || '') : '';
-            const projectDur  = typeof projectObj === 'object' ? (Number(projectObj.duration) || 1) : 1;
-            const projectOff  = typeof projectObj === 'object' ? (Number(projectObj.startOffset) || 0) : 0;
+            const projectUrl = typeof projectObj === 'object' ? (projectObj.url || '') : '';
+            const projectDur = typeof projectObj === 'object' ? (Number(projectObj.duration) || 1) : 1;
+            const projectOff = typeof projectObj === 'object' ? (Number(projectObj.startOffset) || 0) : 0;
 
             const projectRow = document.createElement('tr');
             const projectCell = document.createElement('td');
@@ -2420,7 +3503,7 @@ function generateGanttChart(promotion) {
             const link = projectUrl
                 ? `<a href="${escapeHtml(projectUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(projectName)}</a>`
                 : escapeHtml(projectName);
-            const delBtn = userRole === 'teacher'
+            const delBtn = isTeacher
                 ? `<button class="btn btn-xs btn-outline-danger py-0 px-1" style="font-size:0.55rem;" onclick="event.stopPropagation();deleteProjectFromModule('${escapeHtml(module.id)}',${projectIndex})"><i class="bi bi-trash"></i></button>` : '';
 
             projectCell.innerHTML = `
@@ -2484,7 +3567,9 @@ function toggleEmployabilityExpansion() {
 async function editModule(moduleId) {
     const token = localStorage.getItem('token');
     try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`);
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (response.ok) {
             const promotion = await response.json();
             const module = promotion.modules.find(m => m.id === moduleId);
@@ -2551,7 +3636,9 @@ async function deleteModule(moduleId) {
 
     const token = localStorage.getItem('token');
     try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`);
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (response.ok) {
             const promotion = await response.json();
             const moduleIndex = promotion.modules.findIndex(m => m.id === moduleId);
@@ -2591,7 +3678,9 @@ async function deleteCourseFromModule(moduleId, courseIndex) {
 
     const token = localStorage.getItem('token');
     try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`);
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (response.ok) {
             const promotion = await response.json();
             const module = promotion.modules.find(m => m.id === moduleId);
@@ -2632,7 +3721,9 @@ async function deleteProjectFromModule(moduleId, projectIndex) {
 
     const token = localStorage.getItem('token');
     try {
-        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`);
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (response.ok) {
             const promotion = await response.json();
             const module = promotion.modules.find(m => m.id === moduleId);
@@ -2699,7 +3790,7 @@ function displayQuickLinks(links) {
         const platform = link.platform || 'custom';
         const platformInfo = platformIcons[platform] || platformIcons['custom'];
 
-        const deleteBtn = userRole === 'teacher' ? `
+        const deleteBtn = isTeacherOrAdmin() ? `
             <button class="btn btn-sm btn-danger" onclick="deleteQuickLink('${link.id}')">
                 <i class="bi bi-trash"></i>
             </button>` : '';
@@ -2721,6 +3812,263 @@ function displayQuickLinks(links) {
             </div>
         `;
         list.appendChild(card);
+    });
+}
+
+// ==================== ACCIONES RÁPIDAS ====================
+// Widget para acceso rápido a herramientas: Zoom, Discord, Asana
+
+async function loadQuickActions() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/quick-links`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const links = await response.json();
+            displayQuickActionsFiltered(links);
+            loadTeacherArea();
+        }
+    } catch (error) {
+        console.error('Error cargando acciones rápidas:', error);
+    }
+}
+
+function refreshQuickActions() {
+    if (typeof promotionId !== 'undefined') {
+        loadQuickActions();
+    }
+}
+
+function openAttendancePanel() {
+    switchTab('attendance');
+}
+
+// ==================== ÁREA DOCENTE ====================
+// Widget para acceso a recursos docentes: Asana, contenido, dashboard, acta
+
+async function loadTeacherArea() {
+    if (!isTeacherOrAdmin()) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const promotion = await response.json();
+            displayTeacherArea(promotion);
+        }
+    } catch (error) {
+        console.error('Error loading teacher area:', error);
+    }
+}
+
+function displayTeacherArea(promotion) {
+    const container = document.getElementById('teacher-area-container');
+    if (!container) return;
+
+    // Define teacher area buttons/links
+    const teacherActions = [
+        {
+            id: 'asana-promo-action',
+            icon: 'bi-kanban',
+            label: 'Asana Promo',
+            color: '#FF6B6B',
+            url: promotion.asanaWorkspaceUrl,
+            title: 'Abrir Asana (Promo)'
+        },
+        {
+            id: 'content-action',
+            icon: 'bi-book',
+            label: 'Contenido Didáctico',
+            color: 'var(--principal-1)',
+            url: promotion.teachingContentUrl,
+            title: 'Abrir contenido docente'
+        },
+        {
+            id: 'dashboard-action',
+            icon: 'bi-eye',
+            label: 'Preview Roadmap',
+            color: '#6f42c1',
+            url: '#',
+            title: 'Vista previa del roadmap',
+            isButton: true,
+            onclick: 'previewPromotion()'
+        },
+        {
+            id: 'acta-action',
+            icon: 'bi-file-text',
+            label: 'Acta de Inicio',
+            color: '#198754',
+            url: '#',
+            title: 'Abrir acta de inicio',
+            isButton: true,
+            onclick: 'openActaModal()'
+        }
+    ];
+
+    container.innerHTML = '';
+
+    // Render only teacher area buttons (not shared with Quick Actions)
+    teacherActions.forEach(action => {
+        const isDisabled = !action.url && !action.isButton;
+
+        if (action.isButton) {
+            // Button actions (dashboard preview, acta)
+            const buttonHTML = `
+                <div class="quick-action-card" id="${action.id}">
+                    <button type="button"
+                            class="quick-action-link"
+                            style="background: none; border: none; cursor: pointer; width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;"
+                            onclick="${action.onclick}"
+                            title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                    </button>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', buttonHTML);
+        }
+        else {
+            // Link actions (Asana, content)
+            const cardHTML = `
+                <div class="quick-action-card ${isDisabled ? 'disabled' : ''}" id="${action.id}">
+                    <a href="${action.url || '#'}" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       title="${action.title}"
+                       onclick="${isDisabled ? 'return false;' : 'event.preventDefault(); window.open(this.href, \"_blank\");'}"
+                       class="quick-action-link"
+                       style="${isDisabled ? 'pointer-events: none; opacity: 0.5;' : ''}">
+                        <div class="quick-action-icon" style="color: ${action.color}; ${isDisabled ? 'opacity: 0.5;' : ''}">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                        ${isDisabled ? '<div class="quick-action-status">No configurado</div>' : '<i class="bi bi-box-arrow-up-right quick-action-arrow"></i>'}
+                    </a>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', cardHTML);
+        }
+    });
+}
+
+async function loadQuickActionsFiltered() {
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/quick-links`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const links = await response.json();
+            displayQuickActionsFiltered(links);
+        }
+    } catch (error) {
+        console.error('Error loading quick actions:', error);
+    }
+}
+
+function displayQuickActionsFiltered(quickLinks) {
+    const container = document.getElementById('quick-actions-container');
+    if (!container) return;
+
+    // Find links by platform (excluding teacher area duplicates)
+    const zoomLink = quickLinks.find(link =>
+        link.platform === 'zoom' || link.name?.toLowerCase().includes('zoom')
+    );
+    const discordLink = quickLinks.find(link =>
+        link.platform === 'discord' || link.name?.toLowerCase().includes('discord')
+    );
+
+    // Define quick actions (student-focused only)
+    // Exclude: Asana, Teaching Content, Dashboard, Acta (those go to Área Docente)
+    const actions = [
+        {
+            id: 'zoom-action',
+            icon: 'bi-camera-video',
+            label: 'Unirme a la clase',
+            color: '#2D8CFF',
+            url: zoomLink?.url,
+            title: 'Abrir reunión de Zoom'
+        },
+        {
+            id: 'discord-action',
+            icon: 'bi-discord',
+            label: 'Chat Estudiantes',
+            color: '#5865F2',
+            url: discordLink?.url,
+            title: 'Abrir canal de Discord'
+        },
+        {
+            id: 'attendance-action',
+            icon: 'bi-clipboard-check',
+            label: 'Pasar asistencia',
+            color: '#FF4700',
+            url: null,
+            title: 'Pasar asistencia',
+            isButton: true,
+            onclick: 'openAttendancePanel()'
+        },
+        {
+            id: 'preview-roadmap-action',
+            icon: 'bi-eye',
+            label: 'Preview Roadmap',
+            color: '#FF4700',
+            url: null,
+            title: 'Vista previa del roadmap',
+            isButton: true,
+            onclick: 'previewPromotion()'
+        }
+    ];
+
+    container.innerHTML = '';
+
+    actions.forEach(action => {
+        const isDisabled = !action.url && !action.isButton;
+
+        if (action.isButton) {
+            const buttonHTML = `
+                <div class="quick-action-card" id="${action.id}">
+                    <button type="button"
+                            class="quick-action-link"
+                            style="background: none; border: none; cursor: pointer; width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;"
+                            onclick="${action.onclick}"
+                            title="${action.title}">
+                        <div class="quick-action-icon" style="color: ${action.color};">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                    </button>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', buttonHTML);
+        }
+        else {
+            const cardHTML = `
+                <div class="quick-action-card ${isDisabled ? 'disabled' : ''}" id="${action.id}">
+                    <a href="${action.url || '#'}" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       title="${action.title}"
+                       onclick="${isDisabled ? 'return false;' : 'event.preventDefault(); window.open(this.href, \"_blank\");'}"
+                       class="quick-action-link"
+                       style="${isDisabled ? 'pointer-events: none; opacity: 0.5;' : ''}">
+                        <div class="quick-action-icon" style="color: ${action.color}; ${isDisabled ? 'opacity: 0.5;' : ''}">
+                            <i class="bi ${action.icon}"></i>
+                        </div>
+                        <div class="quick-action-label">${action.label}</div>
+                        ${isDisabled ? '<div class="quick-action-status">No configurado</div>' : '<i class="bi bi-box-arrow-up-right quick-action-arrow"></i>'}
+                    </a>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', cardHTML);
+        }
     });
 }
 
@@ -2747,12 +4095,12 @@ function displaySections(sections) {
     list.innerHTML = '';
 
     if (sections.length === 0) {
-        list.innerHTML = '<p class="text-muted">No sections yet</p>';
+        list.innerHTML = '<p class="text-muted">No hay secciones aún</p>';
         return;
     }
 
     sections.forEach(section => {
-        const actionBtns = userRole === 'teacher' ? `
+        const actionBtns = isTeacherOrAdmin() ? `
             <div>
                 <button class="btn btn-sm btn-warning" onclick="editSection('${section.id}')">
                     <i class="bi bi-pencil"></i>
@@ -2779,6 +4127,308 @@ function displaySections(sections) {
     });
 }
 
+// Load calendar ID from backend for Overview preview
+async function loadOverviewCalendarId() {
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/calendar`);
+
+        if (response.ok) {
+            const calendar = await response.json();
+            // Store the calendar ID in the global variable
+            currentCalendarId = calendar.googleCalendarId || '';
+            console.log('[loadOverviewCalendarId] Calendar ID loaded from backend:', currentCalendarId);
+
+            // Setup the calendar preview with the new ID
+            if (window.setupCalendarPreview) {
+                window.setupCalendarPreview();
+            }
+        } else {
+            currentCalendarId = '';
+            console.log('[loadOverviewCalendarId] No calendar found for this promotion');
+        }
+    } catch (error) {
+        console.error('[loadOverviewCalendarId] Error loading calendar:', error);
+        currentCalendarId = '';
+    }
+}
+
+// Load and display next píldora alert in Overview
+async function loadOverviewPildoraAlert() {
+    try {
+        const contentEl = document.getElementById('next-pildora-content');
+        if (!contentEl) return;
+
+        // Get current date
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+
+        // Get all píldoras from extendedInfoData
+        const modulesPildoras = extendedInfoData.modulesPildoras || [];
+
+        // Flatten all píldoras from all modules
+        let allPildoras = [];
+        modulesPildoras.forEach(modulePildoras => {
+            if (modulePildoras.pildoras && Array.isArray(modulePildoras.pildoras)) {
+                allPildoras = allPildoras.concat(modulePildoras.pildoras);
+            }
+        });
+
+        // Filter píldoras that are in the future and have a date
+        const futurePildoras = allPildoras.filter(p => {
+            if (!p.date) return false;
+            const pildoraDate = p.date.split('T')[0]; // Extract just the date part
+            return pildoraDate >= today;
+        }).sort((a, b) => {
+            const dateA = a.date.split('T')[0];
+            const dateB = b.date.split('T')[0];
+            return new Date(dateA) - new Date(dateB);
+        });
+
+        if (futurePildoras.length === 0) {
+            contentEl.innerHTML = `
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-check-circle me-2 text-success"></i>No hay píldoras pendientes
+                </p>
+            `;
+            return;
+        }
+
+        const nextPildora = futurePildoras[0];
+        const pildoraDate = new Date(nextPildora.date);
+        const formattedDate = pildoraDate.toLocaleDateString('es-ES', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        const daysUntil = Math.ceil((pildoraDate - now) / (1000 * 60 * 60 * 24));
+        let daysText = '';
+        if (daysUntil === 0) {
+            daysText = '¡Hoy!';
+        } else if (daysUntil === 1) {
+            daysText = 'Mañana';
+        } else {
+            daysText = `En ${daysUntil} días`;
+        }
+
+        // Get students assigned to this píldora
+        const studentsAssigned = (nextPildora.students && Array.isArray(nextPildora.students)) ? nextPildora.students : [];
+        let studentsText = '';
+        if (studentsAssigned.length > 0) {
+            // Get current students list
+            const allStudents = window.currentStudents || [];
+            const assignedStudentNames = studentsAssigned
+                .map(studentId => {
+                    const student = allStudents.find(s => s.id === studentId || s._id === studentId);
+                    return student ? studentFullName(student) : null;
+                })
+                .filter(Boolean);
+            if (assignedStudentNames.length > 0) {
+                studentsText = `<small class="text-muted d-block mb-1">${assignedStudentNames.join(', ')}</small>`;
+            }
+        }
+
+        contentEl.innerHTML = `
+            <div>
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1 text-dark">
+                            <i class="bi bi-star-fill me-1 text-warning"></i>${nextPildora.title || 'Sin título'}
+                        </h6>
+                        <small class="text-muted d-block">${formattedDate}</small>
+                    </div>
+                    <span class="badge bg-primary text-white">${daysText}</span>
+                </div>
+                ${nextPildora.teacher ? `<small class="text-muted d-block mb-1"><strong>Profesor:</strong> ${nextPildora.teacher}</small>` : ''}
+                ${studentsText}
+                ${nextPildora.description ? `<small class="text-muted d-block">${nextPildora.description}</small>` : ''}
+            </div>
+        `;
+    } catch (error) {
+        console.error('[loadOverviewPildoraAlert] Error:', error);
+        const contentEl = document.getElementById('next-pildora-content');
+        if (contentEl) {
+            contentEl.innerHTML = `<p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Error cargando píldoras</p>`;
+        }
+    }
+}
+
+// Load and display attendance alert in Overview
+async function loadOverviewAttendanceAlert() {
+    try {
+        const token = localStorage.getItem('token');
+        const contentEl = document.getElementById('attendance-alert-content');
+        if (!contentEl) return;
+
+        // Get all students
+        const studentsRes = await fetch(`${API_URL}/api/promotions/${promotionId}/students`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const students = await studentsRes.json();
+
+        if (students.length === 0) {
+            contentEl.innerHTML = `
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Sin estudiantes registrados
+                </p>
+            `;
+            return;
+        }
+
+        // Get only active students
+        const activeStudents = students.filter(s => !s.isWithdrawn);
+
+        if (activeStudents.length === 0) {
+            contentEl.innerHTML = `
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Sin estudiantes activos
+                </p>
+            `;
+            return;
+        }
+
+        // Get promotion info to determine the date range for absences
+        const promotionRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const promotion = await promotionRes.json();
+
+        // Calculate months to fetch for TOTAL absences (historical)
+        const startDate = promotion.startDate ? new Date(promotion.startDate) : new Date();
+        const today = new Date();
+        const months = [];
+
+        let currentDate = new Date(startDate);
+        currentDate.setDate(1);
+
+        while (currentDate <= today) {
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            months.push(`${year}-${month}`);
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        // Fetch attendance data for all months (for total absences)
+        let allAttendanceData = [];
+        for (const month of months) {
+            try {
+                const attendanceRes = await fetch(`${API_URL}/api/promotions/${promotionId}/attendance?month=${month}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (attendanceRes.ok) {
+                    const monthData = await attendanceRes.json();
+                    allAttendanceData = allAttendanceData.concat(monthData);
+                }
+            } catch (e) {
+                console.warn(`Error fetching attendance for ${month}:`, e);
+            }
+        }
+
+        // Also get CURRENT MONTH data for attendance rate calculation (matching Attendance tab)
+        const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
+        let currentMonthData = [];
+        try {
+            const attendanceRes = await fetch(`${API_URL}/api/promotions/${promotionId}/attendance?month=${currentMonth}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (attendanceRes.ok) {
+                currentMonthData = await attendanceRes.json();
+            }
+        } catch (e) {
+            console.warn(`Error fetching current month attendance:`, e);
+        }
+
+        // Calculate total absences per student (from all historical data)
+        const absencesPerStudent = {};
+        activeStudents.forEach(student => {
+            // Use student.id (the custom id field) as the key, NOT _id
+            absencesPerStudent[student.id] = {
+                name: studentFullName(student),
+                absences: 0,
+                studentId: student.id
+            };
+        });
+
+        // Count only 'Ausente' records from all months
+        allAttendanceData.forEach(record => {
+            const studentId = record.studentId;
+            if (record.status === 'Ausente' && absencesPerStudent[studentId]) {
+                absencesPerStudent[studentId].absences++;
+            }
+        });
+
+        console.log('[loadOverviewAttendanceAlert] Absences per student:', absencesPerStudent);
+        console.log('[loadOverviewAttendanceAlert] Total attendance records:', allAttendanceData.length);
+
+        // Sort students by total absences (descending)
+        const sortedStudents = Object.values(absencesPerStudent)
+            .sort((a, b) => b.absences - a.absences);
+
+        console.log('[loadOverviewAttendanceAlert] Sorted students:', sortedStudents);
+
+        // Calculate attendance rate using CURRENT MONTH data (matching the Attendance tab)
+        let present = 0, absent = 0, late = 0, justified = 0, earlyLeave = 0;
+        currentMonthData.forEach(record => {
+            if (record.status === 'Presente') present++;
+            else if (record.status === 'Ausente') absent++;
+            else if (record.status === 'Con retraso') late++;
+            else if (record.status === 'Justificado') justified++;
+            else if (record.status === 'Sale antes') earlyLeave++;
+        });
+
+        const totalMarked = present + absent + late + justified + earlyLeave;
+        const attendanceRate = totalMarked > 0 ? Math.round(((present + late + justified + earlyLeave) / totalMarked) * 100) : 0;
+
+        // Get total active students
+        const totalActive = activeStudents.length;
+
+        let html = `
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <!-- Attendance Rate -->
+                <div>
+                    <small class="text-muted d-block mb-1">Asistencia</small>
+                    <span class="badge fs-6 ${attendanceRate >= 80 ? 'bg-warning' : attendanceRate >= 60 ? 'bg-warning' : 'bg-danger'}">${attendanceRate}%</span>
+                </div>
+        `;
+
+        // Show student with most TOTAL absences if there are any
+        const studentsWithAbsences = sortedStudents.filter(s => s.absences > 0);
+
+        if (studentsWithAbsences.length > 0) {
+            const maxAbsenceStudent = studentsWithAbsences[0];
+            html += `
+                <!-- Max Absences -->
+                <div class="flex-grow-1">
+                    <small class="text-muted d-block mb-1">Mayor ausencias</small>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="small">${maxAbsenceStudent.name}</span>
+                        <span class="badge bg-warning">${maxAbsenceStudent.absences}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            html += `
+                <!-- No Absences -->
+                <div class="flex-grow-1">
+                    <small class="text-success d-block">
+                        <i class="bi bi-check-circle me-1"></i>¡Excelente asistencia!
+                    </small>
+                </div>
+            `;
+        }
+
+        html += `</div>`;
+        contentEl.innerHTML = html;
+    } catch (error) {
+        console.error('[loadOverviewAttendanceAlert] Error:', error);
+        const contentEl = document.getElementById('attendance-alert-content');
+        if (contentEl) {
+            contentEl.innerHTML = `<p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Error cargando asistencias</p>`;
+        }
+    }
+}
+
 async function loadCalendar() {
     const token = localStorage.getItem('token');
     try {
@@ -2788,8 +4438,21 @@ async function loadCalendar() {
 
         if (response.ok) {
             const calendar = await response.json();
-            document.getElementById('google-calendar-id').value = calendar.googleCalendarId;
-            displayCalendar(calendar.googleCalendarId);
+            // Store in global variable for use across the application
+            currentCalendarId = calendar.googleCalendarId || '';
+            console.log('[loadCalendar] Calendar ID stored globally:', currentCalendarId);
+
+            // Also store in the HTML field if it exists (for the calendar configuration tab)
+            const calendarIdInput = document.getElementById('google-calendar-id');
+            if (calendarIdInput) {
+                calendarIdInput.value = currentCalendarId;
+            }
+
+            displayCalendar(currentCalendarId);
+            // Also update the calendar preview in Overview
+            if (window.setupCalendarPreview) {
+                window.setupCalendarPreview();
+            }
         }
     } catch (error) {
         console.error('Error loading calendar:', error);
@@ -3211,6 +4874,7 @@ function setupForms() {
                 quickLinkModal.hide();
                 document.getElementById('quick-link-form').reset();
                 loadQuickLinks();
+                refreshQuickActions();
             }
         } catch (error) {
             console.error('Error adding quick link:', error);
@@ -3286,16 +4950,10 @@ function setupForms() {
         const name = document.getElementById('student-name').value;
         const lastname = document.getElementById('student-lastname').value;
         const email = document.getElementById('student-email').value;
-        const phone = document.getElementById('student-phone').value;
-        const age = document.getElementById('student-age').value;
-        const administrativeSituation = document.getElementById('student-admin-situation').value;
-        const nationality = document.getElementById('student-nationality').value;
-        const identificationDocument = document.getElementById('student-document').value;
-        const gender = document.getElementById('student-gender').value;
-        const englishLevel = document.getElementById('student-english-level').value;
-        const educationLevel = document.getElementById('student-education-level').value;
-        const profession = document.getElementById('student-profession').value;
-        const community = document.getElementById('student-community').value;
+        // const englishLevel = document.getElementById('student-english-level')?.value;
+        // const educationLevel = document.getElementById('student-education-level')?.value;
+        // const profession = document.getElementById('student-profession')?.value;
+        // const community = document.getElementById('student-community')?.value;
 
         // Check if we're editing an existing student
         const editingStudentId = document.getElementById('student-form').dataset.editingStudentId;
@@ -3305,17 +4963,7 @@ function setupForms() {
         const studentData = {
             name,
             lastname,
-            email,
-            phone,
-            age: age ? parseInt(age) : null,
-            administrativeSituation,
-            nationality,
-            identificationDocument,
-            gender,
-            englishLevel,
-            educationLevel,
-            profession,
-            community
+            email
         };
 
         console.log('Sending student data:', studentData);
@@ -3577,12 +5225,17 @@ async function loadStudents(retryCount = 0) {
         const searchInput = document.getElementById('student-search-input');
         if (searchInput) searchInput.value = '';
         displayStudents(window.currentStudents);
+
+        // Update progress info with newly loaded students
+        if (window.currentPromotion) {
+            updateProgressInfo(window.currentPromotion, window.currentStudents);
+        }
     } catch (error) {
         console.error('Error loading students:', error);
         // Never show a blocking alert during page load — just display inline message
         const studentsContainer = document.getElementById('students-list');
         if (studentsContainer) {
-            studentsContainer.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Error al cargar estudiantes.</td></tr>';
+            studentsContainer.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Error al cargar estudiantes.</td></tr>';
         }
     }
 }
@@ -3596,55 +5249,53 @@ function displayStudents(students) {
     }
 
     if (!students || students.length === 0) {
-        studentsContainer.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No students registered yet.</td></tr>';
+        studentsContainer.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No students registered yet.</td></tr>';
         return;
     }
 
     // Sort: active students first, withdrawn at the bottom
     const sorted = [...students].sort((a, b) => {
-        if (!!a.isWithdrawn === !!b.isWithdrawn) return (a.name || '').localeCompare(b.name || '');
-        return a.isWithdrawn ? 1 : -1;
+        const aW = !!a.isWithdrawn || (a.withdrawal && a.withdrawal.date);
+        const bW = !!b.isWithdrawn || (b.withdrawal && b.withdrawal.date);
+        if (aW === bW) return (a.name || '').localeCompare(b.name || '');
+        return aW ? 1 : -1;
     });
 
-    const activeCount    = sorted.filter(s => !s.isWithdrawn).length;
+    const activeCount = sorted.filter(s => !(!!s.isWithdrawn || (s.withdrawal && s.withdrawal.date))).length;
     const withdrawnCount = sorted.length - activeCount;
 
     studentsContainer.innerHTML = sorted.map((student, index) => {
+        const isStudWithdrawn = !!student.isWithdrawn || (student.withdrawal && student.withdrawal.date);
         const separator = (index === activeCount && withdrawnCount > 0)
-            ? `<tr class="table-danger"><td colspan="6" class="py-1 px-3 small fw-semibold text-danger"><i class="bi bi-person-x me-1"></i>Bajas oficiales (${withdrawnCount})</td></tr>`
+            ? `<tr class="table-danger"><td colspan="4" class="py-1 px-3 small fw-semibold text-danger"><i class="bi bi-person-x me-1"></i>Bajas oficiales (${withdrawnCount})</td></tr>`
             : '';
-        const row = `<tr class="${student.isWithdrawn ? 'table-secondary text-muted opacity-75' : ''}">
+        const row = `<tr class="${isStudWithdrawn ? 'student-row-withdrawn' : ''}">
             <td>
                 <input type="checkbox" class="form-check-input student-checkbox" 
                        data-student-id="${student.id}" 
                        onchange="updateSelectionState()"
-                       ${student.isWithdrawn ? 'disabled' : ''}>
+                       ${isStudWithdrawn ? 'disabled' : ''}>
             </td>
             <td>
                 <div class="fw-bold">
-                    ${!student.isWithdrawn
-                        ? `<a href="#" class="student-name-link text-decoration-none text-dark"
+                    ${!isStudWithdrawn
+                ? `<a href="#" class="student-name-link text-decoration-none text-dark"
                             onclick="event.preventDefault(); window.StudentTracking?.openFicha('${student.id}')"
                             title="Ver ficha de ${escapeHtml(studentFullName(student))}"
                             >${student.name || student.lastname ? escapeHtml(studentFullName(student)) : 'N/A'}</a>`
-                        : (student.name || student.lastname ? escapeHtml(studentFullName(student)) : 'N/A')
-                    }
-                    ${student.isWithdrawn ? `<span class="badge bg-danger ms-2" style="font-size:.65rem;" title="Baja desde ${student.withdrawal?.date ? new Date(student.withdrawal.date).toLocaleDateString('es-ES') : ''}">BAJA</span>` : ''}
+                : (student.name || student.lastname ? escapeHtml(studentFullName(student)) : 'N/A')
+            }
+                    ${isStudWithdrawn ? `<span class="badge bg-danger ms-2" style="font-size:.65rem;" title="Baja desde ${student.withdrawal?.date ? new Date(student.withdrawal.date).toLocaleDateString('es-ES') : ''}">BAJA</span>` : ''}
                 </div>
             </td>
             <td>${student.email || 'N/A'}</td>
-            <td>${student.nationality || 'N/A'}</td>
-            <td>${student.profession || 'N/A'}</td>
             <td class="text-end">
                 <div class="btn-group">
                     <button class="btn btn-sm btn-outline-success" onclick="window.StudentTracking?.openFicha('${student.id}')" title="Ficha de Seguimiento">
                         <i class="bi bi-person-lines-fill"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTechnical('${student.id}', promotionId)" title="PDF Seguimiento Técnico">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="if(window.Reports){ window.Reports.printTechnical('${student.id}', promotionId) } else { alert('La librería de informes no está cargada.') }" title="PDF Seguimiento Técnico">
                         <i class="bi bi-file-earmark-bar-graph"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="window.Reports?.printTransversal('${student.id}', promotionId)" title="PDF Seguimiento Transversal">
-                        <i class="bi bi-file-earmark-person"></i>
                     </button>
                     ${!student.isWithdrawn ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${student.id}', '${student.email}')" title="Delete">
                         <i class="bi bi-trash"></i>
@@ -3693,16 +5344,6 @@ function editStudent(studentId) {
     document.getElementById('student-name').value = student.name || '';
     document.getElementById('student-lastname').value = student.lastname || '';
     document.getElementById('student-email').value = student.email || '';
-    document.getElementById('student-phone').value = student.phone || '';
-    document.getElementById('student-age').value = student.age || '';
-    document.getElementById('student-admin-situation').value = student.administrativeSituation || '';
-    document.getElementById('student-nationality').value = student.nationality || '';
-    document.getElementById('student-document').value = student.identificationDocument || '';
-    document.getElementById('student-gender').value = student.gender || '';
-    document.getElementById('student-english-level').value = student.englishLevel || '';
-    document.getElementById('student-education-level').value = student.educationLevel || '';
-    document.getElementById('student-profession').value = student.profession || '';
-    document.getElementById('student-community').value = student.community || '';
 
     // Store the student ID for updating
     document.getElementById('student-form').dataset.editingStudentId = studentId;
@@ -3716,6 +5357,62 @@ function editStudent(studentId) {
 }
 
 // Export all students as CSV
+// ── Export students to Excel ───────────────────────────────────────────
+// ── Export students to Excel ───────────────────────────────────────────
+async function downloadStudentsExcel(students, filenamePrefix = 'estudiantes') {
+    if (!students || students.length === 0) {
+        alert('No hay estudiantes para exportar.');
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+        alert('Sesión expirada. Por favor, inicie sesión.');
+        return;
+    }
+
+    try {
+        const studentIds = students.map(s => s.id).join(',');
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/students/export?ids=${studentIds}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) throw new Error('Error al generar el archivo Excel');
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filenamePrefix}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (error) {
+        console.error('Error exporting students to Excel:', error);
+        alert('Error al exportar a Excel: ' + error.message);
+    }
+}
+
+async function exportAllStudentsExcel() {
+    const students = window.currentStudents || [];
+    await downloadStudentsExcel(students, 'todos-los-estudiantes');
+}
+
+async function exportSelectedStudentsExcel() {
+    const selectedCheckboxes = document.querySelectorAll('.student-checkbox:checked');
+    const selectedStudentIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.studentId);
+
+    if (selectedStudentIds.length === 0) {
+        alert('No hay estudiantes seleccionados para exportar.');
+        return;
+    }
+
+    const selectedStudents = (window.currentStudents || []).filter(s => selectedStudentIds.includes(s.id));
+    await downloadStudentsExcel(selectedStudents, 'estudiantes-seleccionados');
+}
+
+// Keep CSV as fallback or legacy if needed, but the user wants Excel
 function exportStudentsToCSV(students, filename) {
     const rows = [];
     rows.push(['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Edad', 'Situación Administrativa',
@@ -3837,10 +5534,116 @@ async function deleteQuickLink(linkId) {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         loadQuickLinks();
+        refreshQuickActions();
     } catch (error) {
         console.error('Error deleting link:', error);
     }
 }
+
+// ==================== EDIT PROMOTION ====================
+
+let _editPromotionModal = null;
+
+function openEditPromotionModal() {
+    const promotion = window.currentPromotion;
+    if (!promotion) {
+        alert('No se pudieron cargar los datos de la promoción.');
+        return;
+    }
+
+    // Pre-fill fields
+    const nameEl   = document.getElementById('edit-promotion-name');
+    const descEl   = document.getElementById('edit-promotion-desc');
+    const weeksEl  = document.getElementById('edit-promotion-weeks');
+    const startEl  = document.getElementById('edit-promotion-start');
+    const endEl    = document.getElementById('edit-promotion-end');
+    const alertEl  = document.getElementById('edit-promotion-alert');
+
+    if (nameEl)  nameEl.value  = promotion.name        || '';
+    if (descEl)  descEl.value  = promotion.description || '';
+    if (weeksEl) weeksEl.value = promotion.weeks       || '';
+
+    // Dates arrive as ISO strings — convert to YYYY-MM-DD for <input type="date">
+    if (startEl) startEl.value = promotion.startDate ? promotion.startDate.slice(0, 10) : '';
+    if (endEl)   endEl.value   = promotion.endDate   ? promotion.endDate.slice(0, 10)   : '';
+
+    if (alertEl) alertEl.classList.add('d-none');
+
+    if (!_editPromotionModal) {
+        const el = document.getElementById('editPromotionModal');
+        if (!el) return;
+        _editPromotionModal = new bootstrap.Modal(el);
+    }
+    _editPromotionModal.show();
+}
+
+async function saveEditPromotion(event) {
+    event.preventDefault();
+
+    const nameEl   = document.getElementById('edit-promotion-name');
+    const descEl   = document.getElementById('edit-promotion-desc');
+    const weeksEl  = document.getElementById('edit-promotion-weeks');
+    const startEl  = document.getElementById('edit-promotion-start');
+    const endEl    = document.getElementById('edit-promotion-end');
+    const alertEl  = document.getElementById('edit-promotion-alert');
+    const saveBtn  = document.getElementById('edit-promotion-save-btn');
+    const spinner  = saveBtn?.querySelector('.spinner-border');
+    const label    = saveBtn?.querySelector('.btn-label');
+
+    const payload = {
+        name:        nameEl?.value.trim(),
+        description: descEl?.value.trim(),
+        weeks:       parseInt(weeksEl?.value, 10) || undefined,
+        startDate:   startEl?.value || undefined,
+        endDate:     endEl?.value   || undefined,
+    };
+
+    if (!payload.name) {
+        if (alertEl) { alertEl.textContent = 'El nombre de la promoción es obligatorio.'; alertEl.classList.remove('d-none'); }
+        return;
+    }
+
+    // Show spinner
+    if (saveBtn) saveBtn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+    if (label)   label.classList.add('d-none');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `Error ${res.status}`);
+        }
+
+        if (_editPromotionModal) _editPromotionModal.hide();
+
+        // Reload promotion data to refresh header/progress bar
+        await loadPromotion();
+
+    } catch (err) {
+        console.error('Error updating promotion:', err);
+        if (alertEl) {
+            alertEl.textContent = err.message || 'Error al guardar los cambios.';
+            alertEl.classList.remove('d-none');
+        }
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+        if (label)   label.classList.remove('d-none');
+    }
+}
+
+// ==================== DELETE PROMOTION ====================
 
 function openDeletePromotionModal() {
     if (!deletePromotionModal) {
@@ -3904,13 +5707,10 @@ async function deleteSection(sectionId) {
 async function previewPromotion() {
     // Generate the same link as Access Settings
     const baseUrl = window.location.origin;
-    const isLiveServer = window.location.port === '5500' || window.location.hostname === '127.0.0.1';
     const isGitHubPages = window.location.hostname.includes('github.io');
 
     let path;
-    if (isLiveServer) {
-        path = '/public/public-promotion.html';
-    } else if (isGitHubPages) {
+    if (isGitHubPages) {
         const pathParts = window.location.pathname.split('/');
         const repoName = pathParts[1];
         path = `/${repoName}/public-promotion.html`;
@@ -3971,7 +5771,13 @@ async function displayCollaborators(collaborators) {
 
     if (!tbody && !listGroup) return;
 
-    const isOwner = window.currentPromotion && window.currentPromotion.teacherId === currentUser.id;
+    const userId = currentUser.id || currentUser._id;
+    const role = localStorage.getItem('role') || currentUser.userRole || currentUser.role;
+    const isAdmin = role === 'superadmin';
+    const isOwner = window.currentPromotion && window.currentPromotion.teacherId === userId;
+    const isCollab = window.currentPromotion && (window.currentPromotion.collaborators || []).includes(userId);
+    const canManage = isOwner || isCollab || isAdmin;
+
     const modules = window.promotionModules || [];
     const roleColors = { 'Formador/a': 'primary', 'CoFormador/a': 'success', 'Coordinador/a': 'warning' };
 
@@ -3994,11 +5800,11 @@ async function displayCollaborators(collaborators) {
                 const userRole = collab.userRole || 'Formador/a';
                 const badgeColor = roleColors[userRole] || 'secondary';
                 const ownerBadge = collab.isOwner ? '<span class="badge bg-dark ms-1">Owner</span>' : '';
-                const editModulesBtn = isOwner
-                    ? `<button class="btn btn-sm btn-outline-secondary me-1" onclick="openCollaboratorModulesModal('${collab.id}', '${escapeHtml(collab.name)}')" title="Editar módulos"><i class="bi bi-journal-bookmark"></i></button>`
+                const editModulesBtn = canManage
+                    ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="openCollaboratorModulesModal('${collab.id}')" title="Modificar"><i class="bi bi-pencil"></i></button>`
                     : '';
-                const removeBtn = (isOwner && !collab.isOwner)
-                    ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${collab.id}')" title="Remove collaborator"><i class="bi bi-person-dash"></i></button>`
+                const removeBtn = (canManage && !collab.isOwner)
+                    ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${collab.id}')" title="Quitar colaborador"><i class="bi bi-trash"></i></button>`
                     : '';
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -4006,7 +5812,7 @@ async function displayCollaborators(collaborators) {
                     <td><span class="badge bg-${badgeColor}">${escapeHtml(userRole)}</span></td>
                     <td>${escapeHtml(collab.email)}</td>
                     <td>${getModuleNames(collab.moduleIds)}</td>
-                    <td class="text-nowrap">${editModulesBtn}${removeBtn || (!isOwner ? '' : '')}</td>
+                    <td class="text-nowrap">${editModulesBtn}${removeBtn}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -4023,11 +5829,11 @@ async function displayCollaborators(collaborators) {
                 const userRole = teacher.userRole || 'Formador/a';
                 const badgeColor = roleColors[userRole] || 'secondary';
                 const ownerBadge = teacher.isOwner ? '<span class="badge bg-dark ms-2">Owner</span>' : '';
-                const editModulesBtn = isOwner
-                    ? `<button class="btn btn-sm btn-outline-secondary me-1" onclick="openCollaboratorModulesModal('${teacher.id}', '${escapeHtml(teacher.name)}')" title="Editar módulos"><i class="bi bi-journal-bookmark"></i></button>`
+                const editModulesBtn = canManage
+                    ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="openCollaboratorModulesModal('${teacher.id}')" title="Modificar"><i class="bi bi-pencil"></i></button>`
                     : '';
-                const deleteBtn = (isOwner && !teacher.isOwner)
-                    ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${teacher.id}')"><i class="bi bi-trash"></i></button>`
+                const deleteBtn = (canManage && !teacher.isOwner)
+                    ? `<button class="btn btn-sm btn-outline-danger" onclick="removeCollaborator('${teacher.id}')" title="Quitar colaborador"><i class="bi bi-trash"></i></button>`
                     : '';
                 const div = document.createElement('div');
                 div.className = 'list-group-item d-flex justify-content-between align-items-center';
@@ -4050,21 +5856,25 @@ let collaboratorModulesModal;
 let _currentCollabModulesId = null;
 let _currentCollabModulesList = [];
 
-function openCollaboratorModulesModal(collaboratorId, collaboratorName) {
+function openCollaboratorModulesModal(collaboratorId) {
     if (!collaboratorModulesModal) {
         collaboratorModulesModal = new bootstrap.Modal(document.getElementById('collaboratorModulesModal'));
     }
     _currentCollabModulesId = collaboratorId;
 
-    document.getElementById('collab-modules-name').textContent = collaboratorName;
+    const allCollabs = _currentCollabModulesList || [];
+    const entry = allCollabs.find(c => c.id === collaboratorId);
+    
+    // Populate header info (Read-only)
+    if (entry) {
+        document.getElementById('collab-name-display').textContent = entry.name || '';
+        document.getElementById('collab-email-display').textContent = entry.email || '';
+        document.getElementById('collab-role-display').textContent = entry.userRole || 'Colaborador';
+    }
 
     const modules = window.promotionModules || [];
     const checklist = document.getElementById('collab-modules-checklist');
     checklist.innerHTML = '';
-
-    // Find current module assignments for this person
-    const allCollabs = _currentCollabModulesList;
-    const entry = allCollabs.find(c => c.id === collaboratorId);
     const selected = entry ? (entry.moduleIds || []) : [];
 
     if (modules.length === 0) {
@@ -4098,12 +5908,48 @@ async function saveCollaboratorModules() {
         });
         if (response.ok) {
             collaboratorModulesModal.hide();
-            location.reload();
+
+            // Update local list for instant render
+            const collabEntry = (_currentCollabModulesList || []).find(c => c.id === _currentCollabModulesId);
+            if (collabEntry) {
+                collabEntry.moduleIds = moduleIds;
+            }
+            displayCollaborators(_currentCollabModulesList || []);
+
+            // Re-fetch everything to ensure perfect sync
+            await loadCollaborators();
+
+            // Update main promotion object to reflect new assigned modules in GANNT, etc.
+            const promoRes = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (promoRes.ok) {
+                const promo = await promoRes.json();
+                window.currentPromotion = promo;
+            }
+
+            // Sync with Team tab if this person is there
+            if (extendedInfoData && extendedInfoData.team) {
+                const modNames = [];
+                moduleIds.forEach(mid => {
+                    const found = (window.promotionModules || []).find(m => String(m.id) === String(mid));
+                    if (found) modNames.push(found.name);
+                });
+
+                extendedInfoData.team.forEach(m => {
+                    if (m.collaboratorId === _currentCollabModulesId) {
+                        m.moduleIds = moduleIds;
+                        m.moduleName = modNames.join(', ');
+                    }
+                });
+                displayTeam();
+            }
         } else {
             const data = await response.json();
             alert(data.error || 'Error guardando módulos');
         }
     } catch (error) {
+        console.error('Error in saveCollaboratorModules:', error);
         alert('Error de conexión');
     }
 }
@@ -4231,7 +6077,7 @@ async function addCollaboratorById() {
 }
 
 async function removeCollaborator(teacherId) {
-    if (!confirm('Are you sure you want to remove this collaborator?')) return;
+    if (!confirm('¿Estás seguro de que deseas quitar a este colaborador del programa?')) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -4241,21 +6087,28 @@ async function removeCollaborator(teacherId) {
         });
 
         if (response.ok) {
-            location.reload();
+            // Also remove from team list if present
+            const tIdx = (extendedInfoData.team || []).findIndex(m => m.collaboratorId === teacherId);
+            if (tIdx !== -1) {
+                extendedInfoData.team.splice(tIdx, 1);
+            }
+            // Better to reload or just refresh lists
+            await loadCollaborators();
+            displayTeam();
         } else {
             const data = await response.json();
-            alert(data.error || 'Failed to remove collaborator');
+            alert(data.error || 'No se pudo quitar al colaborador');
         }
     } catch (error) {
         console.error('Error removing collaborator:', error);
-        alert('Connection error');
+        alert('Error de conexión');
     }
 }
 
 // ==================== ACCESS SETTINGS ====================
 
 async function loadAccessPassword() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -4263,7 +6116,9 @@ async function loadAccessPassword() {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        if (response.ok) {
+        if (!response.ok) {
+            console.error('[loadAccessPassword] API error:', response.status, await response.text().catch(() => ''));
+        } else {
             const data = await response.json();
             const passwordInput = document.getElementById('access-password-input');
             const accessLinkInput = document.getElementById('student-access-link');
@@ -4275,23 +6130,19 @@ async function loadAccessPassword() {
             // Update the access link
             if (accessLinkInput) {
                 const baseUrl = window.location.origin;
-                // Detect different environments and adjust path accordingly
-                const isLiveServer = window.location.port === '5500' || window.location.hostname === '127.0.0.1';
                 const isGitHubPages = window.location.hostname.includes('github.io');
 
                 let path;
-                if (isLiveServer) {
-                    path = '/public/public-promotion.html';
-                } else if (isGitHubPages) {
-                    // GitHub Pages needs the repository name in the path
+                if (isGitHubPages) {
                     const pathParts = window.location.pathname.split('/');
-                    const repoName = pathParts[1]; // Extract repo name from current path
+                    const repoName = pathParts[1];
                     path = `/${repoName}/public-promotion.html`;
                 } else {
                     path = '/public-promotion.html';
                 }
 
-                accessLinkInput.value = `${baseUrl}${path}?id=${promotionId}`;
+                let url = `${baseUrl}${path}?id=${promotionId}`;
+                accessLinkInput.value = url;
             }
         }
     } catch (error) {
@@ -4300,14 +6151,20 @@ async function loadAccessPassword() {
 
     // Load teaching content
     loadTeachingContent();
+
+    // Load Asana workspace configuration
+    loadAsanaWorkspace();
 }
 
-async function updateAccessPassword() {
-    if (userRole !== 'teacher') return;
+async function updateAccessPassword(source = 'default') {
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
-    const passwordInput = document.getElementById('access-password-input');
-    const alertEl = document.getElementById('password-alert');
+
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const passwordInput = document.getElementById(`${prefix}access-password-input`);
+    const alertEl = document.getElementById(`${prefix}password-alert`);
     const password = passwordInput ? passwordInput.value.trim() : '';
 
     try {
@@ -4344,26 +6201,22 @@ async function updateAccessPassword() {
             }
 
             // Update the access link
-            const accessLinkInput = document.getElementById('student-access-link');
+            const accessLinkInput = document.getElementById(`${prefix}student-access-link`);
             if (accessLinkInput) {
                 const baseUrl = window.location.origin;
-                // Detect different environments and adjust path accordingly
-                const isLiveServer = window.location.port === '5500' || window.location.hostname === '127.0.0.1';
                 const isGitHubPages = window.location.hostname.includes('github.io');
 
                 let path;
-                if (isLiveServer) {
-                    path = '/public/public-promotion.html';
-                } else if (isGitHubPages) {
-                    // GitHub Pages needs the repository name in the path
+                if (isGitHubPages) {
                     const pathParts = window.location.pathname.split('/');
-                    const repoName = pathParts[1]; // Extract repo name from current path
+                    const repoName = pathParts[1];
                     path = `/${repoName}/public-promotion.html`;
                 } else {
                     path = '/public-promotion.html';
                 }
 
-                accessLinkInput.value = `${baseUrl}${path}?id=${promotionId}`;
+                let url = `${baseUrl}${path}?id=${promotionId}`;
+                accessLinkInput.value = url;
             }
         } else {
             const data = await response.json();
@@ -4383,12 +6236,13 @@ async function updateAccessPassword() {
     }
 }
 
-function copyAccessLink() {
-    const accessLinkInput = document.getElementById('student-access-link');
+function copyAccessLink(source = 'default') {
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const accessLinkInput = document.getElementById(`${prefix}student-access-link`);
     if (accessLinkInput && accessLinkInput.value) {
         navigator.clipboard.writeText(accessLinkInput.value).then(() => {
             // Show success feedback
-            const copyBtn = document.querySelector('[onclick="copyAccessLink()"]');
+            const copyBtn = event.currentTarget;
             if (copyBtn) {
                 const originalText = copyBtn.innerHTML;
                 copyBtn.innerHTML = '<i class="bi bi-check me-2"></i>Copied!';
@@ -4419,7 +6273,7 @@ function copyAccessLink() {
 // ==================== TEACHING CONTENT FUNCTIONS ====================
 
 async function loadTeachingContent() {
-    if (userRole !== 'teacher') return;
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -4427,6 +6281,10 @@ async function loadTeachingContent() {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
+        if (!response.ok) {
+            console.error('[loadTeachingContent] API error:', response.status, await response.text().catch(() => ''));
+            return;
+        }
         if (response.ok) {
             const data = await response.json();
             const urlInput = document.getElementById('teaching-content-url');
@@ -4476,12 +6334,15 @@ async function loadTeachingContent() {
     }
 }
 
-async function updateTeachingContent() {
-    if (userRole !== 'teacher') return;
+async function updateTeachingContent(source = 'default') {
+    if (!isTeacherOrAdmin()) return;
 
     const token = localStorage.getItem('token');
-    const urlInput = document.getElementById('teaching-content-url');
-    const alertEl = document.getElementById('teaching-content-alert');
+
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const urlInput = document.getElementById(`${prefix}teaching-content-url`);
+    const alertEl = document.getElementById(`${prefix}teaching-content-alert`);
     const url = urlInput ? urlInput.value.trim() : '';
 
     if (!url) {
@@ -4515,7 +6376,11 @@ async function updateTeachingContent() {
             }
 
             // Update the preview button
-            loadTeachingContent();
+            if (source === 'teacher-area') {
+                await _loadTeachingContentInTeacherArea();
+            } else {
+                loadTeachingContent();
+            }
         } else {
             const data = await response.json();
             if (alertEl) {
@@ -4534,8 +6399,8 @@ async function updateTeachingContent() {
     }
 }
 
-async function removeTeachingContent() {
-    if (userRole !== 'teacher') return;
+async function removeTeachingContent(source = 'default') {
+    if (!isTeacherOrAdmin()) return;
 
     if (!confirm('Are you sure you want to remove the teaching content link?')) {
         return;
@@ -4549,7 +6414,8 @@ async function removeTeachingContent() {
         });
 
         if (response.ok) {
-            const alertEl = document.getElementById('teaching-content-alert');
+            const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+            const alertEl = document.getElementById(`${prefix}teaching-content-alert`);
             if (alertEl) {
                 alertEl.className = 'alert alert-success';
                 alertEl.textContent = 'Teaching content link removed successfully!';
@@ -4561,7 +6427,11 @@ async function removeTeachingContent() {
             }
 
             // Update the UI
-            loadTeachingContent();
+            if (source === 'teacher-area') {
+                await _loadTeachingContentInTeacherArea();
+            } else {
+                loadTeachingContent();
+            }
         } else {
             const data = await response.json();
             alert(data.error || 'Error removing teaching content');
@@ -4572,24 +6442,233 @@ async function removeTeachingContent() {
     }
 }
 
+// ==================== ASANA WORKSPACE ACCESS ====================
+// Configuration for Asana workspace URL - follows the same pattern as Teaching Content
+// Allows instructors to store and access their Asana workspace link
+
+async function loadAsanaWorkspace() {
+    if (!isTeacherOrAdmin()) return;
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-workspace`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            console.error('[loadAsanaWorkspace] API error:', response.status, await response.text().catch(() => ''));
+            return;
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            const urlInput = document.getElementById('asana-workspace-url');
+            const previewBtn = document.getElementById('asana-workspace-preview-btn');
+            const noAsanaMsg = document.getElementById('no-asana-message');
+            const removeBtn = document.getElementById('remove-asana-btn');
+
+            if (data.asanaWorkspaceUrl) {
+                if (urlInput) {
+                    urlInput.value = data.asanaWorkspaceUrl;
+                }
+                if (previewBtn) {
+                    previewBtn.href = data.asanaWorkspaceUrl;
+                    previewBtn.classList.remove('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'none';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'inline-block';
+                }
+            } else {
+                if (previewBtn) {
+                    previewBtn.classList.add('hidden');
+                }
+                if (noAsanaMsg) {
+                    noAsanaMsg.style.display = 'block';
+                }
+                if (removeBtn) {
+                    removeBtn.style.display = 'none';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading Asana workspace:', error);
+    }
+}
+
+// Save or update the Asana workspace URL
+async function updateAsanaWorkspace(source = 'default') {
+    if (!isTeacherOrAdmin()) return;
+
+    const token = localStorage.getItem('token');
+
+    // Determine which input fields to use based on source
+    const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+    const urlInput = document.getElementById(`${prefix}asana-workspace-url`);
+    const alertEl = document.getElementById(`${prefix}asana-workspace-alert`);
+    const url = urlInput ? urlInput.value.trim() : '';
+
+    if (!url) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-warning';
+            alertEl.textContent = 'Por favor, ingresa una URL para el espacio de trabajo de Asana';
+            alertEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    // Basic URL validation
+    if (!url.includes('asana.com') && !url.includes('app.asana')) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-warning';
+            alertEl.textContent = 'La URL debe ser un enlace válido de Asana (asana.com)';
+            alertEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-workspace`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ asanaWorkspaceUrl: url })
+        });
+
+        if (response.ok) {
+            if (alertEl) {
+                alertEl.className = 'alert alert-success';
+                alertEl.textContent = '¡Enlace de Asana guardado exitosamente! Los estudiantes podrán acceder al espacio de trabajo.';
+                alertEl.classList.remove('hidden');
+
+                setTimeout(() => {
+                    alertEl.classList.add('hidden');
+                }, 5000);
+            }
+
+            // Update the preview button and UI
+            if (source === 'teacher-area') {
+                await _loadAsanaWorkspaceInTeacherArea();
+            } else {
+                loadAsanaWorkspace();
+            }
+        } else {
+            const data = await response.json();
+            if (alertEl) {
+                alertEl.className = 'alert alert-danger';
+                alertEl.textContent = data.error || 'Error al guardar el enlace de Asana';
+                alertEl.classList.remove('hidden');
+            }
+        }
+    } catch (error) {
+        console.error('Error updating Asana workspace:', error);
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = 'Error de conexión. Por favor, intenta de nuevo.';
+            alertEl.classList.remove('hidden');
+        }
+    }
+}
+
+// Remove the Asana workspace URL configuration
+async function removeAsanaWorkspace(source = 'default') {
+    if (!isTeacherOrAdmin()) return;
+
+    if (!confirm('¿Estás seguro de que deseas eliminar el enlace de Asana?')) {
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    try {
+        const response = await fetch(`${API_URL}/api/promotions/${promotionId}/asana-workspace`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const prefix = source === 'teacher-area' ? 'teacher-area-' : '';
+            const alertEl = document.getElementById(`${prefix}asana-workspace-alert`);
+            if (alertEl) {
+                alertEl.className = 'alert alert-success';
+                alertEl.textContent = '¡Enlace de Asana eliminado exitosamente!';
+                alertEl.classList.remove('hidden');
+
+                setTimeout(() => {
+                    alertEl.classList.add('hidden');
+                }, 5000);
+            }
+
+            // Update the UI
+            if (source === 'teacher-area') {
+                await _loadAsanaWorkspaceInTeacherArea();
+            } else {
+                loadAsanaWorkspace();
+            }
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Error al eliminar el enlace de Asana');
+        }
+    } catch (error) {
+        console.error('Error removing Asana workspace:', error);
+        alert('Error de conexión. Por favor, intenta de nuevo.');
+    }
+}
+
 // ==================== STUDENT SELECTION FUNCTIONS ====================
+
+// ── Bulk Reports ──────────────────────────────────────────────────────────
+function generateSelectedStudentsPDF() {
+    const selectedCheckboxes = document.querySelectorAll('.student-checkbox:checked');
+    const selectedStudentIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.studentId);
+
+    if (selectedStudentIds.length === 0) {
+        alert('Por favor, selecciona al menos un estudiante para generar los informes.');
+        return;
+    }
+
+    if (window.Reports && window.Reports.printBulkTechnical) {
+        window.Reports.printBulkTechnical(selectedStudentIds, promotionId);
+    } else {
+        console.error('Reports library not loaded');
+        alert('La librería de informes no está cargada. Por favor, recarga la página.');
+    }
+}
 
 function filterStudentsTable(query) {
     const q = (query || '').toLowerCase().trim();
     const rows = document.querySelectorAll('#students-list tr');
+    let separatorRow = null;
+    let visibleAfterSeparator = 0;
+
     rows.forEach(row => {
-        // Skip separator rows (colspan rows)
+        // Identify the withdrawn separator row (has a td with colspan)
         if (row.querySelector('td[colspan]')) {
-            row.style.display = '';
-            return;
+            separatorRow = row;
+            visibleAfterSeparator = 0;
+            return; // decide visibility later
         }
         if (!q) {
             row.style.display = '';
+            if (separatorRow) separatorRow.style.display = '';
             return;
         }
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? '' : 'none';
+        const visible = text.includes(q);
+        row.style.display = visible ? '' : 'none';
+        if (visible && separatorRow && row.style.display !== 'none') visibleAfterSeparator++;
     });
+
+    // Hide separator if no withdrawn rows are visible
+    if (separatorRow && q) {
+        separatorRow.style.display = visibleAfterSeparator > 0 ? '' : 'none';
+    }
 }
 
 function updateSelectionState() {
@@ -4600,6 +6679,10 @@ function updateSelectionState() {
     const selectionControls = document.getElementById('selection-controls');
     const exportSelectedBtn = document.getElementById('export-selected-btn');
     const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    const exportAllBtn = document.getElementById('export-all-students-btn');
+    const importExcelBtn = document.getElementById('import-students-excel-btn');
+    const templateExcelBtn = document.getElementById('download-students-template-btn');
+    const createStudentBtn = document.getElementById('create-student-btn');
 
     const selectedCheckboxes = document.querySelectorAll('.student-checkbox:checked');
     const selectedCount = selectedCheckboxes.length;
@@ -4644,7 +6727,31 @@ function updateSelectionState() {
     const bulkReportsDropdown = document.getElementById('bulk-reports-dropdown');
     if (bulkReportsDropdown) {
         bulkReportsDropdown.style.display = selectedCount > 0 ? 'inline-block' : 'none';
+
+        // Always populate the dropdown menu when it's displayed to ensure correct handlers
+        const dropdownMenu = bulkReportsDropdown.querySelector('.dropdown-menu');
+        if (dropdownMenu) {
+            dropdownMenu.innerHTML = `
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportTechnical) { window._bulkReportTechnical() } else { console.error('_bulkReportTechnical not found') }">
+                    <i class="bi bi-file-earmark-person me-2"></i>Seguimiento Técnico
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportTransversal) { window._bulkReportTransversal() } else { console.error('_bulkReportTransversal not found') }">
+                    <i class="bi bi-file-earmark-check me-2"></i>Evaluación Transversal
+                </a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); if(window._bulkReportByProject) { window._bulkReportByProject() } else { console.error('_bulkReportByProject not found') }">
+                    <i class="bi bi-folder me-2"></i>Informes por Proyecto
+                </a></li>
+            `;
+        }
     }
+
+    // Toggle base action buttons (no selection vs with selection)
+    const baseDisplay = selectedCount > 0 ? 'none' : '';
+    if (exportAllBtn) exportAllBtn.style.display = baseDisplay;
+    if (importExcelBtn) importExcelBtn.style.display = baseDisplay;
+    if (templateExcelBtn) templateExcelBtn.style.display = baseDisplay;
+    if (createStudentBtn) createStudentBtn.style.display = baseDisplay;
 }
 
 function toggleAllStudents(source) {
@@ -4667,24 +6774,7 @@ function toggleAllStudents(source) {
 
 // Export selected students to CSV
 function exportSelectedStudentsCsv() {
-    const selectedCheckboxes = document.querySelectorAll('.student-checkbox:checked');
-    const selectedStudentIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.studentId);
-
-    if (selectedStudentIds.length === 0) {
-        alert('No students selected for export.');
-        return;
-    }
-
-    const selectedStudents = window.currentStudents?.filter(student =>
-        selectedStudentIds.includes(student.id)
-    ) || [];
-
-    if (selectedStudents.length === 0) {
-        alert('Selected students not found.');
-        return;
-    }
-
-    exportStudentsToCSV(selectedStudents, `selected-students-promotion-${promotionId}.csv`);
+    exportSelectedStudentsExcel();
 }
 
 // ── Bulk PDF Report helpers ───────────────────────────────────────────────────
@@ -4693,19 +6783,36 @@ function _getSelectedStudentIds() {
         .map(cb => cb.dataset.studentId);
 }
 
-function _bulkReportTechnical() {
+window._bulkReportTechnical = function () {
+    console.log('[Reports] _bulkReportTechnical triggered');
     const ids = _getSelectedStudentIds();
-    if (!ids.length) { alert('Selecciona al menos un estudiante.'); return; }
-    window.Reports?.printBulkTechnical(ids, promotionId);
+    console.log('[Reports] Selected student IDs:', ids);
+    if (!ids.length) {
+        alert('Selecciona al menos un estudiante.');
+        return;
+    }
+    if (!window.Reports) {
+        console.error('[Reports] window.Reports library is not defined!');
+        alert('La librería de informes no está disponible. Por favor, recarga la página.');
+        return;
+    }
+    window.Reports.printBulkTechnical(ids, promotionId);
 }
 
-function _bulkReportTransversal() {
+window._bulkReportTransversal = function () {
+    console.log('[Reports] _bulkReportTransversal triggered');
     const ids = _getSelectedStudentIds();
     if (!ids.length) { alert('Selecciona al menos un estudiante.'); return; }
-    window.Reports?.printBulkTransversal(ids, promotionId);
+    if (!window.Reports) {
+        alert('La librería de informes no está disponible.');
+        return;
+    }
+    window.Reports.printBulkTransversal(ids, promotionId);
 }
 
-async function _bulkReportByProject() {
+window._bulkReportByProject = async function () {
+    // ... rest of the function remains the same but attached to window
+    // I'll just change the start of the function in SearchReplace
     // Remove any existing modal
     document.getElementById('_project-picker-modal')?.remove();
 
@@ -4784,13 +6891,13 @@ async function _bulkReportByProject() {
                     </div>
                     <div id="_proj-preview" style="min-height:28px;margin-bottom:16px;font-size:12px;color:#4A4A6A;">
                         ${selectedIds.length
-                            ? `<span style="background:#fff8f0;color:#FF6B35;border-radius:6px;padding:4px 10px;display:inline-block;">
+                ? `<span style="background:#fff8f0;color:#FF6B35;border-radius:6px;padding:4px 10px;display:inline-block;">
                                 Se generará un PDF por cada uno de los <strong>${selectedIds.length}</strong> coders seleccionados
                               </span>`
-                            : `<span style="background:#fff3cd;color:#856404;border-radius:6px;padding:4px 10px;display:inline-block;">
+                : `<span style="background:#fff3cd;color:#856404;border-radius:6px;padding:4px 10px;display:inline-block;">
                                 ⚠ No hay coders seleccionados. Se procesarán todos los de la promoción.
                               </span>`
-                        }
+            }
                     </div>
                     <div style="display:flex;gap:10px;justify-content:flex-end;">
                         <button onclick="document.getElementById('_project-picker-modal').remove()"
@@ -4909,7 +7016,7 @@ async function loadAttendance() {
                     const { holidays } = await holRes.json();
                     promotionHolidays = new Set(holidays || []);
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         renderAttendanceTable();
@@ -4999,11 +7106,11 @@ function renderAttendanceTable() {
         }
 
         const tr = document.createElement('tr');
-        if (student.isWithdrawn) tr.classList.add('table-secondary', 'opacity-75');
+        if (student.isWithdrawn) tr.classList.add('student-row-withdrawn');
 
         // Name column
         const nameTd = document.createElement('td');
-        nameTd.className = `sticky-column student-name-cell ${student.isWithdrawn ? 'bg-light' : 'bg-white'}`;
+        nameTd.className = `sticky-column student-name-cell ${student.isWithdrawn ? 'student-name-cell-withdrawn' : 'bg-white'}`;
         if (student.isWithdrawn) {
             const withdrawalDateStr = student.withdrawal?.date
                 ? new Date(student.withdrawal.date).toLocaleDateString('es-ES')
@@ -5030,7 +7137,7 @@ function renderAttendanceTable() {
             // Block attendance cells on/after withdrawal date for withdrawn students
             const isWithdrawnDay = student.isWithdrawn &&
                 student.withdrawal?.date &&
-                dateKey >= student.withdrawal.date.split('T')[0];
+                (dateKey >= student.withdrawal.date.split('T')[0]);
 
             const td = document.createElement('td');
 
@@ -5112,11 +7219,12 @@ async function toggleHoliday(dateKey) {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ holidays: [...promotionHolidays] })
         });
-    } catch (_) {}
+    } catch (_) { }
     renderAttendanceTable();
 }
 
-function updateAttendanceStats() {    const totalDays = studentsForAttendance.length * new Date(
+function updateAttendanceStats() {
+    const totalDays = studentsForAttendance.length * new Date(
         ...currentAttendanceMonth.split('-').map(Number), 0
     ).getDate();
 
@@ -5359,21 +7467,21 @@ async function exportStudentAttendancePdf(mode) {
     const student = studentsForAttendance.find(s => s.id === studentId);
     if (!student) return;
 
-    const MONTH_NAMES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                            'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const MONTH_NAMES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const STATUS_LABELS = {
-        'Presente':    'Presente',
-        'Ausente':     'Ausente',
+        'Presente': 'Presente',
+        'Ausente': 'Ausente',
         'Con retraso': 'Con retraso',
         'Justificado': 'Justificado',
-        'Sale antes':  'Sale antes'
+        'Sale antes': 'Sale antes'
     };
     const STATUS_COLORS = {
-        'Presente':    [154, 246, 194],   // --green-f5
-        'Ausente':     [255, 71, 0],      // --principal-1
+        'Presente': [154, 246, 194],   // --green-f5
+        'Ausente': [255, 71, 0],      // --principal-1
         'Con retraso': [255, 163, 127],   // --complementario-2
         'Justificado': [192, 246, 248],   // --blue-light-f5
-        'Sale antes':  [233, 216, 253]    // purple pastel
+        'Sale antes': [233, 216, 253]    // purple pastel
     };
 
     // ── 1. Recopilar registros ───────────────────────────────────────────────
@@ -5401,11 +7509,11 @@ async function exportStudentAttendancePdf(mode) {
 
             // Build list of YYYY-MM from promotion start to end (or ±12 months fallback)
             const start = promo.startDate ? new Date(promo.startDate) : new Date(new Date().getFullYear(), 0, 1);
-            const end   = promo.endDate   ? new Date(promo.endDate)   : new Date();
+            const end = promo.endDate ? new Date(promo.endDate) : new Date();
             const months = [];
             const cur = new Date(start.getFullYear(), start.getMonth(), 1);
             while (cur <= end) {
-                months.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`);
+                months.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`);
                 cur.setMonth(cur.getMonth() + 1);
             }
             if (!months.length) months.push(currentAttendanceMonth);
@@ -5434,12 +7542,12 @@ async function exportStudentAttendancePdf(mode) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-    const ORANGE  = [255, 107, 53];   // #FF6B35
-    const DARK    = [2, 1, 0];
+    const ORANGE = [255, 107, 53];   // #FF6B35
+    const DARK = [2, 1, 0];
     const LIGHT_BG = [245, 242, 242]; // complementario-1-extra-light approx
-    const PAGE_W  = 210;
-    const MARGIN  = 14;
-    const COL_W   = PAGE_W - MARGIN * 2;
+    const PAGE_W = 210;
+    const MARGIN = 14;
+    const COL_W = PAGE_W - MARGIN * 2;
 
     // ── Header ───────────────────────────────────────────────────────────────
     doc.setFillColor(...ORANGE);
@@ -5453,19 +7561,19 @@ async function exportStudentAttendancePdf(mode) {
     doc.text(studentFullName(student), MARGIN, 17);
 
     const scope = mode === 'month'
-        ? (() => { const [y,m] = currentAttendanceMonth.split('-'); return `${MONTH_NAMES_ES[parseInt(m)-1]} ${y}`; })()
+        ? (() => { const [y, m] = currentAttendanceMonth.split('-'); return `${MONTH_NAMES_ES[parseInt(m) - 1]} ${y}`; })()
         : 'Todos los meses';
     doc.text(scope, PAGE_W - MARGIN, 17, { align: 'right' });
 
     // ── Global totals (used in header summary + final summary) ───────────────
     let y = 30;
-    const globalCounts = { 'Presente':0,'Ausente':0,'Con retraso':0,'Justificado':0,'Sale antes':0 };
+    const globalCounts = { 'Presente': 0, 'Ausente': 0, 'Con retraso': 0, 'Justificado': 0, 'Sale antes': 0 };
     records.forEach(r => { if (globalCounts[r.status] !== undefined) globalCounts[r.status]++; });
-    const totalRecords  = records.length;
+    const totalRecords = records.length;
     const totalAttended = globalCounts['Presente'] + globalCounts['Con retraso'] + globalCounts['Justificado'] + globalCounts['Sale antes'];
-    const totalAbsent   = globalCounts['Ausente'];
-    const globalPct     = totalRecords > 0 ? Math.round((totalAttended / totalRecords) * 100) : 0;
-    const absentPct     = totalRecords > 0 ? Math.round((totalAbsent   / totalRecords) * 100) : 0;
+    const totalAbsent = globalCounts['Ausente'];
+    const globalPct = totalRecords > 0 ? Math.round((totalAttended / totalRecords) * 100) : 0;
+    const absentPct = totalRecords > 0 ? Math.round((totalAbsent / totalRecords) * 100) : 0;
 
     // ── Table — group by month ───────────────────────────────────────────────
     const byMonth = {};
@@ -5488,7 +7596,7 @@ async function exportStudentAttendancePdf(mode) {
 
     Object.entries(byMonth).forEach(([mo, recs]) => {
         const [my, mm] = mo.split('-');
-        const monthLabel = `${MONTH_NAMES_ES[parseInt(mm)-1]} ${my}`;
+        const monthLabel = `${MONTH_NAMES_ES[parseInt(mm) - 1]} ${my}`;
 
         ensureSpace(ROW_H + recs.length * ROW_H + 4);
 
@@ -5500,7 +7608,7 @@ async function exportStudentAttendancePdf(mode) {
         doc.setFont('helvetica', 'bold');
         doc.text(monthLabel, MARGIN + 2, y + 5);
         const monthAttended = recs.filter(r => r.status === 'Presente' || r.status === 'Con retraso' || r.status === 'Justificado' || r.status === 'Sale antes').length;
-        const monthAbsent   = recs.filter(r => r.status === 'Ausente').length;
+        const monthAbsent = recs.filter(r => r.status === 'Ausente').length;
         const monthPct = recs.length > 0 ? Math.round((monthAttended / recs.length) * 100) : 0;
         doc.text(`${monthAttended} asistidos · ${monthAbsent} faltas · ${monthPct}%`, PAGE_W - MARGIN - 2, y + 5, { align: 'right' });
         y += ROW_H;
@@ -5519,7 +7627,7 @@ async function exportStudentAttendancePdf(mode) {
         // Data rows
         recs.forEach((r, idx) => {
             ensureSpace(ROW_H);
-            const rowBg = idx % 2 === 0 ? [255,255,255] : [250, 249, 248];
+            const rowBg = idx % 2 === 0 ? [255, 255, 255] : [250, 249, 248];
             doc.setFillColor(...rowBg);
             doc.rect(MARGIN, y, COL_W, ROW_H, 'F');
 
@@ -5622,11 +7730,11 @@ async function exportStudentAttendancePdf(mode) {
 
         // ── Detail row: one cell per status with count + % ───────────────────
         const allStatuses = [
-            { label: 'Presente',     count: globalCounts['Presente'],     color: [40, 140, 80]   },
-            { label: 'Con retraso',  count: globalCounts['Con retraso'],  color: [220, 100, 20]  },
-            { label: 'Justificado',  count: globalCounts['Justificado'],  color: [20, 120, 160]  },
-            { label: 'Sale antes',   count: globalCounts['Sale antes'],   color: [100, 50, 180]  },
-            { label: 'Ausente',      count: globalCounts['Ausente'],      color: [200, 50, 10]   }
+            { label: 'Presente', count: globalCounts['Presente'], color: [40, 140, 80] },
+            { label: 'Con retraso', count: globalCounts['Con retraso'], color: [220, 100, 20] },
+            { label: 'Justificado', count: globalCounts['Justificado'], color: [20, 120, 160] },
+            { label: 'Sale antes', count: globalCounts['Sale antes'], color: [100, 50, 180] },
+            { label: 'Ausente', count: globalCounts['Ausente'], color: [200, 50, 10] }
         ];
         const detailRowH = 13;
         doc.setFillColor(255, 255, 255);
@@ -5736,7 +7844,7 @@ async function exportAttendanceToExcel() {
         // Get promotion data to show user what period will be exported
         const promotionData = window.currentPromotion;
         let confirmMessage = 'Se exportará la asistencia completa del programa';
-        
+
         if (promotionData && promotionData.startDate && promotionData.endDate) {
             confirmMessage = `Se exportará la asistencia desde ${promotionData.startDate} hasta ${promotionData.endDate} (solo días laborables L-V).\n\nEl archivo Excel tendrá una pestaña por cada mes con datos de asistencia.\n\n¿Desea continuar?`;
         } else {
@@ -5773,14 +7881,14 @@ async function exportAttendanceToExcel() {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        
+
         // Extract filename from response header or use default
         const disposition = response.headers.get('Content-Disposition');
         let filename = 'asistencia-completa.xlsx';
         if (disposition && disposition.includes('filename=')) {
             filename = disposition.split('filename=')[1].replace(/"/g, '');
         }
-        
+
         a.download = filename;
         document.body.appendChild(a);
         a.click();
@@ -5820,11 +7928,14 @@ function updateProgramDetailsSubtitle(sectionName) {
  */
 function switchProgramDetailsTab(tabName) {
     const tabNameMap = {
-        'schedule': { tabId: 'program-details-schedule', buttonId: 'program-details-schedule-tab', label: 'Schedule' },
+        'roadmap': { tabId: 'program-details-roadmap', buttonId: 'program-details-roadmap-tab', label: 'Roadmap' },
+        'calendar': { tabId: 'program-details-calendar', buttonId: 'program-details-calendar-tab', label: 'Calendario' },
+        'schedule': { tabId: 'program-details-schedule', buttonId: 'program-details-schedule-tab', label: 'Horario' },
         'team': { tabId: 'program-details-team', buttonId: 'program-details-team-tab', label: 'Team' },
         'resources': { tabId: 'program-details-resources', buttonId: 'program-details-resources-tab', label: 'Resources' },
         'pildoras': { tabId: 'program-details-pildoras', buttonId: 'program-details-pildoras-tab', label: 'Píldoras' },
         'evaluation': { tabId: 'program-details-evaluation', buttonId: 'program-details-evaluation-tab', label: 'Evaluation' },
+        'virtual-classroom': { tabId: 'program-details-virtual-classroom', buttonId: 'program-details-virtual-classroom-tab', label: 'Aula Virtual' },
         'quicklinks': { tabId: 'program-details-quicklinks', buttonId: 'program-details-quicklinks-tab', label: 'Quick Links' },
         'sections': { tabId: 'program-details-sections', buttonId: 'program-details-sections-tab', label: 'Sections' },
         'competences': { tabId: 'program-details-competences', buttonId: 'program-details-competences-tab', label: 'Competencias' }
@@ -5863,6 +7974,20 @@ function switchProgramDetailsTab(tabName) {
         selectedButton.setAttribute('aria-selected', 'true');
     }
 
+    // Lazy-load data for roadmap, calendar and aula virtual sub-tabs
+    if (tabName === 'roadmap') loadModules();
+    if (tabName === 'calendar') loadCalendar();
+    if (tabName === 'virtual-classroom') {
+        // Aseguramos que el estado de evaluación (proyectos + competences) esté cargado
+        if (!window._evalState || !(window._evalState.modules || []).length) {
+            loadEvaluation();
+        } else {
+            const extInfo = (typeof extendedInfoData !== 'undefined') ? extendedInfoData : (window.publicPromotionExtendedInfo || {});
+            const promoData = (window.currentPromotion || window.publicPromotionData || {});
+            initVirtualClassroomPanel(extInfo, promoData);
+        }
+    }
+
     // Update subtitle
     updateProgramDetailsSubtitle(tab.label);
 }
@@ -5875,8 +8000,11 @@ function switchProgramDetailsTab(tabName) {
 window._evalState = {
     modules: [],
     competences: [],
+    catalog: [],
     students: [],
     savedEvaluations: [],
+    projectCompetences: [],
+    virtualClassroom: null,
     currentModuleIdx: null,
     currentProjectIdx: null
 };
@@ -5901,10 +8029,25 @@ async function loadEvaluation() {
 
         const promo = promoRes.ok ? await promoRes.json() : {};
         const ext = extRes.ok ? await extRes.json() : {};
+        console.log('[DEBUG] Full ext data:', ext);
         const studentsData = studentsRes.ok ? await studentsRes.json() : [];
         const catalogRaw = catalogRes.ok ? await catalogRes.json() : [];
 
-        // Normalize the full catalog: id, name, area, description, levels, allTools
+        console.log('✅ [VERIFICATION] Competences received from API https://evaluation.coderf5.es/v1/competences');
+        // DEBUG: log first catalog entry to verify structure
+        if (catalogRaw.length > 0) {
+            console.log('[Eval] catalogRaw.length:', catalogRaw.length, 'competences');
+            console.log('[Eval] catalogRaw[0].id:', catalogRaw[0].id);
+            console.log('[Eval] catalogRaw[0].name:', catalogRaw[0].name);
+            console.log('[Eval] catalogRaw[0].areas:', JSON.stringify(catalogRaw[0].areas));
+            console.log('😎 [Eval] catalogRaw[0].tools count:', (catalogRaw[0].tools || []).length, '(from API)');
+            if (catalogRaw[0].tools && catalogRaw[0].tools[0]) {
+                console.log('[Eval] catalogRaw[0].tools[0]:', JSON.stringify(catalogRaw[0].tools[0], null, 2).substring(0, 300));
+            }
+            console.log('[Eval] catalogRaw[0].indicators (COMPETENCE INDICATORS):', JSON.stringify(catalogRaw[0].indicators, null, 2));
+        }
+
+        // Normalize the full catalog: id, name, area, description, levels, allTools, toolsWithIndicators, competenceIndicators
         const catalog = catalogRaw.map(comp => ({
             id: comp.id,
             name: comp.name,
@@ -5915,8 +8058,27 @@ async function loadEvaluation() {
                 description: l.levelName || `Nivel ${l.levelId}`,
                 indicators: (l.indicators || []).map(i => i.name || i)
             })),
-            allTools: (comp.tools || []).map(t => t.name || t)
+            allTools: (comp.tools || []).map(t => t.name || t),
+            // Full tool objects with their indicators (for indicator-based evaluation)
+            toolsWithIndicators: (comp.tools || []).map(t => ({
+                id: t.id,
+                name: t.name || '',
+                description: t.description || '',
+                indicators: (t.indicators || []).map(ind => ({
+                    id: ind.id,
+                    name: ind.name || '',
+                    description: ind.description || '',
+                    levelId: ind.levelId || 1
+                }))
+            })),
+            // General competence indicators grouped by level
+            competenceIndicators: {
+                initial: (comp.indicators?.initial || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 1 })),
+                medio: (comp.indicators?.medio || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 2 })),
+                advance: (comp.indicators?.advance || []).map(ind => ({ id: ind.id, name: ind.name || '', description: ind.description || '', levelId: 3 }))
+            }
         }));
+
 
         // Merge program competences (from ext) with full catalog data so description/levels/tools are available
         const extComps = ext.competences || window._extendedInfoCompetences || [];
@@ -5929,15 +8091,24 @@ async function loadEvaluation() {
                 startModule: ec.startModule || null
             };
         });
+
+        // console.log(`🎈 ${(let i = 0; i < catalog.length; i++) catalog[i].name}`)
         // Also keep catalog entries that might be referenced by project competenceIds but not in extComps
         const extIds = new Set(extComps.map(c => String(c.id)));
         catalog.forEach(c => { if (!extIds.has(String(c.id))) enrichedCompetences.push(c); });
 
         window._evalState.modules = promo.modules || [];
+        window._evalState.programCompetences = enrichedCompetences.filter(c => extIds.has(String(c.id)));
         window._evalState.competences = enrichedCompetences;
+        window._evalState.catalog = catalog;  // full catalog for competence picker
+        window._evalState.allStudents = studentsData;
         window._evalState.students = studentsData.filter(s => !s.isWithdrawn);
         window._evalState.savedEvaluations = ext.projectEvaluations || [];
+        console.log('[DEBUG] Loaded evaluations:', window._evalState.savedEvaluations);
+        window._evalState.projectCompetences = ext.projectCompetences || []; // per-project competence definitions
+        window._evalState.virtualClassroom = ext.virtualClassroom || null;
 
+        initVirtualClassroomPanel(ext, promo);
         renderEvaluationTab();
     } catch (err) {
         console.error('Error loading evaluation data:', err);
@@ -5946,6 +8117,335 @@ async function loadEvaluation() {
         }
     }
 }
+
+// ==================== AULA VIRTUAL – PANEL PROFESOR ====================
+
+function initVirtualClassroomPanel(ext, promo) {
+    const panel = document.getElementById('virtual-classroom-panel');
+    if (!panel) return;
+
+    const selectEl = document.getElementById('vc-project-select');
+    const repoBaseEl = document.getElementById('vc-repo-base');
+    const briefingEl = document.getElementById('vc-briefing-url');
+    const statusBadge = document.getElementById('vc-status-badge');
+    const deactivateBtn = document.getElementById('vc-deactivate-btn');
+    const activateBtn = document.getElementById('vc-activate-btn');
+    const competencesList = document.getElementById('vc-competences-list');
+    const competencesCount = document.getElementById('vc-competences-count');
+
+    if (!selectEl || !repoBaseEl || !briefingEl || !statusBadge || !deactivateBtn || !activateBtn) return;
+
+    const modules = promo.modules || [];
+    const projectCompetences = window._evalState.projectCompetences || [];
+
+    // Map rápido de módulo por id para obtener el nombre de módulo
+    const moduleById = {};
+    modules.forEach((m, idx) => {
+        const id = m.id || String(idx);
+        moduleById[id] = m;
+    });
+
+    // Populate project selector SOLO con los proyectos definidos en Evaluación (projectCompetences)
+    const prevValue = selectEl.value;
+    let optionsHtml = '<option value="">Selecciona módulo y proyecto…</option>';
+
+    projectCompetences.forEach(pc => {
+        const modId = pc.moduleId;
+        const mod = moduleById[modId];
+        const labelModule = mod ? (mod.name || '') : `Módulo ${modId}`;
+        const value = `${modId}__${pc.projectName}`;
+        const label = `${labelModule} — ${pc.projectName}`;
+        optionsHtml += `<option value="${value}">${escapeHtml(label)}</option>`;
+    });
+
+    selectEl.innerHTML = optionsHtml;
+
+    // Pre-select active project if any
+    const vc = ext.virtualClassroom || {};
+    let activeValue = '';
+    if (vc && vc.moduleId && vc.projectName) {
+        activeValue = `${vc.moduleId}__${vc.projectName}`;
+    }
+    // Solo mantener el valor si existe en el selector actual
+    const candidate = activeValue || prevValue || '';
+    if (candidate && Array.from(selectEl.options).some(o => o.value === candidate)) {
+        selectEl.value = candidate;
+    } else {
+        selectEl.value = '';
+    }
+
+    // Fill inputs from active config
+    repoBaseEl.value = vc.repoBaseUrl || '';
+    briefingEl.value = vc.briefingUrl || '';
+
+    // Update status UI
+    if (vc.isActive && activeValue) {
+        statusBadge.textContent = `Proyecto activo: ${vc.projectName}`;
+        statusBadge.className = 'badge bg-success';
+        deactivateBtn.disabled = false;
+        activateBtn.textContent = 'Actualizar Aula Virtual';
+        activateBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Actualizar Aula Virtual';
+    } else {
+        statusBadge.textContent = 'Sin proyecto activo';
+        statusBadge.className = 'badge bg-secondary';
+        deactivateBtn.disabled = true;
+        activateBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Activar Aula Virtual';
+    }
+
+    // Render competences preview for selected/active project
+    updateVirtualClassroomCompetencesPreview();
+}
+
+function updateVirtualClassroomCompetencesPreview() {
+    const selectEl = document.getElementById('vc-project-select');
+    const competencesList = document.getElementById('vc-competences-list');
+    const competencesCount = document.getElementById('vc-competences-count');
+    if (!selectEl || !competencesList || !competencesCount) return;
+
+    const value = selectEl.value;
+    if (!value) {
+        competencesList.innerHTML = '<span class="fst-italic">Selecciona un proyecto para ver sus competencias.</span>';
+        competencesCount.textContent = '0 competencias';
+        return;
+    }
+
+    const [moduleId, projectName] = value.split('__');
+    const pcEntry = (window._evalState.projectCompetences || []).find(
+        pc => pc.moduleId === moduleId && pc.projectName === projectName
+    );
+
+    const compIds = pcEntry ? (pcEntry.competenceIds || []) : [];
+    const catalog = window._evalState.catalog || window._evalState.competences || [];
+
+    if (!compIds.length) {
+        competencesList.innerHTML = '<span class="fst-italic">Este proyecto no tiene competencias definidas todavía en Evaluación.</span>';
+        competencesCount.textContent = '0 competencias';
+        return;
+    }
+
+    const pcTools = (pcEntry && pcEntry.competenceTools) ? pcEntry.competenceTools : {};
+    
+    const mainAccordionId = `vc-preview-acc`;
+    const items = compIds.map((cid, idx) => {
+        const cidStr = String(cid);
+        const c = catalog.find(ec => String(ec.id) === cidStr);
+        if (!c) return `<div class="accordion-item"><div class="accordion-header px-3 py-2 small text-muted">Competencia ${cid}</div></div>`;
+
+        const levelDescs = (c.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
+        const compInds = c.competenceIndicators || { initial: [], medio: [], advance: [] };
+        const selectedToolNames = pcTools[cidStr] || [];
+        const allToolObjs = c.toolsWithIndicators || [];
+        const tools = allToolObjs.filter(t => selectedToolNames.includes(t.name));
+        
+        const LEVEL_COLORS = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+        const LEVEL_BG = { 1: '#fff3cd', 2: '#cfe2ff', 3: '#d1e7dd' };
+        const LEVEL_NAMES = { 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+
+        // Competence levels side-by-side
+        const compLevelCols = [1, 2, 3].map(lvl => {
+            const catInds = lvl === 1 ? compInds.initial : (lvl === 2 ? compInds.medio : compInds.advance);
+            const levelObj = (c.levels || []).find(l => l.level === lvl);
+            const finalIndNames = (catInds && catInds.length > 0) 
+                ? catInds.map(i => i.name || i) 
+                : (levelObj && levelObj.indicators ? levelObj.indicators : []);
+
+            const desc = levelDescs[lvl] || LEVEL_NAMES[lvl];
+            return `
+                <div class="col-md-4">
+                    <div class="p-2 h-100 rounded border" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_COLORS[lvl]} !important;">
+                        <div class="extra-small fw-bold mb-1 text-uppercase" style="color:${LEVEL_COLORS[lvl]}; font-size: 0.6rem; letter-spacing: 0.05em;">
+                            <i class="bi bi-award-fill me-1"></i>Nivel ${lvl}
+                        </div>
+                        <div class="small fw-semibold mb-1" style="font-size: 0.75rem; line-height: 1.2;">${escapeHtml(desc)}</div>
+                        ${(finalIndNames && finalIndNames.length > 0) ? `
+                        <ul class="mb-0 ps-3 extra-small text-muted" style="font-size: 0.7rem; line-height: 1.2;">
+                            ${finalIndNames.map(name => `<li>${escapeHtml(name)}</li>`).join('')}
+                        </ul>` : '<div class="text-muted extra-small fst-italic">Sin indicadores definidos.</div>'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Tool accordion
+        const toolAccordionId = `vc-tool-acc-${idx}`;
+        const toolAccordionHtml = tools.length > 0 ? `
+            <div class="accordion accordion-flush mt-3 border rounded shadow-sm" id="${toolAccordionId}">
+                <div class="bg-light px-3 py-2 border-bottom extra-small fw-bold text-uppercase text-muted" style="font-size: 0.6rem; letter-spacing: 0.05em;">
+                    <i class="bi bi-tools me-1"></i>Herramientas y Tecnologías
+                </div>
+                ${tools.map((tool, tIdx) => {
+                    const toolByLevel = { 1: [], 2: [], 3: [] };
+                    (tool.indicators || []).forEach(ind => { if (toolByLevel[ind.levelId]) toolByLevel[ind.levelId].push(ind); });
+                    
+                    const toolLevelCols = [1, 2, 3].filter(l => toolByLevel[l].length > 0).map(lvl => `
+                        <div class="col-md-4">
+                            <div class="extra-small fw-bold mb-1 text-uppercase" style="color:${LEVEL_COLORS[lvl]}; font-size: 0.55rem;">
+                                Nivel ${lvl} ${LEVEL_NAMES[lvl]}
+                            </div>
+                            <ul class="mb-0 ps-3 extra-small text-muted" style="font-size: 0.65rem; line-height: 1.2;">
+                                ${toolByLevel[lvl].map(ind => `<li>${escapeHtml(ind.name)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `).join('');
+
+                    return `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed py-2 px-3 small fw-bold" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#${toolAccordionId}-${tIdx}">
+                                    ${escapeHtml(tool.name)}
+                                </button>
+                            </h2>
+                            <div id="${toolAccordionId}-${tIdx}" class="accordion-collapse collapse" data-bs-parent="#${toolAccordionId}">
+                                <div class="accordion-body p-3">
+                                    ${tool.description ? `<p class="text-muted extra-small mb-3 italic">${escapeHtml(tool.description)}</p>` : ''}
+                                    <div class="row g-2">${toolLevelCols || '<div class="col text-muted extra-small fst-italic">Sin indicadores definidos para esta herramienta.</div>'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        ` : '';
+
+        const collapseId = `vc-prev-collapse-${idx}`;
+        return `
+            <div class="accordion-item shadow-sm mb-2 border rounded overflow-hidden">
+                <h2 class="accordion-header">
+                    <button class="accordion-button ${idx === 0 ? '' : 'collapsed'} py-2 px-3" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-primary px-2" style="font-size: 0.65rem;">${escapeHtml(c.area || 'General')}</span>
+                            <strong class="small">${escapeHtml(c.name)}</strong>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${collapseId}" class="accordion-collapse collapse ${idx === 0 ? 'show' : ''}" data-bs-parent="#${mainAccordionId}">
+                    <div class="accordion-body p-3">
+                        ${c.description ? `<p class="text-muted extra-small mb-3" style="line-height: 1.3;">${escapeHtml(c.description)}</p>` : ''}
+                        <div class="row g-2">
+                            ${compLevelCols}
+                        </div>
+                        ${toolAccordionHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    competencesList.innerHTML = `<div class="accordion accordion-flush" id="${mainAccordionId}">${items}</div>`;
+    competencesCount.textContent = `${compIds.length} competencia${compIds.length !== 1 ? 's' : ''}`;
+}
+
+// Called by select change in the panel
+window.onVirtualClassroomProjectChange = function () {
+    updateVirtualClassroomCompetencesPreview();
+};
+
+async function saveVirtualClassroom(isActive) {
+    const selectEl = document.getElementById('vc-project-select');
+    const repoBaseEl = document.getElementById('vc-repo-base');
+    const briefingEl = document.getElementById('vc-briefing-url');
+    const statusBadge = document.getElementById('vc-status-badge');
+    const deactivateBtn = document.getElementById('vc-deactivate-btn');
+    const activateBtn = document.getElementById('vc-activate-btn');
+
+    if (!selectEl || !repoBaseEl || !briefingEl || !statusBadge || !deactivateBtn || !activateBtn) return;
+
+    const value = selectEl.value;
+    if (!value && isActive) {
+        showToast('Selecciona un proyecto antes de activar el Aula Virtual', 'danger');
+        return;
+    }
+
+    const [moduleId, projectName] = value ? value.split('__') : ['', ''];
+
+    // Derive project type from saved evaluations if exists (fallback: individual)
+    const savedEvaluations = window._evalState.savedEvaluations || [];
+    const existingEval = savedEvaluations.find(e => e.moduleId === moduleId && e.projectName === projectName);
+    const projectType = existingEval ? (existingEval.type || 'individual') : 'individual';
+
+    // Prepare current enriched competences from _evalState to sync with DB
+    // IMPORTANT: Only sync the actual program competences (preventing the full catalog save)
+    const syncComps = (window._evalState.programCompetences || []).map(c => ({
+        id: c.id, name: c.name, area: c.area, description: c.description || '',
+        levels: c.levels || [], allTools: c.allTools || [],
+        selectedTools: Array.from(c.selectedTools || []),
+        toolsWithIndicators: c.toolsWithIndicators || [],
+        competenceIndicators: c.competenceIndicators || { initial: [], medio: [], advance: [] }
+    }));
+
+    const body = {
+        competences: syncComps,
+        virtualClassroom: {
+            isActive: !!isActive,
+            moduleId,
+            projectName,
+            projectType,
+            repoBaseUrl: repoBaseEl.value || '',
+            briefingUrl: briefingEl.value || ''
+        }
+    };
+
+    const token = localStorage.getItem('token');
+    activateBtn.disabled = true;
+    deactivateBtn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Error saving virtual classroom:', err);
+            showToast('Error al guardar la configuración del Aula Virtual', 'danger');
+            return;
+        }
+
+        const updated = await res.json();
+        window._evalState.virtualClassroom = updated.virtualClassroom || body.virtualClassroom;
+        
+        // Sync with global extendedInfoData to prevent stale overwrites on next "Guardar Todos los Cambios"
+        if (typeof extendedInfoData !== 'undefined') {
+            extendedInfoData.virtualClassroom = window._evalState.virtualClassroom;
+            if (updated.competences) {
+                extendedInfoData.competences = updated.competences;
+            }
+        }
+
+        if (body.virtualClassroom.isActive && moduleId && projectName) {
+            statusBadge.textContent = `Proyecto activo: ${projectName}`;
+            statusBadge.className = 'badge bg-success';
+            deactivateBtn.disabled = false;
+            activateBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Actualizar Aula Virtual';
+            showToast('Aula Virtual activada/actualizada correctamente', 'success');
+        } else {
+            statusBadge.textContent = 'Sin proyecto activo';
+            statusBadge.className = 'badge bg-secondary';
+            deactivateBtn.disabled = true;
+            activateBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Activar Aula Virtual';
+            showToast('Aula Virtual desactivada', 'success');
+        }
+    } catch (err) {
+        console.error('Error saving virtual classroom:', err);
+        showToast('Error de conexión al guardar Aula Virtual', 'danger');
+    } finally {
+        activateBtn.disabled = false;
+        if (window._evalState.virtualClassroom && window._evalState.virtualClassroom.isActive) {
+            deactivateBtn.disabled = false;
+        }
+    }
+}
+
+window.deactivateVirtualClassroom = function () {
+    saveVirtualClassroom(false);
+};
 
 function renderEvaluationTab() {
     const container = document.getElementById('evaluation-content');
@@ -5970,7 +8470,19 @@ function renderEvaluationTab() {
         return;
     }
 
-    let html = `<div class="accordion" id="evalAccordion">`;
+    // ── Toolbar: Histórico de equipos button ────────────────────────────────
+    const grupalCount = savedEvaluations.filter(e => e.type === 'grupal' && e.groups && e.groups.length > 0).length;
+    let html = `<div class="d-flex justify-content-end mb-3 gap-2">
+        <button class="btn btn-outline-info btn-sm" onclick="switchToVirtualClassroom()" title="Ir al Aula Virtual en Contenido del Programa">
+            <i class="bi bi-laptop me-2"></i>Aula Virtual (Activar Proyectos)
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="openTeamHistoryModal()" title="Ver histórico de equipos entre proyectos grupales">
+            <i class="bi bi-people-fill me-2"></i>Histórico de equipos
+            ${grupalCount > 0 ? `<span class="badge bg-secondary ms-1">${grupalCount} grupal${grupalCount !== 1 ? 'es' : ''}</span>` : ''}
+        </button>
+    </div>`;
+
+    html += `<div class="accordion" id="evalAccordion">`;
 
     modules.forEach((mod, mIdx) => {
         if (!mod.projects || mod.projects.length === 0) return;
@@ -5978,7 +8490,8 @@ function renderEvaluationTab() {
         const modKey = `eval-mod-${mIdx}`;
         const projectCount = mod.projects.length;
         const savedForModule = savedEvaluations.filter(e => e.moduleId === (mod.id || String(mIdx)));
-        const evaluatedCount = savedForModule.filter(e => e.evaluations && e.evaluations.length > 0).length;
+        // A project is considered 'evaluated' if it has at least one entry with evaluatedAt
+        const evaluatedCount = savedForModule.filter(e => (e.evaluations || []).some(ev => ev.evaluatedAt)).length;
 
         html += `
         <div class="accordion-item mb-3 border rounded shadow-sm">
@@ -6002,15 +8515,31 @@ function renderEvaluationTab() {
             const saved = savedEvaluations.find(e => e.moduleId === (mod.id || String(mIdx)) && e.projectName === proj.name);
             const projType = saved ? saved.type : 'individual';
             const compCount = (proj.competenceIds || []).length;
-            const evalCount = saved ? (saved.evaluations || []).length : 0;
+            const evals = saved ? (saved.evaluations || []) : [];
+            const evalCount = evals.filter(e => e.evaluatedAt).length; // Only counts those with a date (graded)
+            const submissionCount = evals.filter(e => e.submissionLink).length; // Counts those with a link
+            console.log(`[DEBUG] Project "${proj.name}": evalCount=${evalCount}, submissionCount=${submissionCount}`, evals);
             const hasEval = evalCount > 0;
+            const hasSubmission = submissionCount > 0;
             const groupCount = (saved && saved.groups) ? saved.groups.length : 0;
             const totalTargets = projType === 'grupal'
-                ? (saved && saved.groups ? saved.groups.length : 0)
+                ? groupCount
                 : window._evalState.students.length;
+
+            const submissionBadge = hasSubmission
+                ? `<span class="badge bg-info text-dark me-1" title="Proyectos entregados"><i class="bi bi-cloud-arrow-up-fill me-1"></i>${submissionCount}/${totalTargets}</span>`
+                : '';
             const evalBadge = hasEval
                 ? `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>${evalCount}/${totalTargets} evaluado${evalCount !== 1 ? 's' : ''}</span>`
                 : `<span class="badge bg-light text-muted border">Sin evaluar</span>`;
+
+            // Per-project competence count (from projectCompetences, not proj.competenceIds)
+            const projCompDef = (window._evalState.projectCompetences || []).find(
+                pc => pc.moduleId === (mod.id || String(mIdx)) && pc.projectName === proj.name
+            );
+            const projCompCount = projCompDef ? (projCompDef.competenceIds || []).length : 0;
+            const compBadgeStyle = projCompCount > 0 ? 'background:#E85D26;color:#fff;' : '';
+            const compBadgeClass = projCompCount > 0 ? '' : 'bg-light text-muted border';
 
             html += `
             <div class="col-md-6 col-lg-4">
@@ -6018,11 +8547,18 @@ function renderEvaluationTab() {
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex align-items-start justify-content-between mb-2">
                             <h6 class="card-title mb-0 fw-semibold">${escapeHtml(proj.name || 'Proyecto')}</h6>
-                            ${evalBadge}
+                            <div class="d-flex align-items-center">
+                                ${submissionBadge}
+                                ${evalBadge}
+                            </div>
                         </div>
                         ${proj.url ? `<a href="${escapeHtml(proj.url)}" target="_blank" class="text-muted small mb-2 text-truncate d-block"><i class="bi bi-link-45deg me-1"></i>${escapeHtml(proj.url)}</a>` : ''}
                         <div class="d-flex gap-2 flex-wrap mb-2">
-                            <span class="badge bg-light text-dark border"><i class="bi bi-award me-1"></i>${compCount} competencia${compCount !== 1 ? 's' : ''}</span>
+                            <button class="badge border-0 ${compBadgeClass}" style="${compBadgeStyle}cursor:pointer;"
+                                onclick="openEvalProjectCompetencePicker(${mIdx}, ${pIdx})" title="Definir competencias de este proyecto">
+                                <i class="bi bi-award me-1"></i>${projCompCount} competencia${projCompCount !== 1 ? 's' : ''}
+                                <i class="bi bi-pencil-square ms-1 opacity-75" style="font-size:.7rem;"></i>
+                            </button>
                             <span class="badge ${projType === 'grupal' ? 'bg-info text-dark' : 'bg-warning text-dark'}">
                                 <i class="bi bi-${projType === 'grupal' ? 'people' : 'person'} me-1"></i>${projType}
                             </span>
@@ -6043,7 +8579,7 @@ function renderEvaluationTab() {
                             <button class="btn btn-sm btn-outline-info" onclick="openGroupsModal(${mIdx}, ${pIdx})" title="Definir grupos">
                                 <i class="bi bi-diagram-3 me-1"></i>Grupos
                             </button>` : ''}
-                            <button class="btn btn-sm btn-primary ms-auto" onclick="openEvaluationModal(${mIdx}, ${pIdx})"
+                            <button class="btn btn-sm btn-primary ms-auto" onclick="openEvaluationView(${mIdx}, ${pIdx})"
                                 style="background:#E85D26;border-color:#E85D26;">
                                 <i class="bi bi-clipboard-check me-1"></i>Evaluar
                             </button>
@@ -6067,6 +8603,692 @@ function renderEvaluationTab() {
 function _evalProjectKey(moduleId, projectName) {
     return `${moduleId}__${projectName}`;
 }
+
+// ==================== COMPETENCE PICKER (per-project, from Evaluation tab) ====================
+
+/**
+ * Opens the per-project competence+tools definition modal.
+ * Stores data in window._evalState.projectCompetences[].
+ */
+function openEvalProjectCompetencePicker(mIdx, pIdx) {
+    const { modules, catalog } = window._evalState;
+    const mod = modules[mIdx];
+    const proj = mod.projects[pIdx];
+    const modId = mod.id || String(mIdx);
+
+    // Find or create the entry for this project
+    if (!window._evalState.projectCompetences) window._evalState.projectCompetences = [];
+    let pcEntry = window._evalState.projectCompetences.find(
+        pc => pc.moduleId === modId && pc.projectName === proj.name
+    );
+    if (!pcEntry) {
+        // Start with empty selection — competences are defined here, not in the roadmap
+        pcEntry = {
+            moduleId: modId,
+            projectName: proj.name,
+            competenceIds: [],
+            competenceTools: {}
+        };
+    }
+
+    // Use full catalog (always all competences available)
+    const fullCatalog = (catalog && catalog.length) ? catalog : (window._extendedInfoCompetences || []);
+
+    if (!fullCatalog.length) {
+        showToast('No se encontró el catálogo de competencias. Intenta recargar la página.', 'danger');
+        return;
+    }
+
+    // Store working copy
+    window._evalProjPickerState = {
+        mIdx, pIdx, modId,
+        projName: proj.name,
+        modName: mod.name || `Módulo ${mIdx + 1}`,
+        selectedIds: new Set((pcEntry.competenceIds || []).map(String)),
+        competenceTools: JSON.parse(JSON.stringify(pcEntry.competenceTools || {})),
+        catalog: fullCatalog
+    };
+
+    // Build modal HTML
+    const areaSet = new Set(fullCatalog.map(c => c.area || 'Sin área'));
+    const areaOptions = [...areaSet].sort().map(a =>
+        `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`
+    ).join('');
+
+    const rows = fullCatalog.map(c => _buildPickerRow(c, window._evalProjPickerState)).join('');
+
+    // Inject or create modal
+    let modal = document.getElementById('eval-proj-comp-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'eval-proj-comp-modal';
+        modal.className = 'modal fade';
+        modal.setAttribute('tabindex', '-1');
+        modal.innerHTML = `<div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background:linear-gradient(135deg,#fff8f5,#fff3ee);border-bottom:2px solid #E85D26;">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0">
+                            <i class="bi bi-award me-2" style="color:#E85D26;"></i>
+                            Competencias del proyecto: <span id="epcp-proj-title"></span>
+                        </h5>
+                        <small class="text-muted" id="epcp-mod-subtitle"></small>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="p-3 border-bottom bg-light d-flex flex-wrap gap-2 align-items-center">
+                        <div class="input-group input-group-sm" style="max-width:260px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="epcp-search" placeholder="Buscar competencia...">
+                        </div>
+                        <select class="form-select form-select-sm w-auto" id="epcp-area-filter">
+                            <option value="">Todas las áreas</option>
+                            ${areaOptions}
+                        </select>
+                        <span class="ms-auto badge bg-light text-dark border" id="epcp-selected-count">0 seleccionadas</span>
+                    </div>
+                    <div id="epcp-list" class="p-3" style="max-height:60vh;overflow-y:auto;">
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Selecciona las competencias y elige qué herramientas se evaluarán en este proyecto.</small>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" style="background:#E85D26;border-color:#E85D26;" onclick="saveEvalProjectCompetences()">
+                            <i class="bi bi-check-lg me-1"></i>Guardar competencias
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        // Live filter
+        modal.querySelector('#epcp-search').addEventListener('input', _filterEvalProjPicker);
+        modal.querySelector('#epcp-area-filter').addEventListener('change', _filterEvalProjPicker);
+    }
+
+    // Update modal header
+    modal.querySelector('#epcp-proj-title').textContent = proj.name;
+    modal.querySelector('#epcp-mod-subtitle').textContent = mod.name || `Módulo ${mIdx + 1}`;
+
+    // Re-render list (fresh state)
+    _renderEvalProjPickerList();
+
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+    bsModal.show();
+}
+
+function _buildPickerRow(comp, state) {
+    const isSelected = state.selectedIds.has(String(comp.id));
+    const selectedTools = state.competenceTools[String(comp.id)] || [];
+    const allTools = comp.allTools || [];
+    const toolsHtml = allTools.map(t => {
+        const checked = selectedTools.includes(t) ? 'checked' : '';
+        return `<div class="form-check form-check-inline">
+            <input class="form-check-input epcp-tool-check" type="checkbox" value="${escapeHtml(t)}"
+                data-comp-id="${escapeHtml(String(comp.id))}"
+                id="epcp-tool-${escapeHtml(String(comp.id))}-${escapeHtml(t)}"
+                ${checked} ${isSelected ? '' : 'disabled'}
+                onchange="window._evalProjPickerToggleTool(this)">
+            <label class="form-check-label small" for="epcp-tool-${escapeHtml(String(comp.id))}-${escapeHtml(t)}">${escapeHtml(t)}</label>
+        </div>`;
+    }).join('');
+
+    return `<div class="epcp-row border rounded mb-2 p-2 ${isSelected ? 'border-warning bg-white' : 'bg-light'}"
+            data-comp-id="${escapeHtml(String(comp.id))}"
+            data-area="${escapeHtml(comp.area || '')}"
+            data-name="${escapeHtml((comp.name || '').toLowerCase())}">
+        <div class="d-flex align-items-center gap-2">
+            <div class="form-check mb-0 flex-shrink-0">
+                <input class="form-check-input epcp-comp-check" type="checkbox" value="${escapeHtml(String(comp.id))}"
+                    id="epcp-comp-${escapeHtml(String(comp.id))}"
+                    ${isSelected ? 'checked' : ''}
+                    onchange="window._evalProjPickerToggleComp(this)">
+            </div>
+            <label class="form-check-label fw-semibold d-flex align-items-center gap-2 flex-grow-1" for="epcp-comp-${escapeHtml(String(comp.id))}">
+                <span class="badge bg-secondary" style="font-size:.7rem;">${escapeHtml(comp.area || 'Sin área')}</span>
+                ${escapeHtml(comp.name)}
+            </label>
+            ${allTools.length ? `<span class="badge bg-light text-muted border small">${selectedTools.length}/${allTools.length} herramientas</span>` : ''}
+        </div>
+        ${allTools.length ? `<div class="mt-2 ps-4 epcp-tools-section" ${isSelected ? '' : 'style="display:none;"'}>
+            <small class="text-muted fw-semibold d-block mb-1"><i class="bi bi-tools me-1"></i>Herramientas a evaluar:</small>
+            <div class="d-flex flex-wrap gap-1">${toolsHtml}</div>
+            <button type="button" class="btn btn-link btn-sm p-0 mt-1 text-primary epcp-select-all-tools"
+                data-comp-id="${escapeHtml(String(comp.id))}"
+                onclick="window._evalProjPickerSelectAllTools('${escapeHtml(String(comp.id))}')">
+                <i class="bi bi-check-all me-1"></i>Seleccionar todas
+            </button>
+        </div>` : ''}
+    </div>`;
+}
+
+function _renderEvalProjPickerList() {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const listEl = document.getElementById('epcp-list');
+    if (!listEl) return;
+    listEl.innerHTML = state.catalog.map(c => _buildPickerRow(c, state)).join('');
+    _updateEvalProjPickerCount();
+}
+
+function _filterEvalProjPicker() {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const search = (document.getElementById('epcp-search')?.value || '').toLowerCase();
+    const area = document.getElementById('epcp-area-filter')?.value || '';
+
+    document.querySelectorAll('#epcp-list .epcp-row').forEach(row => {
+        const rowArea = row.dataset.area || '';
+        const rowName = row.dataset.name || '';
+        const matches = (!area || rowArea === area) && (!search || rowName.includes(search));
+        row.style.display = matches ? '' : 'none';
+    });
+}
+
+function _updateEvalProjPickerCount() {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const countEl = document.getElementById('epcp-selected-count');
+    if (countEl) countEl.textContent = `${state.selectedIds.size} seleccionada${state.selectedIds.size !== 1 ? 's' : ''}`;
+}
+
+window._evalProjPickerToggleComp = function (checkbox) {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const compId = String(checkbox.value);
+    const row = checkbox.closest('.epcp-row');
+
+    if (checkbox.checked) {
+        state.selectedIds.add(compId);
+        // Default: all tools selected
+        const comp = state.catalog.find(c => String(c.id) === compId);
+        if (comp && comp.allTools && comp.allTools.length) {
+            state.competenceTools[compId] = [...comp.allTools];
+        }
+        if (row) {
+            row.classList.replace('bg-light', 'bg-white');
+            row.classList.add('border-warning');
+            const toolsSec = row.querySelector('.epcp-tools-section');
+            if (toolsSec) toolsSec.style.display = '';
+            row.querySelectorAll('.epcp-tool-check').forEach(cb => { cb.disabled = false; cb.checked = true; });
+        }
+    } else {
+        state.selectedIds.delete(compId);
+        delete state.competenceTools[compId];
+        if (row) {
+            row.classList.replace('bg-white', 'bg-light');
+            row.classList.remove('border-warning');
+            const toolsSec = row.querySelector('.epcp-tools-section');
+            if (toolsSec) toolsSec.style.display = 'none';
+            row.querySelectorAll('.epcp-tool-check').forEach(cb => { cb.disabled = true; cb.checked = false; });
+        }
+    }
+    _updateEvalProjPickerCount();
+};
+
+window._evalProjPickerToggleTool = function (checkbox) {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const compId = String(checkbox.dataset.compId);
+    const tool = checkbox.value;
+    if (!state.competenceTools[compId]) state.competenceTools[compId] = [];
+    if (checkbox.checked) {
+        if (!state.competenceTools[compId].includes(tool)) state.competenceTools[compId].push(tool);
+    } else {
+        state.competenceTools[compId] = state.competenceTools[compId].filter(t => t !== tool);
+    }
+    // Update tool count badge in row
+    const row = checkbox.closest('.epcp-row');
+    if (row) {
+        const comp = state.catalog.find(c => String(c.id) === compId);
+        const allCount = comp ? (comp.allTools || []).length : 0;
+        const selCount = (state.competenceTools[compId] || []).length;
+        const badge = row.querySelector('.badge.bg-light.text-muted');
+        if (badge) badge.textContent = `${selCount}/${allCount} herramientas`;
+    }
+};
+
+window._evalProjPickerSelectAllTools = function (compId) {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+    const comp = state.catalog.find(c => String(c.id) === compId);
+    if (!comp) return;
+    state.competenceTools[compId] = [...(comp.allTools || [])];
+    // Update checkboxes in DOM
+    document.querySelectorAll(`.epcp-tool-check[data-comp-id="${escapeHtml(compId)}"]`).forEach(cb => { cb.checked = true; });
+    // Update count badge
+    const row = document.querySelector(`.epcp-row[data-comp-id="${escapeHtml(compId)}"]`);
+    if (row) {
+        const badge = row.querySelector('.badge.bg-light.text-muted');
+        if (badge) badge.textContent = `${state.competenceTools[compId].length}/${state.competenceTools[compId].length} herramientas`;
+    }
+};
+
+async function saveEvalProjectCompetences() {
+    const state = window._evalProjPickerState;
+    if (!state) return;
+
+    if (!window._evalState.projectCompetences) window._evalState.projectCompetences = [];
+
+    const entry = {
+        moduleId: state.modId,
+        projectName: state.projName,
+        competenceIds: [...state.selectedIds].map(id => isNaN(Number(id)) ? id : Number(id)),
+        competenceTools: state.competenceTools
+    };
+
+    const idx = window._evalState.projectCompetences.findIndex(
+        pc => pc.moduleId === state.modId && pc.projectName === state.projName
+    );
+    if (idx >= 0) window._evalState.projectCompetences[idx] = entry;
+    else window._evalState.projectCompetences.push(entry);
+
+    // Persist to server
+    await _persistProjectCompetences();
+
+    // Also aggregate → update extendedInfo.competences for the program tab
+    await _aggregateAndSyncCompetencesToProgram();
+
+    // Close modal
+    const modal = document.getElementById('eval-proj-comp-modal');
+    if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+
+    // Re-render evaluation tab to update badge count
+    renderEvaluationTab();
+    showToast('Competencias del proyecto guardadas ✓', 'success');
+}
+
+async function _persistProjectCompetences() {
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ projectCompetences: window._evalState.projectCompetences })
+        });
+        if (!res.ok) console.error('[_persistProjectCompetences] Error:', res.status);
+    } catch (err) {
+        console.error('[_persistProjectCompetences] Exception:', err);
+    }
+}
+
+/**
+ * Aggregates competences defined across all projects → writes to extendedInfo.competences.
+ * Deduplicates by competence ID; merges tools (union).
+ * Then updates ProgramCompetences display (read-only).
+ */
+async function _aggregateAndSyncCompetencesToProgram() {
+    const { catalog, projectCompetences } = window._evalState;
+    if (!projectCompetences) return;
+
+    // Build a map: competenceId → { ...catalogEntry, selectedTools: Set }
+    const compMap = new Map();
+    projectCompetences.forEach(pc => {
+        (pc.competenceIds || []).forEach(cid => {
+            const cidStr = String(cid);
+            const catalogEntry = (catalog || []).find(c => String(c.id) === cidStr);
+            if (!catalogEntry) return;
+            if (!compMap.has(cidStr)) {
+                compMap.set(cidStr, {
+                    ...catalogEntry,
+                    selectedTools: new Set()
+                });
+            }
+            // Union of tools from all projects that reference this competence
+            const tools = (pc.competenceTools && pc.competenceTools[cidStr]) || [];
+            tools.forEach(t => compMap.get(cidStr).selectedTools.add(t));
+        });
+    });
+
+    // Convert to array for saving
+    const aggregated = [...compMap.values()].map(c => ({
+        id: c.id,
+        name: c.name,
+        area: c.area,
+        description: c.description || '',
+        levels: c.levels || [],
+        allTools: c.allTools || [],
+        selectedTools: [...c.selectedTools],
+        evalModules: []
+    }));
+
+    // Update extendedInfoData (for next Save All Changes)
+    if (typeof extendedInfoData !== 'undefined') {
+        extendedInfoData.competences = aggregated;
+    }
+    window._extendedInfoCompetences = aggregated;
+
+    // Update ProgramCompetences display (view-only mode)
+    if (window.ProgramCompetences && window.ProgramCompetences.initViewOnly) {
+        window.ProgramCompetences.initViewOnly(aggregated);
+    }
+
+    // Persist aggregated competences immediately
+    const token = localStorage.getItem('token');
+    try {
+        await fetch(`${API_URL}/api/promotions/${promotionId}/extended-info`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ competences: aggregated })
+        });
+    } catch (err) {
+        console.error('[_aggregateAndSyncCompetencesToProgram] Error persisting:', err);
+    }
+}
+
+// ==================== HISTÓRICO DE EQUIPOS ====================
+
+// ── Shared helper: compute pairCount & pairProjects from all grupal saved evaluations ──
+function _computePairCount() {
+    const { modules, savedEvaluations } = window._evalState;
+    const pairCount = {};   // keyA → keyB → count  (keyA < keyB always)
+    const pairProjects = {}; // keyA → keyB → [label, ...]
+
+    modules.forEach((mod, mIdx) => {
+        (mod.projects || []).forEach((proj) => {
+            const modId = mod.id || String(mIdx);
+            const saved = savedEvaluations.find(e => e.moduleId === modId && e.projectName === proj.name);
+            if (!saved || saved.type !== 'grupal' || !saved.groups) return;
+            saved.groups.forEach(grp => {
+                const ids = (grp.studentIds || []).map(String);
+                for (let i = 0; i < ids.length; i++) {
+                    for (let j = i + 1; j < ids.length; j++) {
+                        const a = ids[i] < ids[j] ? ids[i] : ids[j];
+                        const b = ids[i] < ids[j] ? ids[j] : ids[i];
+                        if (!pairCount[a]) pairCount[a] = {};
+                        if (!pairProjects[a]) pairProjects[a] = {};
+                        pairCount[a][b] = (pairCount[a][b] || 0) + 1;
+                        if (!pairProjects[a][b]) pairProjects[a][b] = [];
+                        const label = `${proj.name} (${mod.name || `Módulo ${mIdx + 1}`})`;
+                        if (!pairProjects[a][b].includes(label)) pairProjects[a][b].push(label);
+                    }
+                }
+            });
+        });
+    });
+
+    return { pairCount, pairProjects };
+}
+
+function _getPairCount(pairCount, a, b) {
+    const ka = a < b ? a : b, kb = a < b ? b : a;
+    return (pairCount[ka] && pairCount[ka][kb]) || 0;
+}
+
+// ── Open inline history view (replaces modal approach) ───────────────────────
+function openTeamHistoryView() {
+    const evalTabView = document.getElementById('evaluation-tab-view');
+    const studentEvalPanel = document.getElementById('student-eval-panel');
+    const historyPanel = document.getElementById('team-history-panel');
+    const historyBody = document.getElementById('team-history-panel-body');
+    if (!historyPanel || !historyBody) return;
+
+    // Hide other sub-views
+    if (evalTabView) evalTabView.classList.add('hidden');
+    if (studentEvalPanel) studentEvalPanel.classList.add('hidden');
+    historyPanel.classList.remove('hidden');
+
+    // Build content
+    const { modules, savedEvaluations, allStudents } = window._evalState;
+
+    // Grupal projects with groups
+    const grupalProjects = [];
+    modules.forEach((mod, mIdx) => {
+        (mod.projects || []).forEach((proj, pIdx) => {
+            const modId = mod.id || String(mIdx);
+            const saved = savedEvaluations.find(e => e.moduleId === modId && e.projectName === proj.name);
+            if (saved && saved.type === 'grupal' && saved.groups && saved.groups.length > 0) {
+                grupalProjects.push({ mIdx, pIdx, modId, modName: mod.name || `Módulo ${mIdx + 1}`, projName: proj.name, groups: saved.groups });
+            }
+        });
+    });
+
+    // All grupal projects (even without groups) — for the "create groups" selector
+    const allGrupalForSelect = [];
+    modules.forEach((mod, mIdx) => {
+        (mod.projects || []).forEach((proj, pIdx) => {
+            const modId = mod.id || String(mIdx);
+            const saved = savedEvaluations.find(e => e.moduleId === modId && e.projectName === proj.name);
+            if (saved && saved.type === 'grupal') {
+                allGrupalForSelect.push({ mIdx, pIdx, modName: mod.name, projName: proj.name });
+            }
+        });
+    });
+
+    // Student map (use allStudents to include withdrawn ones)
+    const studentMap = new Map();
+    (allStudents || []).forEach(s => {
+        const id = String(s.id || s._id);
+        studentMap.set(id, ((s.name || '') + ' ' + (s.lastname || '')).trim());
+    });
+
+    // Compute pairings
+    const { pairCount, pairProjects } = _computePairCount();
+    pairCount_closure = pairCount; // keep closure for matrix
+
+    // Collect all student IDs seen in any grupal group
+    const allStudentIds = new Set();
+    grupalProjects.forEach(gp => gp.groups.forEach(g => (g.studentIds || []).forEach(id => allStudentIds.add(String(id)))));
+
+    // Per-student partner summary
+    const studentPartners = {};
+    allStudentIds.forEach(id => { studentPartners[id] = []; });
+    Object.keys(pairCount).forEach(a => {
+        Object.keys(pairCount[a]).forEach(b => {
+            const count = pairCount[a][b];
+            const projs = pairProjects[a][b];
+            if (allStudentIds.has(a)) {
+                if (!studentPartners[a]) studentPartners[a] = [];
+                studentPartners[a].push({ partnerId: b, count, projects: projs });
+            }
+            if (allStudentIds.has(b)) {
+                if (!studentPartners[b]) studentPartners[b] = [];
+                studentPartners[b].push({ partnerId: a, count, projects: projs });
+            }
+        });
+    });
+    Object.keys(studentPartners).forEach(id => studentPartners[id].sort((x, y) => y.count - x.count));
+
+    historyBody.innerHTML = _renderTeamHistoryBody(grupalProjects, allStudentIds, studentMap, studentPartners, allGrupalForSelect);
+
+    // Wire up the "open groups" button
+    const btn = historyBody.querySelector('#th-open-groups-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const sel = historyBody.querySelector('#th-project-select');
+            if (!sel || !sel.value) { showToast('Selecciona un proyecto primero', 'warning'); return; }
+            const [mIdxStr, pIdxStr] = sel.value.split('|');
+            closeTeamHistoryView(); // go back to eval view before opening modal
+            openGroupsModal(parseInt(mIdxStr), parseInt(pIdxStr));
+        });
+    }
+}
+
+function closeTeamHistoryView() {
+    const evalTabView = document.getElementById('evaluation-tab-view');
+    const historyPanel = document.getElementById('team-history-panel');
+    if (historyPanel) historyPanel.classList.add('hidden');
+    if (evalTabView) evalTabView.classList.remove('hidden');
+}
+
+// Keep backward compat alias used by button onclick
+function openTeamHistoryModal() { openTeamHistoryView(); }
+
+function _renderTeamHistoryBody(grupalProjects, allStudentIds, studentMap, studentPartners, allGrupalForSelect) {
+
+    if (grupalProjects.length === 0) {
+        return `<div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay proyectos grupales con grupos definidos todavía. Marca proyectos como "Grupal" y crea los grupos primero.
+        </div>`;
+    }
+
+    let html = `<p class="text-muted small mb-3">
+        Muestra con quién ha coincidido cada estudiante en proyectos grupales.
+        Las celdas indican el número de veces que han sido compañeros de equipo.
+    </p>`;
+
+    if (allGrupalForSelect.length > 0) {
+        html += `
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3"><i class="bi bi-plus-circle text-primary me-2"></i>Crear / editar grupos para un proyecto</h6>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <select class="form-select form-select-sm" id="th-project-select" style="max-width:380px;">
+                        <option value="">— Selecciona un proyecto grupal —</option>`;
+        allGrupalForSelect.forEach(gp => {
+            html += `<option value="${gp.mIdx}|${gp.pIdx}">${escapeHtml(gp.modName)} — ${escapeHtml(gp.projName)}</option>`;
+        });
+        html += `   </select>
+                    <button id="th-open-groups-btn" class="btn btn-sm btn-primary" style="background:#E85D26;border-color:#E85D26;">
+                        <i class="bi bi-diagram-3 me-1"></i>Abrir gestor de grupos
+                    </button>
+                </div>
+                <p class="text-muted small mt-2 mb-0">
+                    <i class="bi bi-lightbulb me-1 text-warning"></i>
+                    Usa el histórico de arriba para evitar repetir compañeros y formar grupos equilibrados.
+                </p>
+            </div>
+        </div>`;
+    }
+
+    // ── Project summary pills ────────────────────────────────────────────────
+    html += `<div class="mb-4">
+        <h6 class="fw-semibold text-secondary mb-2"><i class="bi bi-diagram-3 me-1"></i>Proyectos grupales registrados</h6>
+        <div class="d-flex flex-wrap gap-2">`;
+    grupalProjects.forEach(gp => {
+        html += `<span class="badge rounded-pill bg-light text-dark border" style="font-size:.82rem;">
+            <i class="bi bi-folder2 me-1 text-primary"></i>${escapeHtml(gp.modName)} — ${escapeHtml(gp.projName)}
+            <span class="text-muted">(${gp.groups.length} grupo${gp.groups.length !== 1 ? 's' : ''})</span>
+        </span>`;
+    });
+    html += `</div></div>`;
+
+    // ── Actual teams per project (Accordion) ──────────────────────────────────
+    html += `<h6 class="fw-semibold text-secondary mb-3 mt-4"><i class="bi bi-people me-1"></i>Listado de Equipos por Proyecto</h6>
+    <div class="accordion accordion-flush border rounded mb-4 shadow-sm" id="projectTeamsAccordion">`;
+    grupalProjects.forEach((gp, idx) => {
+        const itemId = `accItem-${idx}`;
+        html += `<div class="accordion-item">
+            <h2 class="accordion-header" id="heading-${itemId}">
+                <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${itemId}" aria-expanded="false" aria-controls="collapse-${itemId}" style="background: #fff;">
+                    <div class="d-flex flex-column text-start">
+                        <span class="text-primary fw-bold small" style="color:#E85D26 !important; font-size:0.7rem; line-height:1;">${escapeHtml(gp.modName)}</span>
+                        <span class="fw-bold mt-1" style="color:#1A1A2E; font-size:0.9rem;">${escapeHtml(gp.projName)}</span>
+                    </div>
+                </button>
+            </h2>
+            <div id="collapse-${itemId}" class="accordion-collapse collapse" aria-labelledby="heading-${itemId}" data-bs-parent="#projectTeamsAccordion">
+                <div class="accordion-body p-2" style="background:#fafafa;">
+                    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-2">`;
+        gp.groups.forEach((grp, gIdx) => {
+            const memberNames = (grp.studentIds || []).map(id => studentMap.get(String(id)) || id);
+            html += `<div class="col">
+                <div class="p-2 border rounded shadow-sm bg-white h-100">
+                    <div class="fw-bold text-muted mb-1" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.3px;">Equipo ${gIdx + 1}</div>
+                    <div class="d-flex flex-wrap gap-1">
+                        ${memberNames.map(name => `<span class="badge border fw-normal text-dark" style="background:#f8f9fa; font-size:0.75rem; padding: 3px 6px;">${escapeHtml(name)}</span>`).join('')}
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += `   </div>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    // ── Per-student table ────────────────────────────────────────────────────
+    const sortedStudentIds = Array.from(allStudentIds).sort((a, b) =>
+        (studentMap.get(a) || a).localeCompare(studentMap.get(b) || b));
+
+    // html += `<h6 class="fw-semibold text-secondary mb-2"><i class="bi bi-person-lines-fill me-1"></i>Coincidencias por estudiante</h6>
+    // <div class="table-responsive mb-4">
+    // <table class="table table-bordered table-sm align-middle" style="font-size:.85rem;">
+    //     <thead class="table-light">
+    //         <tr>
+    //             <th style="min-width:160px;">Estudiante</th>
+    //             <th>Compañeros de equipo</th>
+    //         </tr>
+    //     </thead>
+    //     <tbody>`;
+
+    // ── Create/edit groups for a project ──────────────────────────────────────
+
+    sortedStudentIds.forEach(id => {
+        const name = studentMap.get(id) || id;
+        const partners = studentPartners[id] || [];
+        const maxRepeat = partners.reduce((m, p) => Math.max(m, p.count), 0);
+        // const rowBg = maxRepeat >= 2 ? 'style="background:#fff8f8;"' : '';
+        // html += `<tr ${rowBg}>
+        //     <td class="fw-semibold">${escapeHtml(name)}</td>
+        //     <td>`;
+        // if (partners.length === 0) {
+        //     html += `<span class="text-muted fst-italic small">Sin coincidencias</span>`;
+        // } else {
+        //     html += `<div class="d-flex flex-wrap gap-1">`;
+        //     partners.forEach(p => {
+        //         const pName = studentMap.get(p.partnerId) || p.partnerId;
+        //         const tip = p.projects.join(', ');
+        //         const style = p.count >= 2
+        //             ? 'background:#f8d7da;color:#842029;border:1px solid #f5c2c7;'
+        //             : 'background:#fff3cd;color:#856404;border:1px solid #ffc107;';
+        //         const icon = p.count >= 2 ? '⚠ ' : '';
+        //         html += `<span class="badge rounded-pill" style="${style}font-size:.8rem;" title="${escapeHtml(tip)}">
+        //             ${escapeHtml(pName)} <strong>${icon}${p.count}×</strong>
+        //         </span>`;
+        //     });
+        // html += `</div>`;
+        // }
+        // html += `</td></tr>`;
+    });
+    // html += `</tbody></table></div>`;
+
+    // ── Matrix (if ≤ 20 students) ─────────────────────────────────────────────
+    if (sortedStudentIds.length <= 20) {
+        html += `
+        <details class="mb-4">
+            <summary class="fw-semibold text-secondary mb-2" style="cursor:pointer;">
+                <i class="bi bi-grid-3x3-gap me-1"></i>Ver matriz de coincidencias
+            </summary>
+            <div class="table-responsive mt-2">
+            <table class="table table-bordered table-sm text-center align-middle" style="font-size:.78rem;">
+                <thead class="table-light"><tr><th style="min-width:120px;"></th>`;
+        sortedStudentIds.forEach(id => {
+            const short = (studentMap.get(id) || id).split(' ').map((w, i) => i === 0 ? w : w[0] + '.').join(' ');
+            html += `<th title="${escapeHtml(studentMap.get(id) || id)}" style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(short)}</th>`;
+        });
+        html += `</tr></thead><tbody>`;
+        sortedStudentIds.forEach(rowId => {
+            html += `<tr><td class="fw-semibold text-start">${escapeHtml(studentMap.get(rowId) || rowId)}</td>`;
+            sortedStudentIds.forEach(colId => {
+                if (rowId === colId) { html += `<td style="background:#f8f9fa;">—</td>`; return; }
+                const a = rowId < colId ? rowId : colId, b = rowId < colId ? colId : rowId;
+                const cnt = (pairCount_closure?.[a]?.[b]) || 0;
+                if (cnt === 0) html += `<td style="color:#ccc;">·</td>`;
+                else if (cnt === 1) html += `<td style="background:#fff3cd;color:#856404;font-weight:600;">${cnt}</td>`;
+                else html += `<td style="background:#f8d7da;color:#842029;font-weight:700;">${cnt}</td>`;
+            });
+            html += `</tr>`;
+        });
+        html += `</tbody></table></div></details>`;
+    }
+
+    // ── Legend ────────────────────────────────────────────────────────────────
+    html += `<div class="text-muted small mt-3">
+        <span class="badge me-1" style="background:#fff3cd;color:#856404;border:1px solid #ffc107;">Amarillo</span> = han coincidido 1 vez &nbsp;
+        <span class="badge me-1" style="background:#f8d7da;color:#842029;border:1px solid #f5c2c7;">Rojo</span> = han coincidido 2+ veces
+    </div>`;
+
+    return html;
+}
+
+// Module-level closure variable for matrix rendering
+let pairCount_closure = {};
 
 async function setEvalProjectType(mIdx, pIdx, type) {
     const { modules, savedEvaluations } = window._evalState;
@@ -6094,7 +9316,6 @@ async function setEvalProjectType(mIdx, pIdx, type) {
     await _persistEvaluations();
     renderEvaluationTab();
 }
-
 // ─── Group management modal (standalone, before evaluation) ──────────────────
 
 function openGroupsModal(mIdx, pIdx) {
@@ -6168,23 +9389,47 @@ function _renderGroupsModalBody(saved, students, mod, proj) {
     <div class="d-flex align-items-center justify-content-between gap-2 mb-3 flex-wrap">
         <div class="flex-grow-1">
             ${unassignedCount > 0
-                ? `<div class="alert alert-warning py-2 mb-0 small">
+            ? `<div class="alert alert-warning py-2 mb-0 small">
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     <strong>${unassignedCount} estudiante${unassignedCount !== 1 ? 's' : ''} sin grupo asignado.</strong>
                    </div>`
-                : `<div class="alert alert-success py-2 mb-0 small">
+            : `<div class="alert alert-success py-2 mb-0 small">
                     <i class="bi bi-check-circle me-1"></i>Todos los estudiantes tienen grupo.
                    </div>`
-            }
+        }
         </div>
         <button class="btn btn-sm btn-outline-primary flex-shrink-0" onclick="_addGroupInline()">
             <i class="bi bi-plus-circle me-1"></i>Añadir grupo
         </button>
     </div>`;
 
+    // ── Smart mix suggestion bar ──────────────────────────────────────────────
+    const defaultGroupCount = Math.max(groups.length, 2);
+    html += `
+    <div class="card mb-3 border-0" style="background:#f0f7ff;">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold small">
+                    <i class="bi bi-magic text-primary me-1"></i>Sugerir distribución inteligente
+                </span>
+                <div class="d-flex align-items-center gap-1">
+                    <label class="small text-muted mb-0">Grupos:</label>
+                    <input type="number" id="suggest-num-groups" class="form-control form-control-sm"
+                        style="width:65px;" min="1" max="30" value="${defaultGroupCount}">
+                </div>
+                <button class="btn btn-sm btn-outline-primary" onclick="_applySuggestedMix()">
+                    ✨ Sugerir
+                </button>
+            </div>
+            <p class="text-muted mb-0 mt-1" style="font-size:.78rem;">
+                Distribuye a los estudiantes minimizando la repetición de compañeros de equipos anteriores.
+            </p>
+        </div>
+    </div>`;
+
     if (groups.length === 0) {
         html += `<div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>
-            No hay grupos todavía. Pulsa "Añadir grupo" para crear el primero.</div>`;
+            No hay grupos todavía. Pulsa "Añadir grupo" o usa "Sugerir" para crearlos automáticamente.</div>`;
     }
 
     // ── Accordion: one item per group ─────────────────────────────────────────
@@ -6215,11 +9460,11 @@ function _renderGroupsModalBody(saved, students, mod, proj) {
                         <span id="grp-label-${gIdx}">${escapeHtml(grp.groupName)}</span>
                         <span class="badge bg-secondary ms-2">${memberIds.length} miembro${memberIds.length !== 1 ? 's' : ''}</span>
                         ${memberNames.length
-                            ? `<span class="text-muted fw-normal fst-italic ms-2 small d-none d-md-inline text-truncate" style="max-width:220px;">
+                    ? `<span class="text-muted fw-normal fst-italic ms-2 small d-none d-md-inline text-truncate" style="max-width:220px;">
                                 ${memberNames.map(n => escapeHtml(n)).join(' · ')}
                                </span>`
-                            : `<span class="text-muted fw-normal fst-italic ms-2 small">Sin miembros</span>`
-                        }
+                    : `<span class="text-muted fw-normal fst-italic ms-2 small">Sin miembros</span>`
+                }
                         <button class="btn btn-sm btn-outline-danger ms-auto me-2" style="font-size:.75rem; padding:1px 7px;"
                             onclick="event.stopPropagation(); _removeGroupInline(${gIdx})"
                             title="Eliminar grupo">
@@ -6242,10 +9487,10 @@ function _renderGroupsModalBody(saved, students, mod, proj) {
                         </label>
                         <ul class="list-group list-group-flush">
                             ${availableStudents.map(st => {
-                                const stId = String(st.id || st._id);
-                                const checked = memberIds.includes(stId);
-                                const inputId = `grp-${gIdx}-st-${stId}`;
-                                return `<li class="list-group-item py-1 px-2">
+                    const stId = String(st.id || st._id);
+                    const checked = memberIds.includes(stId);
+                    const inputId = `grp-${gIdx}-st-${stId}`;
+                    return `<li class="list-group-item py-1 px-2">
                                     <div class="form-check mb-0">
                                         <input class="form-check-input" type="checkbox"
                                             id="${inputId}"
@@ -6256,10 +9501,10 @@ function _renderGroupsModalBody(saved, students, mod, proj) {
                                         </label>
                                     </div>
                                 </li>`;
-                            }).join('')}
+                }).join('')}
                             ${availableStudents.length === 0
-                                ? `<li class="list-group-item py-1 px-2 text-muted small fst-italic">No hay estudiantes disponibles.</li>`
-                                : ''}
+                    ? `<li class="list-group-item py-1 px-2 text-muted small fst-italic">No hay estudiantes disponibles.</li>`
+                    : ''}
                         </ul>
                     </div>
                 </div>
@@ -6362,8 +9607,704 @@ async function saveGroups() {
     await _persistEvaluations();
 
     bootstrap.Modal.getInstance(document.getElementById('groupsModal'))?.hide();
-    renderEvaluationTab();
+
+    // If the split view is open, refresh it; otherwise refresh the card grid
+    const splitView = document.getElementById('eval-project-view');
+    if (splitView && !splitView.classList.contains('hidden')) {
+        _renderEvalTargetsList(saved, window._evalState.students);
+        _showEvalRightEmpty();
+    } else {
+        renderEvaluationTab();
+    }
     showToast('Grupos guardados correctamente', 'success');
+}
+
+// ── Smart group suggestion ─────────────────────────────────────────────────────
+
+/**
+ * Greedy algorithm: assign students to groups minimising repeated pairings.
+ * @param {Array} students  - already excludes withdrawn students
+ * @param {number} numGroups
+ * @returns {Array} [{groupName, studentIds}]
+ */
+function _suggestGroupMix(students, numGroups) {
+    const { pairCount } = _computePairCount();
+    const pool = [...students];
+
+    // Shuffle for fairness (avoid alphabetical bias)
+    for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    const groups = Array.from({ length: numGroups }, (_, i) => ({
+        groupName: `Grupo ${i + 1}`,
+        studentIds: []
+    }));
+
+    // Greedy: for each student assign to the group with the lowest total pairing score
+    pool.forEach(s => {
+        const sid = String(s.id || s._id);
+        let bestGroup = 0, bestScore = Infinity;
+        groups.forEach((g, gi) => {
+            const score = g.studentIds.reduce(
+                (sum, mid) => sum + _getPairCount(pairCount, sid, mid), 0
+            );
+            if (score < bestScore) { bestScore = score; bestGroup = gi; }
+        });
+        groups[bestGroup].studentIds.push(sid);
+    });
+
+    return groups;
+}
+
+/**
+ * Called by the "✨ Sugerir" button inside the groups modal.
+ * Computes a suggestion and applies it to the current saved entry, then re-renders.
+ */
+function _applySuggestedMix() {
+    const saved = window._evalCurrentSaved;
+    const students = window._evalState?.students;
+    if (!saved || !students) return;
+
+    const input = document.getElementById('suggest-num-groups');
+    const numGroups = Math.max(1, parseInt(input?.value || '2', 10));
+
+    const suggestedGroups = _suggestGroupMix(students, numGroups);
+
+    // Preserve existing group names if the count matches, otherwise use defaults
+    suggestedGroups.forEach((g, i) => {
+        if (saved.groups && saved.groups[i]?.groupName) {
+            g.groupName = saved.groups[i].groupName;
+        }
+    });
+
+    // Clear any evaluations for groups that no longer exist
+    saved.groups = suggestedGroups;
+
+    _renderGroupsModalBody(saved, students);
+    showToast('Distribución sugerida aplicada. Revisa los grupos y pulsa "Guardar grupos" cuando estés listo.', 'info');
+}
+
+// ==================== GOOGLE CLASSROOM–STYLE EVALUATION VIEW ====================
+
+/**
+ * Opens the inline split-panel evaluation view for a project.
+ * Left: student/group list with evaluation status.
+ * Right: competences + feedback for the selected target.
+ */
+function openEvaluationView(mIdx, pIdx) {
+    const { modules, competences, students, savedEvaluations } = window._evalState;
+    const mod = modules[mIdx];
+    const proj = mod.projects[pIdx];
+    const modId = mod.id || String(mIdx);
+
+    window._evalState.currentModuleIdx = mIdx;
+    window._evalState.currentProjectIdx = pIdx;
+    window._evalRemovedComps = {};
+    window._evalRemovedTools = {};
+
+    const saved = savedEvaluations.find(e => e.moduleId === modId && e.projectName === proj.name) || {
+        moduleId: modId, moduleName: mod.name, projectName: proj.name,
+        type: 'individual', groups: [], evaluations: []
+    };
+    window._evalCurrentSaved = saved;
+
+    // Build project competences exclusively from the evaluation picker (projectCompetences).
+    // No longer falls back to proj.competenceIds (roadmap) — competences must be defined in Evaluación.
+    const pcEntry = (window._evalState.projectCompetences || []).find(
+        pc => pc.moduleId === modId && pc.projectName === proj.name
+    );
+    const compIdsForProj = pcEntry ? (pcEntry.competenceIds || []) : [];
+    const catalog = window._evalState.catalog || [];
+    const projCompetences = compIdsForProj.map(cid => {
+        // Prefer full catalog entry (has toolsWithIndicators, competenceIndicators) over enriched list
+        const full = catalog.find(c => String(c.id) === String(cid));
+        const found = full || competences.find(c => String(c.id) === String(cid));
+        if (!found) return { id: cid, name: `Competencia ${cid}`, area: '', allTools: [], selectedTools: [], toolsWithIndicators: [], competenceIndicators: { initial: [], medio: [], advance: [] } };
+        // Use per-project tool selection from picker; fall back to all tools
+        const projTools = (pcEntry && pcEntry.competenceTools && pcEntry.competenceTools[String(cid)])
+            ? pcEntry.competenceTools[String(cid)]
+            : (found.allTools || []);
+        return { ...found, selectedTools: projTools };
+    });
+    window._evalCurrentProjectCompetences = projCompetences;
+
+    // Show/hide panels
+    const tabView = document.getElementById('evaluation-tab-view');
+    const splitView = document.getElementById('eval-project-view');
+    const histPanel = document.getElementById('team-history-panel');
+    const legacyPanel = document.getElementById('student-eval-panel');
+    if (tabView) tabView.classList.add('hidden');
+    if (histPanel) histPanel.classList.add('hidden');
+    if (legacyPanel) legacyPanel.classList.add('hidden');
+    if (splitView) splitView.classList.remove('hidden');
+
+    // Populate top bar
+    const titleEl = document.getElementById('eval-view-title');
+    const subtitleEl = document.getElementById('eval-view-subtitle');
+    const groupsBtn = document.getElementById('eval-view-groups-btn');
+    if (titleEl) titleEl.textContent = `${proj.name} — ${mod.name || `Módulo ${mIdx + 1}`}`;
+    if (subtitleEl) subtitleEl.textContent = saved.type === 'grupal' ? 'Evaluación grupal' : 'Evaluación individual';
+    if (groupsBtn) {
+        if (saved.type === 'grupal') groupsBtn.classList.remove('d-none');
+        else groupsBtn.classList.add('d-none');
+    }
+
+    // Render targets list
+    _renderEvalTargetsList(saved, students);
+
+    // Clear right panel
+    _showEvalRightEmpty();
+    // Update empty-state hint based on type
+    const emptyEl = document.getElementById('eval-right-empty');
+    if (emptyEl) {
+        const isGrupal = saved.type === 'grupal';
+        emptyEl.innerHTML = `
+        <i class="bi bi-${isGrupal ? 'people' : 'person-check'} display-4 mb-3 text-muted opacity-50"></i>
+        <p class="mb-1 fw-semibold">Selecciona ${isGrupal ? 'un grupo' : 'un estudiante'}</p>
+        <p class="small">Haz clic en ${isGrupal ? 'un grupo' : 'un estudiante'} de la lista para comenzar su evaluación.</p>`;
+    }
+}
+
+/** Re-renders the left targets list (students or groups). */
+function _renderEvalTargetsList(saved, students) {
+    const listEl = document.getElementById('eval-targets-list');
+    const labelEl = document.getElementById('eval-targets-label');
+    const countEl = document.getElementById('eval-targets-count');
+    if (!listEl) return;
+
+    const doneEvals = saved.evaluations || [];
+    const isGrupal = saved.type === 'grupal';
+    const targets = isGrupal
+        ? (saved.groups || []).map(g => ({ id: g.groupName, label: g.groupName, sub: `${(g.studentIds || []).length} miembros`, isGroup: true }))
+        : students.map(s => ({ id: String(s.id || s._id), label: `${s.name || ''} ${s.lastname || ''}`.trim(), sub: s.email || '', isGroup: false }));
+
+    if (labelEl) labelEl.textContent = isGrupal ? 'Grupos' : 'Estudiantes';
+    if (countEl) countEl.textContent = targets.length;
+
+    if (targets.length === 0) {
+        listEl.innerHTML = `<li class="p-3 text-muted small fst-italic">${isGrupal ? 'No hay grupos definidos. Usa el botón "Editar grupos".' : 'No hay estudiantes.'
+            }</li>`;
+        return;
+    }
+
+    listEl.innerHTML = targets.map(t => {
+        const evalEntry = doneEvals.find(e => String(e.targetId) === String(t.id));
+        const isEvaluated = !!(evalEntry && evalEntry.evaluatedAt);
+        const isSubmitted = !!(evalEntry && evalEntry.submissionLink);
+        const initials = t.label.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase() || '?';
+
+        let statusIcons = '';
+        if (isSubmitted) {
+            statusIcons += `<i class="bi bi-cloud-arrow-up-fill text-info" title="Entregado" style="font-size: 0.9rem;"></i>`;
+        }
+        if (isEvaluated) {
+            statusIcons += `<i class="bi bi-check-circle-fill eval-target-check" title="Evaluado" style="font-size: 0.9rem; margin-top: 2px;"></i>`;
+        }
+
+        return `<li class="eval-target-item ${isEvaluated ? 'evaluated' : ''}" data-target-id="${escapeHtml(String(t.id))}"
+                    onclick="selectEvalTarget('${escapeHtml(String(t.id))}')">
+            <div class="eval-target-avatar">${t.isGroup ? `<i class="bi bi-people-fill" style="font-size:.85rem;"></i>` : escapeHtml(initials)}</div>
+            <div class="eval-target-info">
+                <div class="eval-target-name">${escapeHtml(t.label)}</div>
+                <div class="eval-target-meta">${escapeHtml(t.sub)}</div>
+            </div>
+            <div class="eval-target-status d-flex flex-column align-items-center justify-content-center px-2">
+                ${statusIcons}
+            </div>
+        </li>`;
+    }).join('');
+}
+
+/** Hides the right content area, shows the empty-state placeholder. */
+function _showEvalRightEmpty() {
+    const empty = document.getElementById('eval-right-empty');
+    const content = document.getElementById('eval-right-content');
+    if (empty) empty.classList.remove('d-none');
+    if (content) content.classList.add('d-none');
+}
+
+/** Shows the right content area, hides the empty-state placeholder. */
+function _showEvalRightContent() {
+    const empty = document.getElementById('eval-right-empty');
+    const content = document.getElementById('eval-right-content');
+    if (empty) empty.classList.add('d-none');
+    if (content) { content.classList.remove('d-none'); content.style.display = ''; }
+}
+
+/**
+ * Called when a target (student or group) is clicked in the left list.
+ * Loads their competences + feedback into the right panel.
+ */
+function selectEvalTarget(targetId) {
+    const saved = window._evalCurrentSaved;
+    const students = window._evalState.students;
+    if (!saved) return;
+
+    // Reset removed-comps for this target when switching
+    if (window._evalRemovedComps) delete window._evalRemovedComps[String(targetId)];
+
+    // Mark active in left list
+    document.querySelectorAll('#eval-targets-list .eval-target-item').forEach(li => {
+        li.classList.toggle('active', li.dataset.targetId === String(targetId));
+    });
+
+    const isGrupal = saved.type === 'grupal';
+    const savedEval = (saved.evaluations || []).find(e => String(e.targetId) === String(targetId));
+    console.log('[DEBUG] selectEvalTarget:', { targetId, isGrupal, savedEval });
+
+    // Resolve display name
+    let displayName = String(targetId);
+    if (isGrupal) {
+        const grp = (saved.groups || []).find(g => g.groupName === targetId);
+        if (grp) {
+            const members = (grp.studentIds || []).map(sid => {
+                const st = students.find(s => String(s.id || s._id) === String(sid));
+                return st ? `${st.name || ''} ${st.lastname || ''}`.trim() : sid;
+            });
+            displayName = grp.groupName + (members.length ? ` · ${members.slice(0, 3).map(n => escapeHtml(n)).join(', ')}${members.length > 3 ? '…' : ''}` : '');
+        }
+    } else {
+        const st = students.find(s => String(s.id || s._id) === String(targetId));
+        if (st) displayName = `${st.name || ''} ${st.lastname || ''}`.trim();
+    }
+
+    const isDone = !!(savedEval && savedEval.evaluatedAt);
+    const savedFeedback = savedEval ? (savedEval.feedback || '') : '';
+    const hasLink = !!(savedEval && savedEval.submissionLink);
+    console.log('[DEBUG] selectEvalTarget state:', { isDone, hasLink, savedEval });
+
+    // Build competences HTML using existing buildCompetencesHtml logic
+    const projCompetences = window._evalCurrentProjectCompetences || [];
+    const LEVEL_LABELS = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+    const LEVEL_COLORS = ['secondary', 'danger', 'warning', 'success'];
+
+    // Re-use the existing buildCompetencesHtml inner function (which is scoped inside openEvaluationModal).
+    // We call _openStudentEvalSubModalFor to populate the body but redirect its output to the split panel.
+    // ── Instead, we build the HTML here directly from the shared sub-modal builder ──
+    // We store the built HTML into the right panel.
+
+    const headerEl = document.getElementById('eval-right-header');
+    const bodyEl = document.getElementById('eval-right-body');
+
+    if (headerEl) {
+        const submissionStatus = savedEval
+            ? (savedEval.submissionStatus || (hasLink ? 'Entregado' : 'Pendiente'))
+            : 'Pendiente';
+        const statusBadge = `<span class="badge ${submissionStatus === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} mt-1">
+                <i class="bi bi-cloud-arrow-up${submissionStatus === 'Entregado' ? '-fill' : ''} me-1"></i>${submissionStatus}
+            </span>`;
+        const linkHtml = hasLink ? `
+            <div class="alert alert-info py-2 px-3 mt-2 mb-0 d-flex align-items-center border-info" style="font-size: 0.85rem;">
+                <i class="bi bi-git me-2 fs-5"></i>
+                <div class="flex-grow-1">
+                    <div class="fw-bold">Proyecto entregado</div>
+                    <a href="${escapeHtml(savedEval.submissionLink)}" target="_blank" class="text-decoration-none">
+                        ${escapeHtml(savedEval.submissionLink)} <i class="bi bi-box-arrow-up-right small ms-1"></i>
+                    </a>
+                </div>
+            </div>` : '';
+
+        headerEl.innerHTML = `
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="eval-target-avatar" style="width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;background:${isDone ? 'linear-gradient(135deg,#198754,#20c997)' : 'linear-gradient(135deg,#E85D26,#f97316)'};">
+                ${isGrupal ? `<i class="bi bi-people-fill" style="font-size:1rem;"></i>` : escapeHtml(displayName.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase() || '?')}
+            </div>
+            <div class="flex-grow-1 min-w-0">
+                <div class="fw-bold fs-6 text-truncate">${escapeHtml(displayName)}</div>
+                ${isDone ? `<span class="badge bg-success mt-1"><i class="bi bi-check-circle me-1"></i>Evaluado el ${new Date(savedEval.evaluatedAt).toLocaleDateString('es-ES')}</span>` : `<span class="badge bg-light text-muted border mt-1">Sin evaluar</span>`}
+                ${statusBadge}
+                ${linkHtml}
+            </div>
+        </div>`;
+    }
+
+    // Build the body using the sub-modal builder
+    // We need to temporarily reroute _openStudentEvalSubModalFor to write to our panel
+    window._evalViewActiveTargetId = String(targetId);
+
+    if (bodyEl) {
+        // Use the existing function that builds the sub-modal HTML; we adapt the output
+        const compHtml = _buildEvalCompetencesHtmlForTarget(targetId, savedEval, projCompetences);
+        bodyEl.innerHTML = `
+        <div class="mb-3">
+            <div class="small fw-semibold text-secondary mb-2"><i class="bi bi-award me-1"></i>Competencias</div>
+            ${compHtml}
+        </div>
+        <div class="mt-3 mb-4">
+            <label class="form-label small fw-semibold"><i class="bi bi-chat-text me-1"></i>Feedback</label>
+            <textarea class="form-control" rows="3" placeholder="Comentarios de feedback para el informe..."
+                data-target-type="${isGrupal ? 'group' : 'individual'}"
+                data-target-id="${escapeHtml(String(targetId))}">${escapeHtml(savedFeedback)}</textarea>
+        </div>`;
+    }
+
+    _showEvalRightContent();
+
+    // Store on the save button panel
+    const splitView = document.getElementById('eval-project-view');
+    if (splitView) splitView.dataset.targetStudentId = String(targetId);
+}
+
+/**
+ * Builds competence cards HTML for the given targetId — shared by the split view and legacy modal.
+ * This is extracted from the inline function inside _openStudentEvalSubModalFor so it can be called
+ * both from the split view and from the legacy modal path.
+ */
+function _buildEvalCompetencesHtmlForTarget(targetId, savedEval, projCompetences) {
+    if (!projCompetences || !projCompetences.length) {
+        return `<p class="text-muted small">No hay competencias asociadas a este proyecto.</p>`;
+    }
+    const removedCompIds = window._evalRemovedComps?.[String(targetId)] || [];
+    const visibleComps = projCompetences.filter(c => !removedCompIds.includes(String(c.id)));
+    console.log(`📌 ${visibleComps}`)
+    if (!visibleComps.length) {
+        return `<p class="text-muted small fst-italic">Todas las competencias han sido eliminadas de esta evaluación.</p>`;
+    }
+
+    const LEVEL_COLORS_IND = ['secondary', 'danger', 'warning', 'success'];
+    const LEVEL_LABELS_IND = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+    const LEVEL_LABELS = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+    const LEVEL_COLORS = ['secondary', 'danger', 'warning', 'success'];
+    const LEVEL_BG = { 1: '#fff3cd', 2: '#cfe2ff', 3: '#d1e7dd' };
+    const LEVEL_BORDER = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+    const LEVEL_TEXT = { 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+
+    let html = `<div class="eval-competences-list">`;
+    visibleComps.forEach(comp => {
+        const savedCompEntry = savedEval
+            ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id))
+            : null;
+        const currentLevel = savedCompEntry ? savedCompEntry.level : 0;
+        const rawCompId = String(comp.id);
+        const checkedDataForComp = savedCompEntry?.checkedIndicators
+            || savedEval?.checkedIndicators?.[rawCompId]
+            || {};
+
+        const removed_sv = window._evalRemovedTools?.[String(targetId)]?.[String(comp.id)] || [];
+        // Determine the active tool names for this competence in this project
+        const activeTool_sv = (comp.selectedTools && comp.selectedTools.length > 0)
+            ? comp.selectedTools
+            : (comp.allTools && comp.allTools.length > 0 ? comp.allTools : []);
+        const activeNames_sv = new Set(activeTool_sv.filter(n => !removed_sv.includes(n)));
+
+        // All tool objects (with or without indicators) — keyed by name for lookup
+        const allToolObjs_sv = comp.toolsWithIndicators || [];
+        // Active tools that DO have indicators → shown as accordion checkboxes
+        const activeToolsWithInds = activeNames_sv.size > 0
+            ? allToolObjs_sv.filter(t => activeNames_sv.has(t.name) && t.indicators && t.indicators.length > 0)
+            : allToolObjs_sv.filter(t => t.indicators && t.indicators.length > 0);
+        // Active tools that have NO indicators → shown as a warning notice
+        const activeToolsNoInds = activeNames_sv.size > 0
+            ? activeTool_sv.filter(n => !removed_sv.includes(n) && !allToolObjs_sv.find(t => t.name === n && t.indicators && t.indicators.length > 0))
+            : [];
+
+        const compInds = comp.competenceIndicators || { initial: [], medio: [], advance: [] };
+        const hasToolIndicators = activeToolsWithInds.some(t => t.indicators.length > 0);
+        const hasCompIndicators = compInds.initial.length || compInds.medio.length || compInds.advance.length;
+
+        const safeCompId = String(rawCompId).replace(/[^a-zA-Z0-9-]/g, '-');
+        const safeTargetId = String(targetId).replace(/[^a-zA-Z0-9-]/g, '-');
+        const prefix = `sv-${safeCompId}-${safeTargetId}`;
+
+        // Counts: Only competenceIndicators (comp-* keys) affect the level
+        const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
+        const totalByLevel = { 1: 0, 2: 0, 3: 0 };
+        if (hasCompIndicators) {
+            [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
+                totalByLevel[lvl] = (inds || []).length;
+                (inds || []).forEach(ind => { if (checkedDataForComp[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+            });
+        }
+
+        let autoLevel = 0;
+        if (hasCompIndicators) {
+            if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
+                autoLevel = 1;
+                if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                    autoLevel = 2;
+                    if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+                }
+            }
+            if (totalByLevel[1] === 0 && totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                autoLevel = Math.max(autoLevel, 2);
+                if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+            }
+        }
+        const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
+        const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
+        const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
+
+        // Indicator HTML (accordion per tool)
+        let indicatorsHtml = '';
+        if (hasToolIndicators) {
+            const accordionId = `acc-sv-${safeCompId}-${safeTargetId}`;
+            indicatorsHtml = `<div class="accordion accordion-flush" id="${accordionId}">` +
+                activeToolsWithInds.map((tool, toolIdx) => {
+                    const byLevel = { 1: [], 2: [], 3: [] };
+                    tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
+                    const hasChecked = tool.indicators.some(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`]);
+                    const collapseId = `${accordionId}-t${toolIdx}`;
+                    const toolAutoLevel = (() => {
+                        let lvl = 0;
+                        for (const l of [1, 2, 3]) {
+                            if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                            else if (byLevel[l].length > 0) break;
+                        }
+                        return lvl;
+                    })();
+                    const activeLevels = [1, 2, 3].filter(l => byLevel[l].length > 0);
+                    const levelCols = activeLevels.map(lvl => {
+                        const inds = byLevel[lvl];
+                        return `<div class="col">
+                        <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                            <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
+                        </div>
+                        ${inds.map(ind => {
+                            const indKey = `tool-${tool.id}-${ind.id}`;
+                            const isChecked = !!(checkedDataForComp[indKey]);
+                            return `<div class="form-check form-check-sm mb-0">
+                                <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                    id="${prefix}-${escapeHtml(indKey)}"
+                                    onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                    ${escapeHtml(ind.name)}
+                                    ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                </label>
+                            </div>`;
+                        }).join('')}
+                    </div>`;
+                    }).join('');
+                    return `<div class="accordion-item border-0 border-bottom">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                            type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                            <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                            ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                        </button>
+                    </h2>
+                    <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                        <div class="accordion-body p-2">
+                            <div class="row g-2">${levelCols}</div>
+                        </div>
+                    </div>
+                </div>`;
+                }).join('') + `</div>`;
+        } else if (hasCompIndicators) {
+            indicatorsHtml = [
+                { lvl: 1, inds: compInds.initial },
+                { lvl: 2, inds: compInds.medio },
+                { lvl: 3, inds: compInds.advance }
+            ].filter(g => g.inds.length).map(({ lvl, inds }) => `
+                <div class="border rounded p-2 mb-2" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_BORDER[lvl]} !important;">
+                    <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]};">
+                        <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                    </div>
+                    ${inds.map(ind => {
+                const indKey = `comp-${ind.id}`;
+                const isChecked = !!(checkedDataForComp[indKey]);
+                return `<div class="form-check form-check-sm mb-0">
+                            <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                id="${prefix}-${escapeHtml(indKey)}"
+                                onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                            <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                ${escapeHtml(ind.name)}
+                                ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                            </label>
+                        </div>`;
+            }).join('')}
+                </div>`
+            ).join('');
+        }
+
+        const indProgressHtml = (hasToolIndicators || hasCompIndicators) ? `
+            <div class="d-flex gap-2 flex-wrap mb-2 eval-ind-progress">
+                ${[1, 2, 3].filter(lvl => totalByLevel[lvl] > 0).map(lvl => `
+                    <span class="badge rounded-pill" style="background:${LEVEL_BG[lvl]}; color:${LEVEL_BORDER[lvl]}; border:1px solid ${LEVEL_BORDER[lvl]}; font-size:.72rem;">
+                        Nv.${lvl}: <span data-lvl-count="${lvl}">${checkedByLevel[lvl]}/${totalByLevel[lvl]}</span>
+                    </span>`).join('')}
+                <span class="badge bg-${lvlBadgeColor} ms-1" data-auto-level-badge>
+                    <i class="bi bi-award me-1"></i>Nivel calculado: <strong>${displayLevel}</strong> — ${lvlBadgeLabel}
+                </span>
+            </div>` : '';
+
+        const levelDescs = (comp.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
+        const manualLevelHtml = (!hasToolIndicators && !hasCompIndicators) ? `
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="small text-muted me-1">Nivel:</span>
+                ${LEVEL_LABELS.map((lbl, lvl) => {
+            const desc = levelDescs[lvl] ? ` — ${levelDescs[lvl]}` : '';
+            return `<button type="button"
+                        class="btn btn-sm level-btn ${currentLevel === lvl ? `btn-${LEVEL_COLORS[lvl]}` : 'btn-outline-secondary'}"
+                        data-target="${safeTargetId}" data-comp="${safeCompId}"
+                        data-comp-name="${escapeHtml(comp.name)}" data-level="${lvl}"
+                        onclick="toggleEvalLevel(this,'${safeTargetId}','${safeCompId}',${lvl},'${escapeHtml(comp.name)}')"
+                        title="${escapeHtml(lbl + desc)}">
+                        ${lvl === 0 ? '<i class="bi bi-dash"></i>' : `<strong>${lvl}</strong>`}
+                        <span class="ms-1 d-none d-md-inline" style="font-size:.7rem;">${escapeHtml(lbl)}</span>
+                    </button>`;
+        }).join('')}
+            </div>
+            ${currentLevel > 0 && levelDescs[currentLevel] ? `<div class="mt-1 small text-muted fst-italic level-desc-hint">${escapeHtml(levelDescs[currentLevel])}</div>` : `<div class="mt-1 level-desc-hint" style="min-height:1rem;"></div>`}
+        ` : '';
+
+        html += `<div class="eval-comp-card card mb-3 border" data-comp-id="${safeCompId}" data-target-id="${safeTargetId}">
+            <div class="card-header py-2 px-3 d-flex align-items-start justify-content-between gap-2" style="background:#f8f9fa;">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="fw-semibold">${escapeHtml(comp.name)}</span>
+                        ${comp.area ? `<span class="badge bg-secondary" style="font-size:.65rem;">${escapeHtml(comp.area)}</span>` : ''}
+                    </div>
+                    ${comp.description ? `<div class="text-muted small mt-1 fst-italic">${escapeHtml(comp.description)}</div>` : ''}
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" style="font-size:.7rem; padding:2px 6px;"
+                    title="Eliminar esta competencia de la evaluación"
+                    onclick="removeEvalCompetenceFromView('${safeTargetId}','${safeCompId}')">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="card-body py-2 px-3">
+                ${indProgressHtml}
+                ${hasCompIndicators ? `<div class="mb-3">
+                    <div class="small fw-semibold text-success mb-1"><i class="bi bi-bookmark-check me-1"></i>Indicadores de Competencia — marca los que cumple:</div>
+                    <div class="ind-comp-container">
+                        <div id="ind-container-comp-${safeCompId}-${safeTargetId}" style="display:flex; overflow-y:auto;">
+                            ${[
+                    { lvl: 1, inds: compInds.initial },
+                    { lvl: 2, inds: compInds.medio },
+                    { lvl: 3, inds: compInds.advance }
+                ].filter(g => g.inds.length).map(({ lvl, inds }) => `
+                                <div class="border rounded p-2 mb-2" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_BORDER[lvl]} !important; margin: 0 1rem 0 1rem;">
+                                    <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]};">
+                                        <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                                    </div>
+                                    ${inds.map(ind => {
+                    const indKey = `comp-${ind.id}`;
+                    const isChecked = !!(checkedDataForComp[indKey]);
+                    return `<div class="form-check form-check-sm mb-0">
+                                            <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                                id="${prefix}-${escapeHtml(indKey)}"
+                                                onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                            <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                                ${escapeHtml(ind.name)}
+                                                ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                            </label>
+                                        </div>`;
+                }).join('')}
+                                </div>`
+                ).join('')}
+                        </div>
+                    </div>
+                </div>` : ''}
+                ${hasToolIndicators ? `<div class="mb-3 border-top pt-2">
+                    <div class="small fw-semibold text-info mb-1"><i class="bi bi-tools me-1"></i>Indicadores de Herramientas — para registro técnico (no afecta nivel):</div>
+                    <div id="ind-container-tools-${safeCompId}-${safeTargetId}">
+                        ${(() => {
+                    const accordionId = `acc-sv-${safeCompId}-${safeTargetId}`;
+                    return `<div class="accordion accordion-flush" id="${accordionId}">` +
+                        activeToolsWithInds.map((tool, toolIdx) => {
+                            const byLevel = { 1: [], 2: [], 3: [] };
+                            tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
+                            const hasChecked = tool.indicators.some(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`]);
+                            const collapseId = `${accordionId}-t${toolIdx}`;
+                            const toolAutoLevel = (() => {
+                                let lvl = 0;
+                                for (const l of [1, 2, 3]) {
+                                    if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                                    else if (byLevel[l].length > 0) break;
+                                }
+                                return lvl;
+                            })();
+                            const activeLevels = [1, 2, 3].filter(l => byLevel[l].length > 0);
+                            const levelCols = activeLevels.map(lvl => {
+                                const inds = byLevel[lvl];
+                                return `<div class="col">
+                                        <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                                            <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
+                                        </div>
+                                        ${inds.map(ind => {
+                                    const indKey = `tool-${tool.id}-${ind.id}`;
+                                    const isChecked = !!(checkedDataForComp[indKey]);
+                                    return `<div class="form-check form-check-sm mb-0">
+                                                <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                                    id="${prefix}-${escapeHtml(indKey)}"
+                                                    onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                                <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                                    ${escapeHtml(ind.name)}
+                                                    ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                                </label>
+                                            </div>`;
+                                }).join('')}
+                                    </div>`;
+                            }).join('');
+                            return `<div class="accordion-item border-0 border-bottom">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                                            type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                                            <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                                            ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                                        </button>
+                                    </h2>
+                                    <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                                        <div class="accordion-body p-2">
+                                            <div class="row g-2">${levelCols}</div>
+                                        </div>
+                                    </div>
+                                </div>`;
+                        }).join('') + `</div>`;
+                })()}
+                    </div>
+                </div>` : ''}
+                ${activeToolsNoInds.length > 0 ? `<div class="alert alert-warning py-2 px-3 mb-2" style="font-size:.8rem;">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <strong>Sin indicadores:</strong> las herramientas
+                    <strong>${activeToolsNoInds.map(n => escapeHtml(n)).join(', ')}</strong>
+                    no tienen indicadores definidos en el catálogo.
+                    Puedes evaluarlas manualmente con el nivel de abajo, o solicitar que se añadan indicadores en la API externa.
+                </div>` : ''}
+                ${manualLevelHtml}
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+}
+
+/** Removes a competence card from the split view (mirrors removeEvalCompetence for the modal). */
+function removeEvalCompetenceFromView(targetId, compId) {
+    if (!window._evalRemovedComps) window._evalRemovedComps = {};
+    if (!window._evalRemovedComps[String(targetId)]) window._evalRemovedComps[String(targetId)] = [];
+    if (!window._evalRemovedComps[String(targetId)].includes(String(compId))) {
+        window._evalRemovedComps[String(targetId)].push(String(compId));
+    }
+    const saved = window._evalCurrentSaved;
+    if (saved) {
+        const evalEntry = (saved.evaluations || []).find(e => e.targetId === String(targetId));
+        if (evalEntry) evalEntry.competences = (evalEntry.competences || []).filter(c => String(c.competenceId) !== String(compId));
+    }
+    const card = document.querySelector(`.eval-comp-card[data-comp-id="${CSS.escape(String(compId))}"][data-target-id="${CSS.escape(String(targetId))}"]`);
+    if (card) {
+        card.style.transition = 'opacity .2s';
+        card.style.opacity = '0';
+        setTimeout(() => card.remove(), 200);
+    }
+}
+
+/** Closes the split-view and returns to the evaluation tab. */
+function closeEvaluationView() {
+    const splitView = document.getElementById('eval-project-view');
+    const tabView = document.getElementById('evaluation-tab-view');
+    if (splitView) splitView.classList.add('hidden');
+    if (tabView) tabView.classList.remove('hidden');
+    renderEvaluationTab();
+}
+
+/** Opens the groups modal from the split-view top bar. */
+function openGroupsModalFromView() {
+    const mIdx = window._evalState?.currentModuleIdx;
+    const pIdx = window._evalState?.currentProjectIdx;
+    if (mIdx !== undefined && pIdx !== undefined) openGroupsModal(mIdx, pIdx);
 }
 
 function openEvaluationModal(mIdx, pIdx) {
@@ -6383,9 +10324,34 @@ function openEvaluationModal(mIdx, pIdx) {
         type: 'individual', groups: [], evaluations: []
     };
 
-    const projCompetences = (proj.competenceIds || []).map(cid => {
-        return competences.find(c => String(c.id) === String(cid)) || { id: cid, name: `Competencia ${cid}`, area: '' };
-    });
+    const projCompetences = (() => {
+        const pcEntry = (window._evalState.projectCompetences || []).find(
+            pc => pc.moduleId === modId && pc.projectName === proj.name
+        );
+        // No longer falls back to proj.competenceIds (roadmap) — competences are defined in Evaluación only.
+        const compIds = pcEntry ? (pcEntry.competenceIds || []) : [];
+        const catalog = window._evalState.catalog || [];
+        return compIds.map(cid => {
+            // Prefer full catalog entry (has toolsWithIndicators, competenceIndicators)
+            const full = catalog.find(c => String(c.id) === String(cid));
+            const found = full || competences.find(c => String(c.id) === String(cid)) || { id: cid, name: `Competencia ${cid}`, area: '', allTools: [], toolsWithIndicators: [], competenceIndicators: { initial: [], medio: [], advance: [] } };
+            const projTools = (pcEntry && pcEntry.competenceTools && pcEntry.competenceTools[String(cid)])
+                ? pcEntry.competenceTools[String(cid)]
+                : (found.allTools || []);
+            return { ...found, selectedTools: projTools };
+        });
+    })();
+
+    // DEBUG: log competence tool data
+    console.log('[Eval] projCompetences:', projCompetences.map(c => ({
+        id: c.id, name: c.name,
+        toolsWithIndicators_count: (c.toolsWithIndicators || []).length,
+        first_tool: (c.toolsWithIndicators || [])[0] ? {
+            name: (c.toolsWithIndicators || [])[0].name,
+            indicators_count: ((c.toolsWithIndicators || [])[0].indicators || []).length,
+            first_indicator: ((c.toolsWithIndicators || [])[0].indicators || [])[0]
+        } : null
+    })));
 
     document.getElementById('eval-modal-title').textContent = `${escapeHtml(proj.name)} — ${escapeHtml(mod.name || `Módulo ${mIdx + 1}`)}`;
 
@@ -6405,14 +10371,194 @@ function openEvaluationModal(mIdx, pIdx) {
             return `<p class="text-muted small fst-italic">Todas las competencias han sido eliminadas de esta evaluación.</p>`;
         }
 
+        const LEVEL_COLORS_IND = ['secondary', 'danger', 'warning', 'success'];
+        const LEVEL_LABELS_IND = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+        const LEVEL_BG = { 1: '#fff3cd', 2: '#cfe2ff', 3: '#d1e7dd' };
+        const LEVEL_BORDER = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+        const LEVEL_TEXT = { 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+
         let html = `<div class="eval-competences-list">`;
-        visibleComps.forEach((comp, compIdx) => {
-            const savedLevel = savedEval ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id)) : null;
-            const currentLevel = savedLevel ? savedLevel.level : 0;
-            const tools = (comp.selectedTools && comp.selectedTools.length) ? comp.selectedTools : (comp.allTools || []);
+        visibleComps.forEach((comp) => {
+            const savedCompEntry = savedEval ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id)) : null;
+            const currentLevel = savedCompEntry ? savedCompEntry.level : 0;
+            const rawCompId = String(comp.id);
+            // savedCompEntry.checkedIndicators is flat: { [indKey]: bool }
+            // savedEval.checkedIndicators is nested: { [compId]: { [indKey]: bool } }
+            const checkedData = savedCompEntry?.checkedIndicators
+                || savedEval?.checkedIndicators?.[rawCompId]
+                || {};
             const levelDescs = (comp.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
 
-            html += `<div class="eval-comp-card card mb-2 border" data-comp-id="${escapeHtml(String(comp.id))}" data-target-id="${escapeHtml(String(targetId))}">
+            const allToolsWithInds = (comp.toolsWithIndicators || []).filter(t => t.indicators && t.indicators.length > 0);
+            const removed_modal = window._evalRemovedTools?.[String(targetId)]?.[String(comp.id)] || [];
+            const activeTool_modal = (comp.selectedTools && comp.selectedTools.length > 0)
+                ? comp.selectedTools
+                : (comp.allTools && comp.allTools.length > 0 ? comp.allTools : []);
+            const activeNames_modal = new Set(activeTool_modal.filter(n => !removed_modal.includes(n)));
+            const allToolObjs_modal = comp.toolsWithIndicators || [];
+            // Active tools that DO have indicators → shown as accordion checkboxes
+            const activeToolsWithInds = activeNames_modal.size > 0
+                ? allToolObjs_modal.filter(t => activeNames_modal.has(t.name) && t.indicators && t.indicators.length > 0)
+                : allToolObjs_modal.filter(t => t.indicators && t.indicators.length > 0);
+            // Active tools that have NO indicators → shown as a warning notice
+            const activeToolsNoInds_modal = activeNames_modal.size > 0
+                ? activeTool_modal.filter(n => !removed_modal.includes(n) && !allToolObjs_modal.find(t => t.name === n && t.indicators && t.indicators.length > 0))
+                : [];
+
+            const compInds = comp.competenceIndicators || { initial: [], medio: [], advance: [] };
+            const hasToolIndicators = activeToolsWithInds.some(t => t.indicators.length > 0);
+            const hasCompIndicators = compInds.initial.length || compInds.medio.length || compInds.advance.length;
+
+            const safeCompId = String(rawCompId).replace(/[^a-zA-Z0-9-]/g, '-');
+            const safeTargetId = String(targetId).replace(/[^a-zA-Z0-9-]/g, '-');
+            const prefix = `grp-ind-${safeCompId}-${safeTargetId}`;
+
+            // Count checked/total indicators to compute auto-level
+            // (checkedData is already set above as the flat {indKey: bool} map)
+            // Level is calculated ONLY from competence indicators
+            const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
+            const totalByLevel = { 1: 0, 2: 0, 3: 0 };
+
+            if (hasCompIndicators) {
+                [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
+                    totalByLevel[lvl] = (inds || []).length;
+                    (inds || []).forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+                });
+            }
+
+            let autoLevel = 0;
+            if (hasCompIndicators) {
+                if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
+                    autoLevel = 1;
+                    if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                        autoLevel = 2;
+                        if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+                    }
+                }
+                if (totalByLevel[1] === 0 && totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                    autoLevel = Math.max(autoLevel, 2);
+                    if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+                }
+            }
+
+            const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
+            const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
+            const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
+
+            // Build indicator checkboxes grouped by tool — accordion, levels side-by-side
+            let indicatorsHtml = '';
+            if (hasToolIndicators) {
+                const accordionId = `acc-grp-${safeCompId}-${safeTargetId}`;
+                indicatorsHtml = `<div class="accordion accordion-flush" id="${accordionId}">` +
+                    activeToolsWithInds.map((tool, toolIdx) => {
+                        const byLevel = { 1: [], 2: [], 3: [] };
+                        tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
+                        const hasChecked = tool.indicators.some(ind => checkedData[`tool-${tool.id}-${ind.id}`]);
+                        const collapseId = `${accordionId}-t${toolIdx}`;
+                        const toolAutoLevel = (() => {
+                            let lvl = 0;
+                            for (const l of [1, 2, 3]) {
+                                if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedData[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                                else if (byLevel[l].length > 0) break;
+                            }
+                            return lvl;
+                        })();
+                        const activeLevels = [1, 2, 3].filter(l => byLevel[l].length > 0);
+                        const levelCols = activeLevels.map(lvl => {
+                            const inds = byLevel[lvl];
+                            return `<div class="col">
+                            <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                                <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
+                            </div>
+                            ${inds.map(ind => {
+                                const indKey = `tool-${tool.id}-${ind.id}`;
+                                const isChecked = !!(checkedData[indKey]);
+                                return `<div class="form-check form-check-sm mb-0">
+                                    <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                        id="${prefix}-${escapeHtml(indKey)}"
+                                        onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                    <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                        ${escapeHtml(ind.name)}
+                                        ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                    </label>
+                                </div>`;
+                            }).join('')}
+                        </div>`;
+                        }).join('');
+                        return `<div class="accordion-item border-0 border-bottom">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                                <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                                ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                            <div class="accordion-body p-2">
+                                <div class="row g-2">${levelCols}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                    }).join('') + `</div>`;
+            } else if (hasCompIndicators) {
+                indicatorsHtml = [
+                    { lvl: 1, inds: compInds.initial },
+                    { lvl: 2, inds: compInds.medio },
+                    { lvl: 3, inds: compInds.advance }
+                ].filter(g => g.inds.length).map(({ lvl, inds }) => `
+                    <div class="border rounded p-2 mb-2" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_BORDER[lvl]} !important;">
+                        <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]};">
+                            <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                        </div>
+                        ${inds.map(ind => {
+                    const indKey = `comp-${ind.id}`;
+                    const isChecked = !!(checkedData[indKey]);
+                    return `<div class="form-check form-check-sm mb-0">
+                                <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                    id="${prefix}-${escapeHtml(indKey)}"
+                                    onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}">
+                                    ${escapeHtml(ind.name)}
+                                    ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                </label>
+                            </div>`;
+                }).join('')}
+                    </div>`
+                ).join('');
+            }
+
+            const indProgressHtml = (hasToolIndicators || hasCompIndicators) ? `
+                <div class="d-flex gap-2 flex-wrap mb-2 eval-ind-progress">
+                    ${[1, 2, 3].filter(lvl => totalByLevel[lvl] > 0).map(lvl => `
+                        <span class="badge rounded-pill" style="background:${LEVEL_BG[lvl]}; color:${LEVEL_BORDER[lvl]}; border:1px solid ${LEVEL_BORDER[lvl]}; font-size:.72rem;">
+                            Nv.${lvl}: <span data-lvl-count="${lvl}">${checkedByLevel[lvl]}/${totalByLevel[lvl]}</span>
+                        </span>`).join('')}
+                    <span class="badge bg-${lvlBadgeColor} ms-1" data-auto-level-badge>
+                        <i class="bi bi-award me-1"></i>Nivel calculado: <strong>${displayLevel}</strong> — ${lvlBadgeLabel}
+                    </span>
+                </div>` : '';
+
+            // Manual level buttons — only when no indicators at all
+            const manualLevelHtml = (!hasToolIndicators && !hasCompIndicators) ? `
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small text-muted me-1">Nivel:</span>
+                    ${LEVEL_LABELS.map((lbl, lvl) => {
+                const desc = levelDescs[lvl] ? ` — ${levelDescs[lvl]}` : '';
+                return `<button type="button"
+                            class="btn btn-sm level-btn ${currentLevel === lvl ? `btn-${LEVEL_COLORS[lvl]}` : 'btn-outline-secondary'}"
+                            data-target="${safeTargetId}" data-comp="${safeCompId}"
+                            data-comp-name="${escapeHtml(comp.name)}" data-level="${lvl}"
+                            onclick="toggleEvalLevel(this,'${safeTargetId}','${safeCompId}',${lvl},'${escapeHtml(comp.name)}')"
+                            title="${escapeHtml(lbl + desc)}">
+                            ${lvl === 0 ? '<i class="bi bi-dash"></i>' : `<strong>${lvl}</strong>`}
+                            <span class="ms-1 d-none d-md-inline" style="font-size:.7rem;">${escapeHtml(lbl)}</span>
+                        </button>`;
+            }).join('')}
+                </div>
+                ${currentLevel > 0 && levelDescs[currentLevel] ? `<div class="mt-1 small text-muted fst-italic">${escapeHtml(levelDescs[currentLevel])}</div>` : ''}
+            ` : '';
+
+            html += `<div class="eval-comp-card card mb-2 border" data-comp-id="${safeCompId}" data-target-id="${safeTargetId}">
                 <div class="card-header py-2 px-3 d-flex align-items-start justify-content-between gap-2" style="background:#f8f9fa;">
                     <div class="flex-grow-1">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -6420,35 +10566,27 @@ function openEvaluationModal(mIdx, pIdx) {
                             ${comp.area ? `<span class="badge bg-secondary" style="font-size:.65rem;">${escapeHtml(comp.area)}</span>` : ''}
                         </div>
                         ${comp.description ? `<div class="text-muted small mt-1 fst-italic">${escapeHtml(comp.description)}</div>` : ''}
-                        ${tools.length ? `<div class="mt-1 d-flex flex-wrap gap-1">
-                            ${tools.map(t => `<span class="badge bg-light text-dark border" style="font-size:.65rem;"><i class="bi bi-tools me-1"></i>${escapeHtml(t)}</span>`).join('')}
-                        </div>` : ''}
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" style="font-size:.7rem; padding:2px 6px;"
                         title="Eliminar esta competencia de la evaluación"
-                        onclick="removeEvalCompetence('${escapeHtml(String(targetId))}', '${escapeHtml(String(comp.id))}')">
+                        onclick="removeEvalCompetence('${safeTargetId}','${safeCompId}')">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
                 <div class="card-body py-2 px-3">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <span class="small text-muted me-1">Nivel:</span>
-                        ${LEVEL_LABELS.map((lbl, lvl) => {
-                            const desc = levelDescs[lvl] ? ` — ${levelDescs[lvl]}` : '';
-                            return `<button type="button"
-                                class="btn btn-sm level-btn ${currentLevel === lvl ? `btn-${LEVEL_COLORS[lvl]}` : 'btn-outline-secondary'}"
-                                data-target="${escapeHtml(String(targetId))}"
-                                data-comp="${escapeHtml(String(comp.id))}"
-                                data-comp-name="${escapeHtml(comp.name)}"
-                                data-level="${lvl}"
-                                onclick="toggleEvalLevel(this, '${escapeHtml(String(targetId))}', '${escapeHtml(String(comp.id))}', ${lvl}, '${escapeHtml(comp.name)}')"
-                                title="${escapeHtml(lbl + desc)}">
-                                ${lvl === 0 ? '<i class="bi bi-dash"></i>' : `<strong>${lvl}</strong>`}
-                                <span class="ms-1 d-none d-md-inline" style="font-size:.7rem;">${escapeHtml(lbl)}</span>
-                            </button>`;
-                        }).join('')}
-                    </div>
-                    ${currentLevel > 0 && levelDescs[currentLevel] ? `<div class="mt-1 small text-muted fst-italic level-desc-hint">${escapeHtml(levelDescs[currentLevel])}</div>` : `<div class="mt-1 small text-muted fst-italic level-desc-hint" style="min-height:1rem;"></div>`}
+                    ${indProgressHtml}
+                    ${indicatorsHtml ? `<div class="mb-2">
+                        <div class="small fw-semibold text-secondary mb-1"><i class="bi bi-list-check me-1"></i>Indicadores — marca los que cumple:</div>
+                        <div id="ind-container-${safeCompId}-${safeTargetId}">${indicatorsHtml}</div>
+                    </div>` : ''}
+                    ${activeToolsNoInds_modal.length > 0 ? `<div class="alert alert-warning py-2 px-3 mb-2" style="font-size:.8rem;">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Sin indicadores:</strong> las herramientas
+                        <strong>${activeToolsNoInds_modal.map(n => escapeHtml(n)).join(', ')}</strong>
+                        no tienen indicadores definidos en el catálogo.
+                        Puedes evaluarlas manualmente con el nivel de abajo, o solicitar que se añadan indicadores en la API externa.
+                    </div>` : ''}
+                    ${manualLevelHtml}
                 </div>
             </div>`;
         });
@@ -6500,9 +10638,29 @@ function openEvaluationModal(mIdx, pIdx) {
                         ${memberNames.length ? `<span class="text-muted small ms-2 fst-italic">${memberNames.join(' · ')}</span>` : ''}
                     </div>
                     <div class="card-body pb-2">
-                        <div class="mb-2">
-                            <label class="form-label small fw-semibold"><i class="bi bi-award me-1"></i>Competencias</label>
-                            ${buildCompetencesHtml(grp.groupName, savedEval)}
+                        <div class="mb-2 d-flex justify-content-between align-items-start flex-wrap gap-2">
+                            <div class="flex-grow-1">
+                                <label class="form-label small fw-semibold mb-1"><i class="bi bi-award me-1"></i>Competencias</label>
+                                ${buildCompetencesHtml(grp.groupName, savedEval)}
+                            </div>
+                            ${(() => {
+                        const ge = (saved.evaluations || []).find(e => String(e.targetId) === String(grp.groupName));
+                        if (!ge) return '';
+                        const status = ge.submissionStatus || (ge.submissionLink ? 'Entregado' : 'Pendiente');
+                        const hasLink = !!ge.submissionLink;
+                        const badge = `<span class="badge ${status === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} ms-1">
+                                    <i class="bi bi-cloud-arrow-up${status === 'Entregado' ? '-fill' : ''} me-1"></i>${status}
+                                </span>`;
+                        const linkHtml = hasLink ? `<div class="small mt-1 text-end">
+                                    <a href="${escapeHtml(ge.submissionLink)}" target="_blank" class="text-decoration-none">
+                                        <i class="bi bi-git me-1"></i>Repositorio entregado
+                                    </a>
+                                </div>` : '';
+                        return `<div class="text-end small">
+                                    ${badge}
+                                    ${linkHtml}
+                                </div>`;
+                    })()}
                         </div>
                         <div class="mt-2">
                             <label class="form-label small fw-semibold"><i class="bi bi-chat-text me-1"></i>Feedback del grupo</label>
@@ -6528,21 +10686,32 @@ function openEvaluationModal(mIdx, pIdx) {
                 <h6 class="fw-bold mb-2"><i class="bi bi-list-check me-2 text-success"></i>Evaluaciones guardadas (${doneEvals.length}/${students.length})</h6>
                 <div class="list-group gap-2">
                 ${doneEvals.map(ev => {
-                    const st = students.find(s => String(s.id || s._id) === String(ev.targetId));
-                    const stName = st ? `${st.name || ''} ${st.lastname || ''}`.trim() : ev.targetName || ev.targetId;
-                    const compsHtml = (ev.competences || []).map(c =>
-                        `<span class="badge bg-${LEVEL_COLORS_MAP[c.level] || 'secondary'} me-1">
+                const st = students.find(s => String(s.id || s._id) === String(ev.targetId));
+                const stName = st ? `${st.name || ''} ${st.lastname || ''}`.trim() : ev.targetName || ev.targetId;
+                const compsHtml = (ev.competences || []).map(c =>
+                    `<span class="badge bg-${LEVEL_COLORS_MAP[c.level] || 'secondary'} me-1">
                             Nv.${c.level} ${c.competenceName}
                         </span>`
-                    ).join('');
-                    return `<div class="list-group-item list-group-item-action p-2 rounded border" id="saved-eval-${escapeHtml(String(ev.targetId))}">
+                ).join('');
+                const status = ev.submissionStatus || (ev.submissionLink ? 'Entregado' : 'Pendiente');
+                const hasLink = !!ev.submissionLink;
+                const statusBadge = `<span class="badge ${status === 'Entregado' ? 'bg-success' : 'bg-light text-muted border'} ms-1">
+                        <i class="bi bi-cloud-arrow-up${status === 'Entregado' ? '-fill' : ''} me-1"></i>${status}
+                    </span>`;
+                return `<div class="list-group-item list-group-item-action p-2 rounded border" id="saved-eval-${escapeHtml(String(ev.targetId))}">
                         <div class="d-flex align-items-start justify-content-between gap-2">
                             <div class="flex-grow-1">
                                 <div class="fw-semibold small mb-1">
                                     <i class="bi bi-person-check me-1 text-success"></i>${escapeHtml(stName)}
                                     ${ev.evaluatedAt ? `<span class="text-muted fw-normal ms-2" style="font-size:.7rem;">${new Date(ev.evaluatedAt).toLocaleDateString('es-ES')}</span>` : ''}
+                                    ${statusBadge}
                                 </div>
                                 ${compsHtml ? `<div class="mb-1">${compsHtml}</div>` : ''}
+                                ${hasLink ? `<div class="small mb-1">
+                                    <a href="${escapeHtml(ev.submissionLink)}" target="_blank" class="text-decoration-none">
+                                        <i class="bi bi-git me-1"></i>Repositorio entregado
+                                    </a>
+                                </div>` : ''}
                                 ${ev.feedback ? `<div class="text-muted small fst-italic">"${escapeHtml(ev.feedback)}"</div>` : ''}
                                 ${ev.studentComment ? `<div class="text-primary small mt-1"><i class="bi bi-chat-right-text me-1"></i>"${escapeHtml(ev.studentComment)}"</div>` : ''}
                             </div>
@@ -6558,7 +10727,7 @@ function openEvaluationModal(mIdx, pIdx) {
                             </div>
                         </div>
                     </div>`;
-                }).join('')}
+            }).join('')}
                 </div>
             </div>`;
         }
@@ -6570,11 +10739,11 @@ function openEvaluationModal(mIdx, pIdx) {
                 <select class="form-select" id="eval-student-select">
                     <option value="">— Seleccionar estudiante —</option>
                     ${students.map(st => {
-                        const alreadyDone = doneEvals.some(e => String(e.targetId) === String(st.id || st._id));
-                        return `<option value="${escapeHtml(String(st.id || st._id))}" ${alreadyDone ? 'style="color:#198754;font-weight:600;"' : ''}>
+            const alreadyDone = doneEvals.some(e => String(e.targetId) === String(st.id || st._id));
+            return `<option value="${escapeHtml(String(st.id || st._id))}" ${alreadyDone ? 'style="color:#198754;font-weight:600;"' : ''}>
                             ${escapeHtml((st.name || '') + ' ' + (st.lastname || ''))}${alreadyDone ? ' ✓' : ''}
                         </option>`;
-                    }).join('')}
+        }).join('')}
                 </select>
                 <button class="btn btn-primary" type="button" onclick="openStudentEvalSubModal()"
                     style="background:#E85D26;border-color:#E85D26;">
@@ -6640,16 +10809,221 @@ function _openStudentEvalSubModalFor(studentId) {
             return `<p class="text-muted small fst-italic">Todas las competencias han sido eliminadas de esta evaluación.</p>`;
         }
 
+        const LEVEL_COLORS_IND = ['secondary', 'danger', 'warning', 'success'];
+        const LEVEL_LABELS_IND = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+        const LEVEL_BG = { 1: '#fff3cd', 2: '#cfe2ff', 3: '#d1e7dd' };
+        const LEVEL_BORDER = { 1: '#ffc107', 2: '#0d6efd', 3: '#198754' };
+        const LEVEL_TEXT = { 1: 'Básico', 2: 'Medio', 3: 'Avanzado' };
+
         let html = `<div class="eval-competences-list">`;
         visibleComps.forEach(comp => {
-            const savedLevel = savedEval ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id)) : null;
-            const currentLevel = savedLevel ? savedLevel.level : 0;
-            const allTools = (comp.selectedTools && comp.selectedTools.length) ? comp.selectedTools : (comp.allTools || []);
-            const removedToolsForComp = window._evalRemovedTools?.[String(targetId)]?.[String(comp.id)] || [];
-            const visibleTools = allTools.filter(t => !removedToolsForComp.includes(t));
-            const levelDescs = (comp.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
+            const savedCompEntry = savedEval ? (savedEval.competences || []).find(c => String(c.competenceId) === String(comp.id)) : null;
+            const currentLevel = savedCompEntry ? savedCompEntry.level : 0;
+            // Use the raw comp.id (not HTML-escaped) as the key when reading checkedIndicators
+            const rawCompId = String(comp.id);
+            // savedCompEntry.checkedIndicators is flat: { [indKey]: bool }
+            // savedEval.checkedIndicators is nested: { [compId]: { [indKey]: bool } }
+            const checkedDataForComp = savedCompEntry?.checkedIndicators
+                || savedEval?.checkedIndicators?.[rawCompId]
+                || {};
 
-            html += `<div class="eval-comp-card card mb-2 border" data-comp-id="${escapeHtml(String(comp.id))}" data-target-id="${escapeHtml(String(targetId))}">
+            // Build the indicators structure from toolsWithIndicators + competenceIndicators
+            // Priority: use toolsWithIndicators if available and have indicators; else use competenceIndicators
+            const toolsWithInds_t3 = comp.toolsWithIndicators || [];
+            const removed_t3 = window._evalRemovedTools?.[String(targetId)]?.[String(comp.id)] || [];
+            const activeTool_t3 = (comp.selectedTools && comp.selectedTools.length > 0)
+                ? comp.selectedTools
+                : (comp.allTools && comp.allTools.length > 0 ? comp.allTools : []);
+            const activeNames_t3 = new Set(activeTool_t3.filter(n => !removed_t3.includes(n)));
+            // Active tools that DO have indicators → shown as accordion checkboxes
+            const activeToolsWithInds = activeNames_t3.size > 0
+                ? toolsWithInds_t3.filter(t => activeNames_t3.has(t.name) && t.indicators && t.indicators.length > 0)
+                : toolsWithInds_t3.filter(t => t.indicators && t.indicators.length > 0);
+            // Active tools that have NO indicators → shown as a warning notice
+            const activeToolsNoInds_t3 = activeNames_t3.size > 0
+                ? activeTool_t3.filter(n => !removed_t3.includes(n) && !toolsWithInds_t3.find(t => t.name === n && t.indicators && t.indicators.length > 0))
+                : [];
+
+            // Fallback to general competence indicators grouped by level
+            const compInds = comp.competenceIndicators || { initial: [], medio: [], advance: [] };
+            const hasToolIndicators = activeToolsWithInds.some(t => t.indicators.length > 0);
+            const hasCompIndicators = compInds.initial.length || compInds.medio.length || compInds.advance.length;
+
+            // Unique ID prefix for this competence+target combo
+            const safeCompId = String(comp.id).replace(/[^a-zA-Z0-9-]/g, '-');
+            const safeTargetId = String(targetId).replace(/[^a-zA-Z0-9-]/g, '-');
+            const prefix = `ind-${safeCompId}-${safeTargetId}`;
+
+            // Build indicators HTML — accordion per tool, levels side-by-side
+            let indicatorsHtml = '';
+
+            if (hasToolIndicators) {
+                // Each tool = accordion item, levels shown as side-by-side columns inside
+                const accordionId = `acc-ind-${safeCompId}-${safeTargetId}`;
+                indicatorsHtml = `<div class="accordion accordion-flush" id="${accordionId}">` +
+                    activeToolsWithInds.map((tool, toolIdx) => {
+                        const byLevel = { 1: [], 2: [], 3: [] };
+                        tool.indicators.forEach(ind => { if (byLevel[ind.levelId]) byLevel[ind.levelId].push(ind); });
+                        const hasChecked = tool.indicators.some(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`]);
+                        const collapseId = `${accordionId}-t${toolIdx}`;
+                        const toolAutoLevel = (() => {
+                            let lvl = 0;
+                            for (const l of [1, 2, 3]) {
+                                if (byLevel[l].length > 0 && byLevel[l].every(ind => checkedDataForComp[`tool-${tool.id}-${ind.id}`])) lvl = l;
+                                else if (byLevel[l].length > 0) break;
+                            }
+                            return lvl;
+                        })();
+                        const activeLevels = [1, 2, 3].filter(l => byLevel[l].length > 0);
+                        const levelCols = activeLevels.map(lvl => {
+                            const inds = byLevel[lvl];
+                            return `<div class="col">
+                            <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]}; font-size:.7rem;">
+                                <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nv.${lvl} ${LEVEL_TEXT[lvl]}
+                            </div>
+                            ${inds.map(ind => {
+                                const indKey = `tool-${tool.id}-${ind.id}`;
+                                const isChecked = !!(checkedDataForComp[indKey]);
+                                return `<div class="form-check form-check-sm mb-0">
+                                    <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                        id="${prefix}-${escapeHtml(indKey)}"
+                                        data-comp-id="${safeCompId}"
+                                        data-target-id="${safeTargetId}"
+                                        data-ind-key="${escapeHtml(indKey)}"
+                                        data-level="${lvl}"
+                                        onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                    <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                        ${escapeHtml(ind.name)}
+                                        ${ind.description ? `<span class="text-muted fst-italic d-block" style="font-size:.65rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                    </label>
+                                </div>`;
+                            }).join('')}
+                        </div>`;
+                        }).join('');
+                        return `<div class="accordion-item border-0 border-bottom">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button py-2 px-2 small fw-semibold ${hasChecked ? '' : 'collapsed'}"
+                                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background:transparent;">
+                                <i class="bi bi-tools me-2 text-secondary"></i>${escapeHtml(tool.name)}
+                                ${toolAutoLevel > 0 ? `<span class="badge ms-2" style="background:${LEVEL_BG[toolAutoLevel]};color:${LEVEL_BORDER[toolAutoLevel]};border:1px solid ${LEVEL_BORDER[toolAutoLevel]};font-size:.65rem;">Nv.${toolAutoLevel}</span>` : ''}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${hasChecked ? 'show' : ''}" data-bs-parent="#${accordionId}">
+                            <div class="accordion-body p-2">
+                                <div class="row g-2">${levelCols}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                    }).join('') + `</div>`;
+
+            } else if (hasCompIndicators) {
+                // Use general competence indicators grouped by level
+                indicatorsHtml = [
+                    { lvl: 1, inds: compInds.initial },
+                    { lvl: 2, inds: compInds.medio },
+                    { lvl: 3, inds: compInds.advance }
+                ].filter(g => g.inds.length).map(({ lvl, inds }) => `
+                    <div class="border rounded p-2 mb-2" style="background:${LEVEL_BG[lvl]}; border-color:${LEVEL_BORDER[lvl]} !important;">
+                        <div class="small fw-semibold mb-1" style="color:${LEVEL_BORDER[lvl]};">
+                            <i class="bi bi-${lvl === 1 ? 'circle' : lvl === 2 ? 'circle-half' : 'circle-fill'} me-1"></i>Nivel ${lvl} — ${LEVEL_TEXT[lvl]}
+                        </div>
+                        ${inds.map(ind => {
+                    const indKey = `comp-${ind.id}`;
+                    const isChecked = !!(checkedDataForComp[indKey]);
+                    return `<div class="form-check form-check-sm mb-0">
+                                <input class="form-check-input" type="checkbox" ${isChecked ? 'checked' : ''}
+                                    id="${prefix}-${escapeHtml(indKey)}"
+                                    data-comp-id="${safeCompId}"
+                                    data-target-id="${safeTargetId}"
+                                    data-ind-key="${escapeHtml(indKey)}"
+                                    data-level="${lvl}"
+                                    onchange="updateEvalIndicator('${safeTargetId}','${rawCompId}','${escapeHtml(indKey)}',${lvl},this.checked,'${escapeHtml(comp.name)}')">
+                                <label class="form-check-label small" for="${prefix}-${escapeHtml(indKey)}" title="${escapeHtml(ind.description || '')}">
+                                    ${escapeHtml(ind.name)}
+                                    ${ind.description ? `<span class="text-muted fst-italic ms-1" style="font-size:.7rem;">${escapeHtml(ind.description)}</span>` : ''}
+                                </label>
+                            </div>`;
+                }).join('')}
+                    </div>`
+                ).join('');
+            }
+
+            // Calculate current level from checked COMPETENCE indicators only
+            // Tool indicators do NOT affect the competence level — same rule as updateEvalIndicator
+            const checkedData = checkedDataForComp;
+            const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
+            const totalByLevel = { 1: 0, 2: 0, 3: 0 };
+
+            if (hasCompIndicators) {
+                [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
+                    totalByLevel[lvl] = (inds || []).length;
+                    (inds || []).forEach(ind => {
+                        if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++;
+                    });
+                });
+            }
+
+            // Auto-computed level: highest level where ALL indicators of that level are checked
+            // (and all lower levels are also fully checked)
+            let autoLevel = 0;
+            if (hasCompIndicators) {
+                if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
+                    autoLevel = 1;
+                    if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                        autoLevel = 2;
+                        if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) {
+                            autoLevel = 3;
+                        }
+                    }
+                }
+                // If no level-1 indicators defined but level-2+ checked
+                if (totalByLevel[1] === 0 && totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                    autoLevel = Math.max(autoLevel, 2);
+                    if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+                }
+            }
+
+            const displayLevel = hasCompIndicators ? autoLevel : currentLevel;
+
+            const lvlBadgeColor = LEVEL_COLORS_IND[displayLevel] || 'secondary';
+            const lvlBadgeLabel = LEVEL_LABELS_IND[displayLevel] || 'Sin nivel';
+
+            // Progress counters per level
+            const indProgressHtml = (hasToolIndicators || hasCompIndicators) ? `
+                <div class="d-flex gap-2 flex-wrap mb-2 eval-ind-progress">
+                    ${[1, 2, 3].filter(lvl => totalByLevel[lvl] > 0).map(lvl => `
+                        <span class="badge rounded-pill" style="background:${LEVEL_BG[lvl]}; color:${LEVEL_BORDER[lvl]}; border:1px solid ${LEVEL_BORDER[lvl]}; font-size:.72rem;">
+                            Nv.${lvl}: <span data-lvl-count="${lvl}">${checkedByLevel[lvl]}/${totalByLevel[lvl]}</span>
+                        </span>`).join('')}
+                    <span class="badge bg-${lvlBadgeColor} ms-1" data-auto-level-badge>
+                        <i class="bi bi-award me-1"></i>Nivel calculado: <strong>${displayLevel}</strong> — ${lvlBadgeLabel}
+                    </span>
+                </div>` : '';
+
+            // Fallback manual level buttons (shown only if no indicators at all)
+            const levelDescs = (comp.levels || []).reduce((acc, l) => { acc[l.level] = l.description; return acc; }, {});
+            const manualLevelHtml = (!hasToolIndicators && !hasCompIndicators) ? `
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small text-muted me-1">Nivel:</span>
+                    ${LEVEL_LABELS.map((lbl, lvl) => {
+                const desc = levelDescs[lvl] ? ` — ${levelDescs[lvl]}` : '';
+                return `<button type="button"
+                            class="btn btn-sm level-btn ${currentLevel === lvl ? `btn-${LEVEL_COLORS[lvl]}` : 'btn-outline-secondary'}"
+                            data-target="${safeTargetId}"
+                            data-comp="${safeCompId}"
+                            data-comp-name="${escapeHtml(comp.name)}"
+                            data-level="${lvl}"
+                            onclick="toggleEvalLevel(this, '${safeTargetId}', '${safeCompId}', ${lvl}, '${escapeHtml(comp.name)}')"
+                            title="${escapeHtml(lbl + desc)}">
+                            ${lvl === 0 ? '<i class="bi bi-dash"></i>' : `<strong>${lvl}</strong>`}
+                            <span class="ms-1 d-none d-md-inline" style="font-size:.7rem;">${escapeHtml(lbl)}</span>
+                        </button>`;
+            }).join('')}
+                </div>
+                ${currentLevel > 0 && levelDescs[currentLevel] ? `<div class="mt-1 small text-muted fst-italic level-desc-hint">${escapeHtml(levelDescs[currentLevel])}</div>` : `<div class="mt-1 small text-muted fst-italic level-desc-hint" style="min-height:1rem;"></div>`}
+            ` : '';
+
+            html += `<div class="eval-comp-card card mb-3 border" data-comp-id="${safeCompId}" data-target-id="${safeTargetId}">
                 <div class="card-header py-2 px-3 d-flex align-items-start justify-content-between gap-2" style="background:#f8f9fa;">
                     <div class="flex-grow-1">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -6657,41 +11031,33 @@ function _openStudentEvalSubModalFor(studentId) {
                             ${comp.area ? `<span class="badge bg-secondary" style="font-size:.65rem;">${escapeHtml(comp.area)}</span>` : ''}
                         </div>
                         ${comp.description ? `<div class="text-muted small mt-1 fst-italic">${escapeHtml(comp.description)}</div>` : ''}
-                        ${allTools.length ? `<div class="mt-1 d-flex flex-wrap gap-1" id="submodal-tools-${escapeHtml(String(comp.id))}-${escapeHtml(String(targetId))}">
-                            ${visibleTools.map(t =>
-                                `<span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1" style="font-size:.65rem;">
-                                    <i class="bi bi-tools opacity-50" style="font-size:.6em;"></i>${escapeHtml(t)}
-                                    <button type="button" class="btn-close ms-1" style="font-size:.45em;" aria-label="Eliminar herramienta"
-                                        onclick="removeEvalTool('${escapeHtml(String(targetId))}','${escapeHtml(String(comp.id))}','${t.replace(/'/g,"\\'")}')"></button>
-                                </span>`
-                            ).join('')}
-                        </div>` : ''}
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" style="font-size:.7rem; padding:2px 6px;"
                         title="Eliminar esta competencia de la evaluación"
-                        onclick="removeEvalCompetence('${escapeHtml(String(targetId))}', '${escapeHtml(String(comp.id))}')">
+                        onclick="removeEvalCompetence('${safeTargetId}', '${safeCompId}')">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
                 <div class="card-body py-2 px-3">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <span class="small text-muted me-1">Nivel:</span>
-                        ${LEVEL_LABELS.map((lbl, lvl) => {
-                            const desc = levelDescs[lvl] ? ` — ${levelDescs[lvl]}` : '';
-                            return `<button type="button"
-                                class="btn btn-sm level-btn ${currentLevel === lvl ? `btn-${LEVEL_COLORS[lvl]}` : 'btn-outline-secondary'}"
-                                data-target="${escapeHtml(String(targetId))}"
-                                data-comp="${escapeHtml(String(comp.id))}"
-                                data-comp-name="${escapeHtml(comp.name)}"
-                                data-level="${lvl}"
-                                onclick="toggleEvalLevel(this, '${escapeHtml(String(targetId))}', '${escapeHtml(String(comp.id))}', ${lvl}, '${escapeHtml(comp.name)}')"
-                                title="${escapeHtml(lbl + desc)}">
-                                ${lvl === 0 ? '<i class="bi bi-dash"></i>' : `<strong>${lvl}</strong>`}
-                                <span class="ms-1 d-none d-md-inline" style="font-size:.7rem;">${escapeHtml(lbl)}</span>
-                            </button>`;
-                        }).join('')}
-                    </div>
-                    ${currentLevel > 0 && levelDescs[currentLevel] ? `<div class="mt-1 small text-muted fst-italic level-desc-hint">${escapeHtml(levelDescs[currentLevel])}</div>` : `<div class="mt-1 small text-muted fst-italic level-desc-hint" style="min-height:1rem;"></div>`}
+                    ${indProgressHtml}
+                    ${indicatorsHtml
+                    ? `<div class="mb-2">
+                            <div class="small fw-semibold text-secondary mb-1">
+                                <i class="bi bi-list-check me-1"></i>Indicadores — marca los que cumple el estudiante:
+                            </div>
+                            <div id="ind-container-${safeCompId}-${safeTargetId}">
+                                ${indicatorsHtml}
+                            </div>
+                           </div>`
+                    : ''}
+                    ${activeToolsNoInds_t3.length > 0 ? `<div class="alert alert-warning py-2 px-3 mb-2" style="font-size:.8rem;">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Sin indicadores:</strong> las herramientas
+                        <strong>${activeToolsNoInds_t3.map(n => escapeHtml(n)).join(', ')}</strong>
+                        no tienen indicadores definidos en el catálogo.
+                        Puedes evaluarlas manualmente con el nivel de abajo, o solicitar que se añadan indicadores en la API externa.
+                    </div>` : ''}
+                    ${manualLevelHtml}
                 </div>
             </div>`;
         });
@@ -6710,44 +11076,33 @@ function _openStudentEvalSubModalFor(studentId) {
                 data-target-type="individual" data-target-id="${escapeHtml(studentId)}">${escapeHtml(savedFeedback)}</textarea>
         </div>`;
 
-    // Create or reuse sub-modal
-    let subModalEl = document.getElementById('studentEvalSubModal');
-    if (!subModalEl) {
-        subModalEl = document.createElement('div');
-        subModalEl.className = 'modal fade';
-        subModalEl.id = 'studentEvalSubModal';
-        subModalEl.tabIndex = -1;
-        subModalEl.setAttribute('data-bs-backdrop', 'static');
-        subModalEl.innerHTML = `
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header" style="background:linear-gradient(135deg,#E85D26,#f97316);color:#fff;">
-                    <h5 class="modal-title fw-bold">
-                        <i class="bi bi-person-check me-2"></i>
-                        <span id="student-eval-sub-modal-title">Evaluación individual</span>
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="student-eval-sub-modal-body"></div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="saveIndividualStudentEval()"
-                        style="background:#E85D26;border-color:#E85D26;">
-                        <i class="bi bi-save me-1"></i>Guardar evaluación
-                    </button>
-                </div>
-            </div>
-        </div>`;
-        document.body.appendChild(subModalEl);
-    }
+    // ── Show the inline eval panel (within the page, sidebar + navbar still visible) ──
+    const panel = document.getElementById('student-eval-panel');
+    const tabView = document.getElementById('evaluation-tab-view');
+    const evalModal = document.getElementById('evaluationModal');
 
-    document.getElementById('student-eval-sub-modal-title').textContent = `Evaluando: ${studentName}`;
-    document.getElementById('student-eval-sub-modal-body').innerHTML = bodyHtml;
+    // Close the evaluation modal first
+    const evalModalInstance = bootstrap.Modal.getInstance(evalModal);
+    if (evalModalInstance) evalModalInstance.hide();
 
-    // Store the current student id on the sub-modal element
-    subModalEl.dataset.targetStudentId = studentId;
+    // Populate the panel
+    const titleEl = document.getElementById('student-eval-panel-title');
+    const subtitleEl = document.getElementById('student-eval-panel-subtitle');
+    const bodyEl = document.getElementById('student-eval-panel-body');
 
-    new bootstrap.Modal(subModalEl).show();
+    if (titleEl) titleEl.innerHTML = `<i class="bi bi-person-check me-2 text-warning"></i>Evaluando: ${escapeHtml(studentName)}`;
+    if (subtitleEl) subtitleEl.innerHTML = `<i class="bi bi-clipboard-check me-2"></i>${escapeHtml(studentName)}`;
+    if (bodyEl) bodyEl.innerHTML = bodyHtml;
+
+    // Store the current student id on the panel element
+    if (panel) panel.dataset.targetStudentId = studentId;
+
+    // Swap views: hide the tab overview, show the panel
+    if (tabView) tabView.classList.add('hidden');
+    if (panel) panel.classList.remove('hidden');
+
+    // Scroll to top of panel smoothly
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function removeEvalTool(targetId, compId, toolName) {
@@ -6763,7 +11118,7 @@ function removeEvalTool(targetId, compId, toolName) {
     if (container) {
         const badges = container.querySelectorAll('.badge');
         badges.forEach(badge => {
-            if (badge.textContent.trim().replace('×','').trim() === toolName || badge.textContent.includes(toolName)) {
+            if (badge.textContent.trim().replace('×', '').trim() === toolName || badge.textContent.includes(toolName)) {
                 badge.style.transition = 'opacity .2s';
                 badge.style.opacity = '0';
                 setTimeout(() => badge.remove(), 200);
@@ -6772,49 +11127,216 @@ function removeEvalTool(targetId, compId, toolName) {
     }
 }
 
+/**
+ * Called when the user checks/unchecks an indicator checkbox in the evaluation sub-modal.
+ * Updates the in-memory checkedIndicators state and recalculates the auto-level badge.
+ */
+function updateEvalIndicator(targetId, compId, indKey, level, checked, compName) {
+    const saved = window._evalCurrentSaved;
+    if (!saved) return;
+
+    // Ensure eval entry exists
+    let evalEntry = (saved.evaluations || []).find(e => e.targetId === targetId);
+    if (!evalEntry) {
+        evalEntry = {
+            targetId, targetName: targetId,
+            competences: [], feedback: '', studentComment: '', evaluatedAt: null
+        };
+        if (!saved.evaluations) saved.evaluations = [];
+        saved.evaluations.push(evalEntry);
+    }
+
+    // Ensure checkedIndicators map exists on the eval entry
+    if (!evalEntry.checkedIndicators) evalEntry.checkedIndicators = {};
+    if (!evalEntry.checkedIndicators[compId]) evalEntry.checkedIndicators[compId] = {};
+
+    evalEntry.checkedIndicators[compId][indKey] = checked;
+
+    // Recalculate auto-level from all checked COMPETENCE indicators for this comp
+    // Tool indicators do NOT affect the competence level — they are saved for reports only
+    const comp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(compId));
+    if (!comp) return;
+
+    const checkedData = evalEntry.checkedIndicators[compId] || {};
+    const compInds = comp.competenceIndicators || { initial: [], medio: [], advance: [] };
+    const hasCompIndicators = compInds.initial.length || compInds.medio.length || compInds.advance.length;
+
+    // Calculate level ONLY from competenceIndicators (comp-* keys), never from tool indicators
+    const totalByLevel = { 1: 0, 2: 0, 3: 0 };
+    const checkedByLevel = { 1: 0, 2: 0, 3: 0 };
+
+    if (hasCompIndicators) {
+        [{ lvl: 1, inds: compInds.initial }, { lvl: 2, inds: compInds.medio }, { lvl: 3, inds: compInds.advance }].forEach(({ lvl, inds }) => {
+            totalByLevel[lvl] = (inds || []).length;
+            (inds || []).forEach(ind => { if (checkedData[`comp-${ind.id}`]) checkedByLevel[lvl]++; });
+        });
+    }
+
+    let autoLevel = 0;
+    if (hasCompIndicators) {
+        if (totalByLevel[1] > 0 && checkedByLevel[1] >= totalByLevel[1]) {
+            autoLevel = 1;
+            if (totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+                autoLevel = 2;
+                if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+            }
+        }
+        if (totalByLevel[1] === 0 && totalByLevel[2] > 0 && checkedByLevel[2] >= totalByLevel[2]) {
+            autoLevel = Math.max(autoLevel, 2);
+            if (totalByLevel[3] > 0 && checkedByLevel[3] >= totalByLevel[3]) autoLevel = 3;
+        }
+    }
+
+    // Update the competence entry level
+    let compEntry = evalEntry.competences.find(c => String(c.competenceId) === String(compId));
+    if (!compEntry) {
+        compEntry = { competenceId: compId, competenceName: compName, level: autoLevel, toolsUsed: [], checkedIndicators: {} };
+        evalEntry.competences.push(compEntry);
+    } else {
+        compEntry.level = autoLevel;
+    }
+    compEntry.checkedIndicators = evalEntry.checkedIndicators[compId];
+
+    // Update badge in DOM without full re-render
+    const LEVEL_COLORS_IND = ['secondary', 'danger', 'warning', 'success'];
+    const LEVEL_LABELS_IND = ['Sin nivel', 'Básico', 'Medio', 'Avanzado'];
+    const safeCompId = CSS.escape(String(compId));
+    const safeTargetId = CSS.escape(String(targetId));
+
+    // Update progress counters
+    const progressContainer = document.querySelector(
+        `.eval-comp-card[data-comp-id="${CSS.escape(String(compId))}"][data-target-id="${CSS.escape(String(targetId))}"] .eval-ind-progress`
+    );
+
+    // Find and update the auto-level badge span (the last badge in the progress bar)
+    const cardEl = document.querySelector(
+        `.eval-comp-card[data-comp-id="${CSS.escape(String(compId))}"][data-target-id="${CSS.escape(String(targetId))}"]`
+    );
+    if (cardEl) {
+        // Update per-level counter badges
+        [1, 2, 3].forEach(lvl => {
+            const lvlBadge = cardEl.querySelector(`[data-lvl-count="${lvl}"]`);
+            if (lvlBadge) lvlBadge.textContent = `${checkedByLevel[lvl]}/${totalByLevel[lvl]}`;
+        });
+        // Update the auto-level badge
+        const autoLevelBadge = cardEl.querySelector('[data-auto-level-badge]');
+        if (autoLevelBadge) {
+            autoLevelBadge.className = `badge bg-${LEVEL_COLORS_IND[autoLevel]} ms-1`;
+            autoLevelBadge.innerHTML = `<i class="bi bi-award me-1"></i>Nivel calculado: <strong>${autoLevel}</strong> — ${LEVEL_LABELS_IND[autoLevel]}`;
+        }
+    }
+}
+
 async function saveIndividualStudentEval() {
-    const subModalEl = document.getElementById('studentEvalSubModal');
-    const studentId = subModalEl ? subModalEl.dataset.targetStudentId : null;
-    if (!studentId) return;
+    // Detect which panel is active: split view or legacy panel
+    const splitView = document.getElementById('eval-project-view');
+    const legacyPanel = document.getElementById('student-eval-panel');
+    const inSplitView = splitView && !splitView.classList.contains('hidden');
+
+    const studentId = inSplitView
+        ? (splitView.dataset.targetStudentId || null)
+        : (legacyPanel ? legacyPanel.dataset.targetStudentId : null);
+
+    if (!studentId) { showToast('Selecciona un estudiante primero', 'danger'); return; }
 
     const saved = window._evalCurrentSaved;
     if (!saved) return;
 
-    // Collect feedback from the sub-modal textarea
-    const ta = subModalEl.querySelector('textarea[data-target-id]');
-    const feedback = ta ? ta.value : '';
-
-    let evalEntry = (saved.evaluations || []).find(e => e.targetId === studentId);
-    if (!evalEntry) {
-        if (!saved.evaluations) saved.evaluations = [];
-        evalEntry = { targetId: studentId, targetName: _resolveTargetName(studentId), competences: [], feedback: '' };
-        saved.evaluations.push(evalEntry);
+    // ── Show spinner on the save button ──────────────────────────────────────
+    const saveBtn = document.getElementById('save-eval-panel-btn');
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Guardando...`;
     }
-    evalEntry.feedback = feedback;
-    evalEntry.evaluatedAt = new Date().toISOString();
 
-    // Persist
-    const { modules, savedEvaluations } = window._evalState;
-    const mIdx = window._evalState.currentModuleIdx;
-    const pIdx = window._evalState.currentProjectIdx;
-    const mod = modules[mIdx];
-    const proj = mod.projects[pIdx];
-    const modId = mod.id || String(mIdx);
-    const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
-    if (existingIdx >= 0) window._evalState.savedEvaluations[existingIdx] = saved;
-    else window._evalState.savedEvaluations.push(saved);
+    try {
+        // Collect feedback from whichever panel is active
+        const searchRoot = inSplitView ? document.getElementById('eval-right-body') : legacyPanel;
+        const ta = searchRoot ? searchRoot.querySelector(`textarea[data-target-id="${CSS.escape(studentId)}"]`) : null;
+        const feedback = ta ? ta.value : '';
 
-    await _persistEvaluations();
+        let evalEntry = (saved.evaluations || []).find(e => e.targetId === studentId);
+        if (!evalEntry) {
+            if (!saved.evaluations) saved.evaluations = [];
+            evalEntry = { targetId: studentId, targetName: _resolveTargetName(studentId), competences: [], feedback: '' };
+            saved.evaluations.push(evalEntry);
+        }
+        evalEntry.feedback = feedback;
+        evalEntry.evaluatedAt = new Date().toISOString();
 
-    // Sync to student ficha
-    const { students } = window._evalState;
-    await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+        // Persist
+        const { modules, savedEvaluations } = window._evalState;
+        const mIdx = window._evalState.currentModuleIdx;
+        const pIdx = window._evalState.currentProjectIdx;
+        const mod = modules[mIdx];
+        const proj = mod.projects[pIdx];
+        const modId = mod.id || String(mIdx);
+        const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
+        if (existingIdx >= 0) window._evalState.savedEvaluations[existingIdx] = saved;
+        else window._evalState.savedEvaluations.push(saved);
 
-    bootstrap.Modal.getInstance(subModalEl)?.hide();
-    // Re-open the parent eval modal to refresh saved evaluations list
-    openEvaluationModal(mIdx, pIdx);
-    showToast('Evaluación guardada correctamente', 'success');
+        await _persistEvaluations();
+
+        // Sync to student ficha (individual only)
+        const { students } = window._evalState;
+        if (saved.type !== 'grupal') {
+            await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+        }
+
+        showToast('Evaluación guardada correctamente', 'success');
+
+        if (inSplitView) {
+            // Stay in split view: refresh the target list and reload the right panel
+            _renderEvalTargetsList(saved, students);
+            // Re-open same target so the header shows "Evaluado"
+            selectEvalTarget(studentId);
+            // Reset button
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+        } else {
+            // Legacy path: close panel and reopen evaluation modal
+            _closeStudentEvalPanel();
+            openEvaluationModal(mIdx, pIdx);
+        }
+    } catch (err) {
+        console.error('[saveIndividualStudentEval]', err);
+        showToast('Error al guardar la evaluación', 'danger');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+    }
 }
+
+/** Hides the inline student-eval panel and restores the evaluation tab view. */
+function _closeStudentEvalPanel() {
+    const panel = document.getElementById('student-eval-panel');
+    const tabView = document.getElementById('evaluation-tab-view');
+    if (panel) panel.classList.add('hidden');
+    if (tabView) tabView.classList.remove('hidden');
+    // Reset save button just in case
+    const saveBtn = document.getElementById('save-eval-panel-btn');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<i class="bi bi-save me-1"></i>Guardar evaluación`;
+    }
+}
+
+/** Called by the "Cancelar" / "Volver" buttons in the inline eval panel or split view. */
+window.cancelStudentEvalPanel = function () {
+    const splitView = document.getElementById('eval-project-view');
+    const inSplitView = splitView && !splitView.classList.contains('hidden');
+    if (inSplitView) {
+        // In split view: just clear the right panel selection (go back to empty state)
+        _showEvalRightEmpty();
+        if (splitView) splitView.dataset.targetStudentId = '';
+        document.querySelectorAll('#eval-targets-list .eval-target-item').forEach(li => li.classList.remove('active'));
+    } else {
+        _closeStudentEvalPanel();
+        const mIdx = window._evalState?.currentModuleIdx;
+        const pIdx = window._evalState?.currentProjectIdx;
+        if (mIdx !== undefined && pIdx !== undefined) {
+            openEvaluationModal(mIdx, pIdx);
+        }
+    }
+};
 
 // Legacy – kept for group eval and backward compat; also handles "edit" click scroll
 function onEvalStudentChange() {
@@ -6895,51 +11417,69 @@ function _resolveTargetName(targetId) {
 }
 
 async function saveProjectEvaluation() {
-    const saved = window._evalCurrentSaved;
-    const { modules, savedEvaluations, students } = window._evalState;
-    const mIdx = window._evalState.currentModuleIdx;
-    const pIdx = window._evalState.currentProjectIdx;
-    if (saved == null || mIdx == null || pIdx == null) return;
+    const saveBtn = document.getElementById('eval-modal-save-btn');
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Guardando...`;
+    }
 
-    const mod = modules[mIdx];
-    const proj = mod.projects[pIdx];
-    const modId = mod.id || String(mIdx);
-
-    // Collect feedback from textareas
-    document.querySelectorAll('#eval-modal-body textarea[data-target-id]').forEach(ta => {
-        const targetId = ta.getAttribute('data-target-id');
-        if (!targetId) return;
-        // Skip the student-comment textarea — handled separately below
-        if (ta.getAttribute('data-student-comment') === 'true') return;
-
-        let evalEntry = (saved.evaluations || []).find(e => e.targetId === targetId);
-        if (!evalEntry) {
-            if (!saved.evaluations) saved.evaluations = [];
-            evalEntry = { targetId, targetName: _resolveTargetName(targetId), competences: [], feedback: '' };
-            saved.evaluations.push(evalEntry);
+    try {
+        const saved = window._evalCurrentSaved;
+        const { modules, savedEvaluations, students } = window._evalState;
+        const mIdx = window._evalState.currentModuleIdx;
+        const pIdx = window._evalState.currentProjectIdx;
+        if (saved == null || mIdx == null || pIdx == null) {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+            return;
         }
-        evalEntry.feedback = ta.value;
-        evalEntry.evaluatedAt = new Date().toISOString();
-    });
 
-    // Merge into savedEvaluations state
-    const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
-    if (existingIdx >= 0) {
-        window._evalState.savedEvaluations[existingIdx] = saved;
-    } else {
-        window._evalState.savedEvaluations.push(saved);
+        const mod = modules[mIdx];
+        const proj = mod.projects[pIdx];
+        const modId = mod.id || String(mIdx);
+
+        // Collect feedback from textareas
+        document.querySelectorAll('#eval-modal-body textarea[data-target-id]').forEach(ta => {
+            const targetId = ta.getAttribute('data-target-id');
+            if (!targetId) return;
+            // Skip the student-comment textarea — handled separately below
+            if (ta.getAttribute('data-student-comment') === 'true') return;
+
+            let evalEntry = (saved.evaluations || []).find(e => e.targetId === targetId);
+            if (!evalEntry) {
+                if (!saved.evaluations) saved.evaluations = [];
+                evalEntry = { targetId, targetName: _resolveTargetName(targetId), competences: [], feedback: '' };
+                saved.evaluations.push(evalEntry);
+            }
+            evalEntry.feedback = ta.value;
+            evalEntry.evaluatedAt = new Date().toISOString();
+        });
+
+        // Merge into savedEvaluations state
+        const existingIdx = savedEvaluations.findIndex(e => e.moduleId === modId && e.projectName === proj.name);
+        if (existingIdx >= 0) {
+            window._evalState.savedEvaluations[existingIdx] = saved;
+        } else {
+            window._evalState.savedEvaluations.push(saved);
+        }
+
+        await _persistEvaluations();
+
+        // ── Sync individual evaluations → student technicalTracking ──────────────
+        if (saved.type === 'individual') {
+            await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('evaluationModal'))?.hide();
+        renderEvaluationTab();
+        showToast('Evaluación guardada correctamente', 'success');
+
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
+    } catch (err) {
+        console.error('[saveProjectEvaluation]', err);
+        showToast('Error al guardar la evaluación', 'danger');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalBtnHtml; }
     }
-
-    await _persistEvaluations();
-
-    // ── Sync individual evaluations → student technicalTracking ──────────────
-    if (saved.type === 'individual') {
-        await _syncEvaluationsToStudentTracking(saved, mod, proj, students);
-    }
-
-    bootstrap.Modal.getInstance(document.getElementById('evaluationModal'))?.hide();
-    renderEvaluationTab();
-    showToast('Evaluación guardada correctamente', 'success');
 }
 
 /**
@@ -6971,11 +11511,64 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
             for (const ce of (evalEntry.competences || [])) {
                 if (!ce.competenceName) continue;
                 const idx = existingComps.findIndex(c => String(c.competenceId) === String(ce.competenceId));
+
+                // Extract indicators achieved from checkedIndicators
+                // ce.checkedIndicators is flat { [indKey]: bool } stored at comp level
+                const compChecked = ce.checkedIndicators || evalEntry.checkedIndicators?.[String(ce.competenceId)] || {};
+                const projComp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(ce.competenceId));
+                const toolsWithInds = projComp?.toolsWithIndicators || [];
+                const compIndicators = projComp?.competenceIndicators || { initial: [], medio: [], advance: [] };
+
+                // Build achieved indicators list: [{type, toolName, indicatorName, indicatorId, levelId}]
+                // Now includes BOTH tool indicators and competence indicators
+                const achievedIndicators = [];
+
+                // Add tool indicators (for technical tracking)
+                toolsWithInds.forEach(t => {
+                    if (!t.indicators) return;
+                    t.indicators.forEach(ind => {
+                        if (compChecked[`tool-${t.id}-${ind.id}`]) {
+                            achievedIndicators.push({
+                                type: 'tool',
+                                toolName: t.name,
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: ind.levelId || 1
+                            });
+                        }
+                    });
+                });
+
+                // Add competence indicators (for competence level assessment)
+                [
+                    { lvl: 1, inds: compIndicators.initial },
+                    { lvl: 2, inds: compIndicators.medio },
+                    { lvl: 3, inds: compIndicators.advance }
+                ].forEach(({ lvl, inds }) => {
+                    if (!inds) return;
+                    inds.forEach(ind => {
+                        if (compChecked[`comp-${ind.id}`]) {
+                            achievedIndicators.push({
+                                type: 'competence',
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: lvl
+                            });
+                        }
+                    });
+                });
+
+                // Tools used (only those with tool indicators)
+                const toolsUsed = toolsWithInds
+                    .filter(t => t.indicators && t.indicators.some(ind => compChecked[`tool-${t.id}-${ind.id}`]))
+                    .map(t => t.name);
+
                 const entry = {
                     competenceId: ce.competenceId,
                     competenceName: ce.competenceName,
                     level: ce.level,
-                    toolsUsed: ce.toolsUsed || [],
+                    toolsUsed,
+                    achievedIndicators,
                     evaluatedDate: new Date().toISOString().split('T')[0],
                     notes: evalEntry.feedback || ''
                 };
@@ -6988,6 +11581,62 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
             const teamIdx = existingTeams.findIndex(
                 t => t.teamName === (proj.name || '') && t.moduleId === (mod.id || String(window._evalState.currentModuleIdx))
             );
+
+            // Build competences list for team entry with tools + indicators
+            const teamCompetences = (evalEntry.competences || []).map(ce => {
+                const compChecked = ce.checkedIndicators || evalEntry.checkedIndicators?.[String(ce.competenceId)] || {};
+                const projComp = (window._evalCurrentProjectCompetences || []).find(c => String(c.id) === String(ce.competenceId));
+                const toolsWithInds = projComp?.toolsWithIndicators || [];
+                const compIndicators = projComp?.competenceIndicators || { initial: [], medio: [], advance: [] };
+                const toolsUsed = toolsWithInds
+                    .filter(t => t.indicators && t.indicators.some(ind => compChecked[`tool-${t.id}-${ind.id}`]))
+                    .map(t => t.name);
+                const achievedIndicators = [];
+
+                // Add tool indicators
+                toolsWithInds.forEach(t => {
+                    if (!t.indicators) return;
+                    t.indicators.forEach(ind => {
+                        if (compChecked[`tool-${t.id}-${ind.id}`]) {
+                            achievedIndicators.push({
+                                type: 'tool',
+                                toolName: t.name,
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: ind.levelId || 1
+                            });
+                        }
+                    });
+                });
+
+                // Add competence indicators
+                [
+                    { lvl: 1, inds: compIndicators.initial },
+                    { lvl: 2, inds: compIndicators.medio },
+                    { lvl: 3, inds: compIndicators.advance }
+                ].forEach(({ lvl, inds }) => {
+                    if (!inds) return;
+                    inds.forEach(ind => {
+                        if (compChecked[`comp-${ind.id}`]) {
+                            achievedIndicators.push({
+                                type: 'competence',
+                                indicatorName: ind.name,
+                                indicatorId: String(ind.id),
+                                levelId: lvl
+                            });
+                        }
+                    });
+                });
+
+                return {
+                    competenceId: ce.competenceId,
+                    competenceName: ce.competenceName,
+                    level: ce.level,
+                    toolsUsed,
+                    achievedIndicators
+                };
+            });
+
             const teamEntry = {
                 teamName: proj.name || '',
                 projectType: 'individual',
@@ -6998,15 +11647,66 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
                 teacherNote: evalEntry.feedback || '',
                 studentComment: evalEntry.studentComment || '',
                 members: [],
-                competences: (evalEntry.competences || []).map(ce => ({
-                    competenceId: ce.competenceId,
-                    competenceName: ce.competenceName,
-                    level: ce.level,
-                    toolsUsed: ce.toolsUsed || []
-                }))
+                competences: teamCompetences
             };
             if (teamIdx >= 0) existingTeams[teamIdx] = { ...existingTeams[teamIdx], ...teamEntry };
             else existingTeams.push(teamEntry);
+
+            // ── Auto-calculate module progress ───────────────────────────────
+            const allModules = window._evalState?.modules || [];
+            const updatedCompletedModules = (tt.completedModules || []).map(m => ({ ...m }));
+
+            allModules.forEach(module => {
+                const mid = String(module.id || '');
+                const totalProjects = (module.projects || []).length;
+                if (totalProjects === 0) return; // skip modules with no projects
+
+                // Count unique evaluated project names for this module in the student's teams
+                const evaluatedProjectNames = new Set(
+                    existingTeams
+                        .filter(t => String(t.moduleId) === mid)
+                        .map(t => t.teamName)
+                );
+                const evaluatedCount = evaluatedProjectNames.size;
+                const progressPct = Math.round((evaluatedCount / totalProjects) * 100);
+
+                if (evaluatedCount === 0) return; // don't create entry if nothing evaluated yet
+
+                // Compute average competence level for modules with evaluated projects
+                const moduleTeams = existingTeams.filter(t => String(t.moduleId) === mid);
+                const allLevels = moduleTeams.flatMap(t => (t.competences || []).map(c => c.level)).filter(l => l > 0);
+                const avgLevel = allLevels.length
+                    ? Math.round(allLevels.reduce((a, b) => a + b, 0) / allLevels.length)
+                    : 0;
+                // Map 0-3 team level → 1-4 module grade: 0→1, 1→2, 2→3, 3→4
+                const autoGrade = Math.min(4, avgLevel + 1);
+
+                const existingIdx = updatedCompletedModules.findIndex(cm => String(cm.moduleId) === mid);
+                const today = new Date().toISOString().split('T')[0];
+                const totalCourses = (module.courses || []).length;
+                const completedNotes = `${evaluatedCount}/${totalProjects} proyectos evaluados${totalCourses > 0 ? `, ${totalCourses} cursos` : ''}`;
+
+                const entry = {
+                    moduleId: mid,
+                    moduleName: module.name || '',
+                    progressPercent: progressPct,
+                    finalGrade: existingIdx >= 0 && updatedCompletedModules[existingIdx].finalGrade
+                        ? updatedCompletedModules[existingIdx].finalGrade
+                        : autoGrade,
+                    completionDate: progressPct >= 100 ? today : (existingIdx >= 0 ? updatedCompletedModules[existingIdx].completionDate : ''),
+                    notes: completedNotes,
+                    // Preserve existing completedCourses so course checkboxes in the ficha are not lost
+                    completedCourses: existingIdx >= 0
+                        ? (updatedCompletedModules[existingIdx].completedCourses || [])
+                        : []
+                };
+
+                if (existingIdx >= 0) {
+                    updatedCompletedModules[existingIdx] = { ...updatedCompletedModules[existingIdx], ...entry };
+                } else {
+                    updatedCompletedModules.push(entry);
+                }
+            });
 
             // ── Persist to student ficha ─────────────────────────────────────
             await fetch(`${API_URL}/api/promotions/${promotionId}/students/${studentId}/ficha/technical`, {
@@ -7019,7 +11719,7 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
                     teacherNotes: tt.teacherNotes || [],
                     teams: existingTeams,
                     competences: existingComps,
-                    completedModules: tt.completedModules || [],
+                    completedModules: updatedCompletedModules,
                     completedPildoras: tt.completedPildoras || []
                 })
             });
@@ -7030,7 +11730,7 @@ async function _syncEvaluationsToStudentTracking(saved, mod, proj, students) {
 }
 
 /** Deletes a specific student evaluation from the current project and re-renders */
-window.deleteStudentEvaluation = function(targetId) {
+window.deleteStudentEvaluation = function (targetId) {
     const saved = window._evalCurrentSaved;
     if (!saved) return;
     if (!confirm('¿Eliminar la evaluación de este estudiante?')) return;
@@ -7052,7 +11752,7 @@ window.deleteStudentEvaluation = function(targetId) {
 };
 
 /** Loads a student's existing evaluation into the sub-modal for editing */
-window.editStudentEvaluation = function(targetId) {
+window.editStudentEvaluation = function (targetId) {
     const saved = window._evalCurrentSaved;
     if (!saved) return;
     // Restore removed competences for this target so they appear again
