@@ -1,5 +1,5 @@
 const API_URL = window.APP_CONFIG?.API_URL || window.location.origin;
-let createModal, editModal, successModal;
+let createModal, editModal, successModal, editTemplateModal;
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     createModal = new bootstrap.Modal(document.getElementById('createTeacherModal'));
     editModal = new bootstrap.Modal(document.getElementById('editTeacherModal'));
     successModal = new bootstrap.Modal(document.getElementById('successModal'));
+    editTemplateModal = new bootstrap.Modal(document.getElementById('editTemplateModal'));
 
     // Forms
     document.getElementById('create-teacher-form').addEventListener('submit', handleCreateTeacher);
@@ -23,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Template from promotion form
     document.getElementById('form-template-from-promo').addEventListener('submit', handleCreateTemplateFromPromotion);
+
+    // Edit template form
+    document.getElementById('edit-template-form').addEventListener('submit', handleEditTemplate);
 
     loadTeachers();
     showSection('users');
@@ -329,7 +333,7 @@ async function loadTemplates() {
 function renderTemplates(templates) {
     const container = document.getElementById('templates-list');
     if (!templates.length) {
-        container.innerHTML = '<div class="col-12 text-muted text-center py-4">No templates found.</div>';
+        container.innerHTML = '<div class="col-12 text-muted text-center py-4">No hay plantillas.</div>';
         return;
     }
     container.innerHTML = '';
@@ -345,7 +349,7 @@ function renderTemplates(templates) {
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h6 class="fw-bold mb-0">${escapeHtml(t.name)}</h6>
-                        <span class="badge ${isCustom ? 'bg-success' : 'bg-primary'} ms-2">${isCustom ? 'Custom' : 'System'}</span>
+                        <span class="badge ${isCustom ? 'bg-success' : 'bg-primary'} ms-2">${isCustom ? 'Personalizada' : 'Sistema'}</span>
                     </div>
                     <p class="text-muted small mb-2">${escapeHtml(t.description || '—')}</p>
                     <div class="d-flex flex-wrap gap-2 mb-3">
@@ -355,10 +359,16 @@ function renderTemplates(templates) {
                         <span class="badge bg-light text-dark border"><i class="bi bi-stars me-1"></i>${competencesCount} competencias</span>
                         <span class="badge bg-light text-dark border"><i class="bi bi-lightbulb me-1"></i>${pildorasCount} píldoras</span>
                     </div>
-                    ${isCustom ? `
-                    <button class="btn btn-sm btn-outline-danger w-100" onclick="deleteTemplate('${escapeHtml(t.id)}', '${escapeHtml(t.name)}')">
-                        <i class="bi bi-trash me-1"></i>Delete Template
-                    </button>` : `<span class="text-muted small"><i class="bi bi-lock me-1"></i>System template — cannot be deleted</span>`}
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-warning flex-fill"
+                                onclick="openEditTemplateModal('${escapeHtml(t.id)}', '${escapeHtml(t.name)}', '${escapeHtml(t.description || '')}', ${t.weeks || 0}, ${t.hours || 0})">
+                            <i class="bi bi-pencil me-1"></i>Editar
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger flex-fill"
+                                onclick="deleteTemplate('${escapeHtml(t.id)}', '${escapeHtml(t.name)}')">
+                            <i class="bi bi-trash me-1"></i>Eliminar
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -409,7 +419,7 @@ async function handleCreateTemplateFromPromotion(e) {
 }
 
 async function deleteTemplate(templateId, templateName) {
-    if (!confirm(`Delete template "${templateName}"? This cannot be undone.`)) return;
+    if (!confirm(`¿Eliminar la plantilla "${templateName}"? Esta acción no se puede deshacer.`)) return;
     const token = localStorage.getItem('token');
     try {
         const res = await fetch(`${API_URL}/api/bootcamp-templates/${templateId}`, {
@@ -420,9 +430,73 @@ async function deleteTemplate(templateId, templateName) {
             loadTemplates();
         } else {
             const data = await res.json();
-            alert(data.error || 'Error deleting template');
+            alert(data.error || 'Error al eliminar la plantilla');
         }
     } catch (e) {
-        alert('Connection error');
+        alert('Error de conexión');
+    }
+}
+
+// ==================== EDIT TEMPLATE ====================
+
+function openEditTemplateModal(id, name, description, weeks, hours) {
+    document.getElementById('edit-tpl-id').value          = id;
+    document.getElementById('edit-tpl-name').value        = name;
+    document.getElementById('edit-tpl-description').value = description;
+    document.getElementById('edit-tpl-weeks').value       = weeks || '';
+    document.getElementById('edit-tpl-hours').value       = hours || '';
+    const alertEl = document.getElementById('edit-tpl-alert');
+    if (alertEl) alertEl.classList.add('d-none');
+    editTemplateModal.show();
+}
+
+async function handleEditTemplate(e) {
+    e.preventDefault();
+    const token  = localStorage.getItem('token');
+    const id     = document.getElementById('edit-tpl-id').value;
+    const name   = document.getElementById('edit-tpl-name').value.trim();
+    const desc   = document.getElementById('edit-tpl-description').value.trim();
+    const weeks  = parseInt(document.getElementById('edit-tpl-weeks').value, 10) || undefined;
+    const hours  = parseInt(document.getElementById('edit-tpl-hours').value, 10) || undefined;
+    const alertEl = document.getElementById('edit-tpl-alert');
+
+    if (!name) {
+        if (alertEl) { alertEl.textContent = 'El nombre es obligatorio.'; alertEl.classList.remove('d-none'); }
+        return;
+    }
+
+    const btn     = e.target.querySelector('button[type="submit"]');
+    const spinner = btn?.querySelector('.spinner-border');
+    const label   = btn?.querySelector('.btn-label');
+
+    if (btn)     btn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+    if (label)   label.classList.add('d-none');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    try {
+        const res = await fetch(`${API_URL}/api/bootcamp-templates/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ name, description: desc, weeks, hours })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            editTemplateModal.hide();
+            loadTemplates();
+        } else {
+            if (alertEl) { alertEl.textContent = data.error || 'Error al guardar.'; alertEl.classList.remove('d-none'); }
+        }
+    } catch (err) {
+        if (alertEl) { alertEl.textContent = 'Error de conexión.'; alertEl.classList.remove('d-none'); }
+    } finally {
+        if (btn)     btn.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+        if (label)   label.classList.remove('d-none');
     }
 }

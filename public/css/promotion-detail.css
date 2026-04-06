@@ -226,6 +226,23 @@ body {
     transform: none;
 }
 
+/* Edit button in sidebar footer */
+.sidebar-edit-btn {
+    background-color: #ffffffa0 !important;
+    color: #333333 !important;
+    border: none !important;
+    font-weight: 400 !important;
+    padding: 10px 15px !important;
+    margin: 0.2rem !important;
+}
+
+.sidebar-edit-btn:hover {
+    background-color: #ffffff !important;
+    color: #ff4700 !important;
+    border-left: 3px solid #ff4700 !important;
+    transform: none;
+}
+
 /* Logo container in sidebar footer */
 .sidebar-logo-container {
     display: flex;

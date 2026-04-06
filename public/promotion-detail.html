@@ -96,6 +96,12 @@
             </ul>
             <!-- Sidebar Footer: Delete Button and Logo -->
             <div class="sidebar-footer">
+                <div class="nav-item teacher-only w-100 mb-1">
+                    <a type="button" class="nav-link sidebar-edit-btn"
+                        onclick="openEditPromotionModal()">
+                        <i class="bi bi-pencil-square me-2"></i>Modificar promoción
+                    </a>
+                </div>
                 <div class="nav-item teacher-only w-100">
                     <a type="button" class="nav-link sidebar-delete-btn"
                         onclick="openDeletePromotionModal()">
@@ -1450,6 +1456,55 @@
                         <i class="bi bi-save me-1"></i>Guardar evaluación
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Promotion Modal -->
+    <div class="modal fade" id="editPromotionModal" tabindex="-1" aria-labelledby="editPromotionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editPromotionModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Modificar promoción
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="edit-promotion-form" onsubmit="saveEditPromotion(event)">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="edit-promotion-name" class="form-label fw-semibold">Nombre de la promoción <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="edit-promotion-name" required />
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-promotion-desc" class="form-label fw-semibold">Descripción</label>
+                            <textarea class="form-control" id="edit-promotion-desc" rows="3"></textarea>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="edit-promotion-weeks" class="form-label fw-semibold">Número de semanas <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="edit-promotion-weeks" min="1" required />
+                            </div>
+                            <div class="col-md-4">
+                                <label for="edit-promotion-start" class="form-label fw-semibold">Fecha de inicio</label>
+                                <input type="date" class="form-control" id="edit-promotion-start" />
+                            </div>
+                            <div class="col-md-4">
+                                <label for="edit-promotion-end" class="form-label fw-semibold">Fecha de fin</label>
+                                <input type="date" class="form-control" id="edit-promotion-end" />
+                            </div>
+                        </div>
+                        <div id="edit-promotion-alert" class="alert alert-danger mt-3 d-none" role="alert"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="edit-promotion-save-btn"
+                                style="background:var(--principal-1, #FF4700);border-color:var(--principal-1, #FF4700);">
+                            <span class="btn-label"><i class="bi bi-save me-1"></i>Guardar cambios</span>
+                            <span class="spinner-border spinner-border-sm d-none ms-2" role="status" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

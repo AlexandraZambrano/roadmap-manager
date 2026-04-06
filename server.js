@@ -1230,11 +1230,13 @@ app.delete('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    if (!template.isCustom) {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+    if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot delete system templates' });
     }
 
-    if (template.createdBy !== req.user.id) {
+    if (!isAdmin && template.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -1254,11 +1256,13 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    if (!template.isCustom) {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+    if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot edit system templates' });
     }
 
-    if (template.createdBy !== req.user.id) {
+    if (!isAdmin && template.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

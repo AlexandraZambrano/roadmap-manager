@@ -5540,6 +5540,111 @@ async function deleteQuickLink(linkId) {
     }
 }
 
+// ==================== EDIT PROMOTION ====================
+
+let _editPromotionModal = null;
+
+function openEditPromotionModal() {
+    const promotion = window.currentPromotion;
+    if (!promotion) {
+        alert('No se pudieron cargar los datos de la promoción.');
+        return;
+    }
+
+    // Pre-fill fields
+    const nameEl   = document.getElementById('edit-promotion-name');
+    const descEl   = document.getElementById('edit-promotion-desc');
+    const weeksEl  = document.getElementById('edit-promotion-weeks');
+    const startEl  = document.getElementById('edit-promotion-start');
+    const endEl    = document.getElementById('edit-promotion-end');
+    const alertEl  = document.getElementById('edit-promotion-alert');
+
+    if (nameEl)  nameEl.value  = promotion.name        || '';
+    if (descEl)  descEl.value  = promotion.description || '';
+    if (weeksEl) weeksEl.value = promotion.weeks       || '';
+
+    // Dates arrive as ISO strings — convert to YYYY-MM-DD for <input type="date">
+    if (startEl) startEl.value = promotion.startDate ? promotion.startDate.slice(0, 10) : '';
+    if (endEl)   endEl.value   = promotion.endDate   ? promotion.endDate.slice(0, 10)   : '';
+
+    if (alertEl) alertEl.classList.add('d-none');
+
+    if (!_editPromotionModal) {
+        const el = document.getElementById('editPromotionModal');
+        if (!el) return;
+        _editPromotionModal = new bootstrap.Modal(el);
+    }
+    _editPromotionModal.show();
+}
+
+async function saveEditPromotion(event) {
+    event.preventDefault();
+
+    const nameEl   = document.getElementById('edit-promotion-name');
+    const descEl   = document.getElementById('edit-promotion-desc');
+    const weeksEl  = document.getElementById('edit-promotion-weeks');
+    const startEl  = document.getElementById('edit-promotion-start');
+    const endEl    = document.getElementById('edit-promotion-end');
+    const alertEl  = document.getElementById('edit-promotion-alert');
+    const saveBtn  = document.getElementById('edit-promotion-save-btn');
+    const spinner  = saveBtn?.querySelector('.spinner-border');
+    const label    = saveBtn?.querySelector('.btn-label');
+
+    const payload = {
+        name:        nameEl?.value.trim(),
+        description: descEl?.value.trim(),
+        weeks:       parseInt(weeksEl?.value, 10) || undefined,
+        startDate:   startEl?.value || undefined,
+        endDate:     endEl?.value   || undefined,
+    };
+
+    if (!payload.name) {
+        if (alertEl) { alertEl.textContent = 'El nombre de la promoción es obligatorio.'; alertEl.classList.remove('d-none'); }
+        return;
+    }
+
+    // Show spinner
+    if (saveBtn) saveBtn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+    if (label)   label.classList.add('d-none');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `Error ${res.status}`);
+        }
+
+        if (_editPromotionModal) _editPromotionModal.hide();
+
+        // Reload promotion data to refresh header/progress bar
+        await loadPromotion();
+
+    } catch (err) {
+        console.error('Error updating promotion:', err);
+        if (alertEl) {
+            alertEl.textContent = err.message || 'Error al guardar los cambios.';
+            alertEl.classList.remove('d-none');
+        }
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+        if (label)   label.classList.remove('d-none');
+    }
+}
+
+// ==================== DELETE PROMOTION ====================
+
 function openDeletePromotionModal() {
     if (!deletePromotionModal) {
         const el = document.getElementById('deletePromotionModal');
