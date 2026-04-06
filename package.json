@@ -21,6 +21,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app",
+    "migrate:local": "node migrate-to-local.js",
+    "migrate:local:drop": "node migrate-to-local.js --drop",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

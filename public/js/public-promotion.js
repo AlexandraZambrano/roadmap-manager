@@ -642,7 +642,7 @@ function generateGanttChart(promotion) {
 
                     const projectsRow = document.createElement('tr');
                     const projectsLabel = document.createElement('td');
-                    const projectLink = projectUrl ? `<a href="${escapeHtml(projectUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(projectName)}</a>` : `${escapeHtml(projectName)}`;
+                    const projectLink = escapeHtml(projectName); // links disabled on public roadmap
                     projectsLabel.innerHTML = `<small style="margin-left: 1.5rem; font-size: 0.6rem;"> ${projectLink}</small>`;
                     projectsLabel.style.minWidth = '150px';
                     projectsLabel.style.maxWidth = '200px';

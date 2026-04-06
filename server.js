@@ -3816,6 +3816,37 @@ app.post('/api/promotions/:promotionId/asana-content', verifyToken, async (req, 
   }
 });
 
+// ==================== SHARED NOTES ====================
+
+// GET shared notes for a promotion
+app.get('/api/promotions/:promotionId/shared-notes', verifyToken, async (req, res) => {
+  try {
+    const extendedInfo = await ExtendedInfo.findOne({ promotionId: req.params.promotionId });
+    res.json({ sharedNotes: extendedInfo?.sharedNotes || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT shared notes — replaces the full array (client sends the whole list)
+app.put('/api/promotions/:promotionId/shared-notes', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ id: req.params.promotionId });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const notes = Array.isArray(req.body.sharedNotes) ? req.body.sharedNotes : [];
+    const updated = await ExtendedInfo.findOneAndUpdate(
+      { promotionId: req.params.promotionId },
+      { $set: { sharedNotes: notes } },
+      { upsert: true, returnDocument: 'after', strict: false }
+    );
+    res.json({ sharedNotes: updated.sharedNotes || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // DELETE asana content URL
 app.delete('/api/promotions/:promotionId/asana-content', verifyToken, async (req, res) => {
   try {

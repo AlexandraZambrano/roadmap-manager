@@ -17,3 +17,6 @@ EXPOSE 3000
 
 # Start the application
 CMD ["npm", "start"]
+
+# Add node 18-alpine compatible install of dev dependencies for local development
+# (Leave base image as-is but ensure npm start works)

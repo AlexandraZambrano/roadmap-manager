@@ -139,7 +139,9 @@ const ExtendedInfoSchema = new mongoose.Schema({
         repoBaseUrl: String,
         briefingUrl: String,
         competenceIds: [mongoose.Schema.Types.Mixed]
-    }
+    },
+    // Bloc de notas compartido entre todos los colaboradores de la promoción
+    sharedNotes: { type: mongoose.Schema.Types.Mixed, default: [] }
 }, { timestamps: true });
 
 export default mongoose.model('ExtendedInfo', ExtendedInfoSchema);

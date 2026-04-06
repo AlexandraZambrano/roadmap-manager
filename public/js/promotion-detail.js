@@ -461,7 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof NotesManager !== 'undefined' && typeof NotesUI !== 'undefined') {
             const notesManager = new NotesManager('promotionNotes', promotionId);
             const notesUI = new NotesUI(notesManager, 'notes-container');
-            notesUI.render();
+            notesUI.init(); // async: loads shared notes from server then renders
             window.notesManager = notesManager;
             window.notesUI = notesUI;
         }
@@ -3771,6 +3771,12 @@ async function loadQuickLinks() {
             displayQuickLinks(links);
             const el = document.getElementById('quicklinks-count');
             if (el) el.textContent = links.length;
+
+            // Cache GitHub quick link URL so Aula Virtual can use it as repo base
+            const githubLink = links.find(l =>
+                l.platform === 'github' || l.name?.toLowerCase().includes('github')
+            );
+            window._githubQuickLinkUrl = githubLink ? (githubLink.url || '') : '';
         }
     } catch (error) {
         console.error('Error loading quick links:', error);
@@ -5081,29 +5087,15 @@ async function importStudentsFromExcel(input) {
     }
 }
 
-// Download a blank Excel template with the correct column headers for student import
+// Download a blank Excel template with the 3 required columns for student import
 function downloadStudentsExcelTemplate() {
-    const headers = [
-        'Nombre', 'Apellidos', 'Email', 'Teléfono', 'Edad',
-        'Situación Administrativa', 'Nacionalidad', 'Documento',
-        'Sexo', 'Nivel Inglés', 'Nivel Educativo', 'Profesión', 'Comunidad'
-    ];
-    // Add a hint row showing accepted values for enum columns
-    const hints = [
-        '(requerido)', '(requerido)', '(requerido)', '(requerido)', '(requerido, número)',
-        'nacional | solicitante_asilo | ciudadano_europeo | permiso_trabajo | no_permiso_trabajo | otro',
-        '', 'DNI / NIE / Pasaporte',
-        'mujer | hombre | no_binario | no_especifica',
-        'A1 | A2 | B1 | B2 | C1 | C2',
-        'sin_estudios | eso | bachillerato | fp_medio | fp_superior | grado | postgrado | doctorado',
-        '', 'Comunidad Autónoma'
-    ];
+    const headers = ['Nombre', 'Apellidos', 'Email'];
+    const hint    = ['Ej: María', 'Ej: García López', 'Ej: maria@email.com'];
 
-    // Build CSV content (no XLSX library on the client side — CSV opens fine in Excel)
     const escape = v => `"${String(v).replace(/"/g, '""')}"`;
     const rows = [
         headers.map(escape).join(','),
-        hints.map(escape).join(',')
+        hint.map(escape).join(',')
     ];
     const csvContent = rows.join('\r\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel UTF-8
@@ -8138,6 +8130,17 @@ function initVirtualClassroomPanel(ext, promo) {
     const modules = promo.modules || [];
     const projectCompetences = window._evalState.projectCompetences || [];
 
+    // Build a quick lookup: "moduleId__projectName" → url (from roadmap)
+    window._projectUrlMap = {};
+    modules.forEach((m, idx) => {
+        const mId = m.id || String(idx);
+        (m.projects || []).forEach(p => {
+            if (p && p.name && p.url) {
+                window._projectUrlMap[`${mId}__${p.name}`] = p.url;
+            }
+        });
+    });
+
     // Map rápido de módulo por id para obtener el nombre de módulo
     const moduleById = {};
     modules.forEach((m, idx) => {
@@ -8175,8 +8178,28 @@ function initVirtualClassroomPanel(ext, promo) {
     }
 
     // Fill inputs from active config
-    repoBaseEl.value = vc.repoBaseUrl || '';
-    briefingEl.value = vc.briefingUrl || '';
+    // Repo base: prefer saved value, fall back to GitHub quick link
+    const _githubUrl = window._githubQuickLinkUrl || '';
+    if (vc.repoBaseUrl) {
+        repoBaseEl.value = vc.repoBaseUrl;
+        _setRepoBaseBadge(false);
+    } else if (_githubUrl) {
+        repoBaseEl.value = _githubUrl;
+        _setRepoBaseBadge(true);
+    } else {
+        repoBaseEl.value = '';
+        _setRepoBaseBadge(false);
+    }
+    // Fill briefing URL — prefer roadmap URL for the selected project (auto-fill)
+    const _activeKey = selectEl.value;
+    const _roadmapUrl = _activeKey && window._projectUrlMap ? window._projectUrlMap[_activeKey] : '';
+    if (_roadmapUrl) {
+        briefingEl.value = _roadmapUrl;
+        _setBriefingSourceBadge(true);
+    } else {
+        briefingEl.value = vc.briefingUrl || '';
+        _setBriefingSourceBadge(false);
+    }
 
     // Update status UI
     if (vc.isActive && activeValue) {
@@ -8340,7 +8363,40 @@ function updateVirtualClassroomCompetencesPreview() {
 // Called by select change in the panel
 window.onVirtualClassroomProjectChange = function () {
     updateVirtualClassroomCompetencesPreview();
+    const selectEl = document.getElementById('vc-project-select');
+    if (selectEl) _applyBriefingUrlFromRoadmap(selectEl.value);
 };
+
+function _setBriefingSourceBadge(fromRoadmap) {
+    const badge = document.getElementById('vc-briefing-source');
+    const hint = document.getElementById('vc-briefing-hint');
+    if (badge) badge.classList.toggle('d-none', !fromRoadmap);
+    if (hint) hint.classList.toggle('d-none', !fromRoadmap);
+}
+
+function _setRepoBaseBadge(fromGithub) {
+    const badge = document.getElementById('vc-repo-base-source');
+    const hint = document.getElementById('vc-repo-base-hint');
+    if (badge) badge.classList.toggle('d-none', !fromGithub);
+    if (hint) hint.classList.toggle('d-none', !fromGithub);
+}
+
+function _applyBriefingUrlFromRoadmap(selectValue) {
+    const briefingEl = document.getElementById('vc-briefing-url');
+    if (!briefingEl) return;
+    const roadmapUrl = selectValue && window._projectUrlMap ? window._projectUrlMap[selectValue] : '';
+    if (roadmapUrl) {
+        briefingEl.value = roadmapUrl;
+        _setBriefingSourceBadge(true);
+    } else {
+        // Only clear if currently showing a roadmap URL (don't wipe manually entered values)
+        const badge = document.getElementById('vc-briefing-source');
+        if (badge && !badge.classList.contains('d-none')) {
+            briefingEl.value = '';
+        }
+        _setBriefingSourceBadge(false);
+    }
+}
 
 async function saveVirtualClassroom(isActive) {
     const selectEl = document.getElementById('vc-project-select');

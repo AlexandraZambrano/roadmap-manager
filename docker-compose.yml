@@ -1,0 +1,44 @@
+
+services:
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: roadmap_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: bootcamp-manager
+    ports:
+      - "27017:27017"          # expose so the migration script can reach it from the host
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - roadmap_net
+
+  # ── App ────────────────────────────────────────────────────────────────────
+  app:
+    build: .
+    container_name: roadmap_app
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    environment:
+      # Override the cloud URI — the app must talk to the local mongo service
+      MONGO_URI: mongodb://mongo:27017/bootcamp-manager
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source so you can iterate without rebuilding the image in dev
+      - .:/app
+      - /app/node_modules
+    networks:
+      - roadmap_net
+
+volumes:
+  mongo_data:
+
+networks:
+  roadmap_net:
+    driver: bridge

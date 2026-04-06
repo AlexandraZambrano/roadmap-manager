@@ -319,7 +319,7 @@
                                     <div class="d-flex justify-content-between align-items-center my-4">
                                         <h2 class="subtitle-page">Estudiantes</h2>
                                         <div class="d-flex flex-wrap gap-2">
-                                            <button class="btn btn-primary" onclick="openStudentModal()">
+                                            <button class="btn btn-primary" id="create-student-btn" onclick="openStudentModal()">
                                                 <i class="bi bi-person-plus me-2"></i>Crear Estudiante
                                             </button>
                                             <button class="btn btn-outline-secondary" onclick="exportAllStudentsExcel()"
@@ -335,6 +335,24 @@
                                             <button class="btn btn-outline-danger" onclick="deleteSelectedStudents()"
                                                 id="delete-selected-btn" style="display:none;">
                                                 <i class="bi bi-trash me-2"></i>Borrar Estudiante(s)
+                                            </button>
+
+                                            <!-- ── Import from Excel ── -->
+                                            <button class="btn btn-outline-primary"
+                                                onclick="document.getElementById('students-excel-input').click()"
+                                                id="import-students-excel-btn"
+                                                title="Importar estudiantes desde un archivo Excel o CSV">
+                                                <i class="bi bi-upload me-2"></i>Importar Excel
+                                            </button>
+                                            <input type="file" id="students-excel-input" accept=".xlsx,.xls,.csv"
+                                                style="display:none;" onchange="importStudentsFromExcel(this)">
+
+                                            <!-- ── Download blank template ── -->
+                                            <button class="btn btn-outline-secondary"
+                                                onclick="downloadStudentsExcelTemplate()"
+                                                id="download-students-template-btn"
+                                                title="Descarga la plantilla Excel con las columnas necesarias">
+                                                <i class="bi bi-file-earmark-arrow-down me-2"></i>Plantilla Excel
                                             </button>
 
                                             <!-- ── Bulk PDF Reports ── -->
@@ -1275,20 +1293,29 @@
                                         <div class="col-md-3">
                                             <label for="vc-repo-base" class="form-label small fw-semibold text-muted">
                                                 URL base del repositorio
+                                                <span id="vc-repo-base-source" class="badge bg-success text-white ms-1 small d-none">
+                                                    <i class="bi bi-github me-1"></i>desde GitHub
+                                                </span>
                                             </label>
                                             <input type="text" id="vc-repo-base" class="form-control form-control-sm"
                                                 placeholder="https://github.com/proyectof5/">
-                                            <div class="form-text small">
-                                                Se mostrará como prefijo fijo en el input del estudiantado.
+                                            <div id="vc-repo-base-hint" class="form-text small text-muted d-none">
+                                                URL tomada del quick link de GitHub. Puedes editarla manualmente.
                                             </div>
                                         </div>
                                         <div class="col-md-4">
                                             <label for="vc-briefing-url"
                                                 class="form-label small fw-semibold text-muted">
                                                 Link al briefing del proyecto
+                                                <span id="vc-briefing-source" class="badge bg-info text-dark ms-1 small d-none">
+                                                    <i class="bi bi-link-45deg me-1"></i>desde roadmap
+                                                </span>
                                             </label>
                                             <input type="text" id="vc-briefing-url" class="form-control form-control-sm"
                                                 placeholder="https://github.com/organizacion/briefing-proyecto">
+                                            <div id="vc-briefing-hint" class="form-text small text-muted d-none">
+                                                URL definida en el roadmap. Puedes editarla manualmente si lo necesitas.
+                                            </div>
                                         </div>
                                     </div>
 
