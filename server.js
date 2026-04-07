@@ -56,21 +56,27 @@ const EXTERNAL_AUTH_BASE = IS_PRODUCTION
 console.log(`[config] NODE_ENV=${process.env.NODE_ENV || 'development'} → EXTERNAL_AUTH_BASE=${EXTERNAL_AUTH_BASE}`);
 
 // Public key of the external auth server (https://users.coderf5.es) — used to verify RS256 tokens
+// Priority: EXTERNAL_JWT_PUBLIC_KEY env var (recommended) → backend/keys/public.pem (fallback)
 let EXTERNAL_JWT_PUBLIC_KEY = null;
-try {
-  // Try both lowercase and uppercase paths for cross-platform compatibility
-  let keyPath = join(__dirname, 'backend', 'keys', 'public.pem');
+if (process.env.EXTERNAL_JWT_PUBLIC_KEY) {
+  // Env var stores the key with literal \n — replace them with real newlines
+  EXTERNAL_JWT_PUBLIC_KEY = process.env.EXTERNAL_JWT_PUBLIC_KEY.replace(/\\n/g, '\n');
+  console.log('[auth] Loaded external JWT public key from env var EXTERNAL_JWT_PUBLIC_KEY');
+} else {
   try {
-    EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
-  } catch {
-    // Try with uppercase Keys folder (Windows case sensitivity issue)
-    keyPath = join(__dirname, 'backend', 'Keys', 'public.pem');
-    EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
+    // Fallback: try both lowercase and uppercase paths for cross-platform compatibility
+    let keyPath = join(__dirname, 'backend', 'keys', 'public.pem');
+    try {
+      EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
+    } catch {
+      keyPath = join(__dirname, 'backend', 'Keys', 'public.pem');
+      EXTERNAL_JWT_PUBLIC_KEY = readFileSync(keyPath, 'utf8');
+    }
+    console.log('[auth] Loaded external JWT public key from file ' + keyPath);
+  } catch (e) {
+    console.warn('[auth] Could not load public key — external tokens will be rejected:', e.message);
+    console.warn('[auth] Set EXTERNAL_JWT_PUBLIC_KEY in .env or place the key at backend/keys/public.pem');
   }
-  console.log('[auth] Loaded external JWT public key from ' + keyPath);
-} catch (e) {
-  console.warn('[auth] Could not load public key — external tokens will be rejected:', e.message);
-  console.warn('[auth] Make sure the file exists at backend/keys/public.pem or update EXTERNAL_AUTH_BASE in .env');
 }
 
 // MongoDB Connection

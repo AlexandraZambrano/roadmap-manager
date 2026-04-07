@@ -54,11 +54,44 @@ Este enfoque busca:
 
 La aplicación está construida con:
 
-- **Frontend:** JavaScript Vanilla  
-- **Backend:** Node.js  
-- **Base de datos:** MongoDB  
+- **Frontend:** JavaScript Vanilla + Bootstrap 5
+- **Backend:** Node.js + Express  
+- **Base de datos:** MySQL (via Sequelize ORM)
+- **Auth:** API externa Symfony (tokens RS256)
 
 ---
+
+
+## ⚙️ Configuración del entorno
+
+Copia `.env.example` a `.env` y rellena los valores:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Descripción |
+|---|---|
+| `SQL_DIALECT` | Motor SQL: `mysql`, `postgres`, `mariadb`… |
+| `SQL_HOST` | Host de la base de datos |
+| `SQL_PORT` | Puerto (MySQL: 3306) |
+| `SQL_DATABASE` | Nombre del schema |
+| `SQL_USER` / `SQL_PASSWORD` | Credenciales SQL |
+| `SQL_SSL` | `true` si el proveedor cloud requiere SSL |
+| `NODE_ENV` | `development` o `production` |
+| `EXTERNAL_AUTH_URL_PROD` | URL de la API de autenticación externa |
+| `EXTERNAL_JWT_PUBLIC_KEY` | Clave pública RS256 del servidor de auth (ver abajo) |
+| `EMAIL_USER` / `EMAIL_PASSWORD` | Cuenta Gmail para envío de emails |
+
+### 🔑 Clave pública RS256
+
+La clave pública del servidor de autenticación se configura con la variable `EXTERNAL_JWT_PUBLIC_KEY`. Pega el contenido PEM en una sola línea, **reemplazando los saltos de línea reales por `\n`**:
+
+```
+EXTERNAL_JWT_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\nMIIBIjANBg...\n-----END PUBLIC KEY-----
+```
+
+> Si la variable no está definida, el servidor intentará leer el fichero `backend/keys/public.pem` como fallback.
 
 
 ## Funcionalidades principales
