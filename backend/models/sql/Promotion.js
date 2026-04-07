@@ -34,6 +34,7 @@ const Promotion = sequelize.define('Promotion', {
     weeks:                 { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
     teachingContentUrl:    { type: DataTypes.TEXT,    allowNull: true, defaultValue: null },
     asanaWorkspaceUrl:     { type: DataTypes.TEXT,    allowNull: true, defaultValue: null },
+    googleCalendarId:      { type: DataTypes.STRING,  allowNull: true, defaultValue: null },
     modules:               { type: DataTypes.TEXT,    defaultValue: '[]',  get() { return parseJson(this.getDataValue('modules'), []); },               set(v) { this.setDataValue('modules', typeof v === 'string' ? v : JSON.stringify(v)); } },
     employability:         { type: DataTypes.TEXT,    defaultValue: '[]',  get() { return parseJson(this.getDataValue('employability'), []); },         set(v) { this.setDataValue('employability', typeof v === 'string' ? v : JSON.stringify(v)); } },
     ownerModules:          { type: DataTypes.TEXT,    defaultValue: '[]',  get() { return parseJson(this.getDataValue('ownerModules'), []); },           set(v) { this.setDataValue('ownerModules', typeof v === 'string' ? v : JSON.stringify(v)); } },

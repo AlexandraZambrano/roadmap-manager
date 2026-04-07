@@ -16,14 +16,12 @@ import 'dotenv/config';
 import {
     db,
     Teacher,
-    Admin,
     Student,
     Promotion,
     QuickLink,
     Section,
     ExtendedInfo,
     Attendance,
-    Calendar,
     BootcampTemplate,
     Competence,
     Indicator,
@@ -31,12 +29,9 @@ import {
     Area,
     Level,
     Resource,
-    Referent,
-    ResourceType,
     CompetenceIndicator,
     CompetenceTool,
-    CompetenceArea,
-    CompetenceResource
+    CompetenceArea
 } from './backend/models/sql/index.js';
 import { sendPasswordEmail, sendReportEmail } from './backend/utils/email.js';
 
@@ -184,34 +179,14 @@ app.get('/auth.html', (req, res) => {
 
 // --- Initialization ---
 
-async function initializeTestAccounts() {
-  const accounts = [
-    { name: 'Alex', email: 'alex@gmail.com', password: 'aA12345678910*', role: 'teacher' },
-    { name: 'Celia', email: 'celia@gmail.com', password: 'celia123456', role: 'teacher' },
-    { name: 'Test Student', email: 'student@test.com', password: 'student123', role: 'student' },
-    { name: 'System Admin', email: 'admin@test.com', password: 'admin123', role: 'admin' }
-  ];
-
-  for (const acc of accounts) {
-    let Model;
-    if (acc.role === 'teacher') Model = Teacher;
-    else if (acc.role === 'student') Model = Student;
-    else if (acc.role === 'admin') Model = Admin;
-
-    const existing = await Model.findOne({ where: { email: acc.email } });
-    if (!existing) {
-      const hashedPassword = await bcrypt.hash(acc.password, 10);
-      await Model.create({
-        id: uuidv4(),
-        name: acc.name,
-        email: acc.email,
-        password: hashedPassword
-      });
-    }
-  }
-}
-
-initializeTestAccounts();
+/**
+ * Teacher accounts are created exclusively via POST /api/admin/teachers which
+ * registers in the external auth system (users.coderf5.es) first.
+ * Students are not authenticated in this platform.
+ * Local admin accounts have been removed — superadmin access is granted via
+ * ROLE_SUPER_ADMIN on the external JWT.
+ * No local test accounts are initialised.
+ */
 
 /**
  * sqlSave(instance) — wraps Sequelize's .save() and marks all JSON columns as changed.
@@ -261,15 +236,13 @@ const verifyToken = async (req, res, next) => {
       try {
         if (!externalEmail) throw new Error(`No email field found in token. Token keys: ${JSON.stringify(Object.keys(decoded))}`);
 
-        let localTeacher = await Teacher.findOne({ where: { email: externalEmail.toLowerCase() } });
+        let localTeacher = await Teacher.findOne({ where: { email: externalEmail.toLowerCase(), deletedAt: null } });
         if (!localTeacher) {
           // Auto-provision: create a minimal teacher record so the user can see/create promotions
-          const tempPw = await bcrypt.hash(uuidv4(), 10); // random unusable password
           localTeacher = await Teacher.create({
             id: uuidv4(),
             name: decoded.name || decoded.username || externalEmail.split('@')[0],
-            email: externalEmail.toLowerCase(),
-            password: tempPw
+            email: externalEmail.toLowerCase()
           });
         }
         req.user = {
@@ -296,7 +269,8 @@ const verifyToken = async (req, res, next) => {
     console.warn('[verifyToken] EXTERNAL_JWT_PUBLIC_KEY not loaded, skipping external token verification');
   }
 
-  // 2. Try verifying with our internal HS256 secret (admin / student local accounts)
+  // 2. Try verifying with our internal HS256 secret (legacy fallback only)
+  // No local admin or student accounts exist anymore — all authentication is external.
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
@@ -1265,7 +1239,7 @@ app.delete('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isAdmin = req.user.role === 'superadmin';
 
     if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot delete system templates' });
@@ -1291,7 +1265,7 @@ app.put('/api/bootcamp-templates/:templateId', verifyToken, async (req, res) => 
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isAdmin = req.user.role === 'superadmin';
 
     if (!template.isCustom && !isAdmin) {
       return res.status(403).json({ error: 'Cannot edit system templates' });
@@ -1469,34 +1443,27 @@ app.post('/api/auth/login', (req, res) => {
 // Get current user profile
 app.get('/api/profile', verifyToken, async (req, res) => {
   try {
-    let user = null;
     const { role } = req.user;
 
-    if (role === 'teacher' || role === 'superadmin') {
-      user = await Teacher.findOne({ where: { id: req.user.id } });
-    } else if (role === 'admin') {
-      user = await Admin.findOne({ where: { id: req.user.id } });
-    } else if (role === 'student') {
-      user = await Student.findOne({ where: { id: req.user.id } });
+    // Only teachers and superadmins have a local profile record.
+    // Students are not authenticated in this platform.
+    if (role !== 'teacher' && role !== 'superadmin') {
+      return res.status(403).json({ error: 'Profile not available for this role' });
     }
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await Teacher.findOne({ where: { id: req.user.id, deletedAt: null } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Return profile without password
-    const profile = {
+    res.json({
       id: user.id,
       name: user.name,
       lastName: user.lastName || '',
       email: user.email,
       location: user.location || '',
-      role: role,
-      userRole: role === 'teacher' ? (user.userRole || 'Formador/a') : undefined,
+      role,
+      userRole: user.userRole || 'Formador/a',
       createdAt: user.createdAt
-    };
-
-    res.json(profile);
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1508,102 +1475,67 @@ app.put('/api/profile', verifyToken, async (req, res) => {
     const { name, lastName, location } = req.body;
     const { role } = req.user;
 
-    let user = null;
-
-    if (role === 'teacher' || role === 'superadmin') {
-      user = await Teacher.findOne({ where: { id: req.user.id } });
-      if (user) {
-        if (name !== undefined) user.name = name;
-        if (lastName !== undefined) user.lastName = lastName;
-        if (location !== undefined) user.location = location;
-        await sqlSave(user);
-      }
-    } else if (role === 'admin') {
-      user = await Admin.findOne({ where: { id: req.user.id } });
-      if (user) {
-        if (name !== undefined) user.name = name;
-        if (lastName !== undefined) user.lastName = lastName;
-        if (location !== undefined) user.location = location;
-        await sqlSave(user);
-      }
-    } else if (role === 'student') {
-      user = await Student.findOne({ where: { id: req.user.id } });
-      if (user) {
-        if (name !== undefined) user.name = name;
-        if (lastName !== undefined) user.lastName = lastName;
-        await sqlSave(user);
-      }
+    if (role !== 'teacher' && role !== 'superadmin') {
+      return res.status(403).json({ error: 'Profile update not available for this role' });
     }
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await Teacher.findOne({ where: { id: req.user.id, deletedAt: null } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const profile = {
-      id: user.id,
-      name: user.name,
-      lastName: user.lastName || '',
-      email: user.email,
-      location: user.location || '',
-      role: role,
-      createdAt: user.createdAt
-    };
+    if (name !== undefined) user.name = name;
+    if (lastName !== undefined) user.lastName = lastName;
+    if (location !== undefined) user.location = location;
+    await sqlSave(user);
 
-    res.json({ message: 'Profile updated successfully', profile });
+    res.json({
+      message: 'Profile updated successfully',
+      profile: {
+        id: user.id,
+        name: user.name,
+        lastName: user.lastName || '',
+        email: user.email,
+        location: user.location || '',
+        role,
+        createdAt: user.createdAt
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Change password
+// Change password — proxied entirely to the external auth API.
+// Students don't authenticate; admins are superadmins from external JWT.
 app.post('/api/change-password', verifyToken, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const { role } = req.user;
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new password are required' });
     }
-
     if (newPassword.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    let user = null;
+    const teacher = await Teacher.findOne({ where: { id: req.user.id, deletedAt: null } });
+    if (!teacher) return res.status(404).json({ error: 'User not found' });
 
-    if (role === 'teacher') {
-      user = await Teacher.findOne({ where: { id: req.user.id } });
-    } else if (role === 'admin') {
-      user = await Admin.findOne({ where: { id: req.user.id } });
-    } else if (role === 'student') {
-      user = await Student.findOne({ where: { id: req.user.id } });
+    try {
+      const extRes = await fetch(`${EXTERNAL_AUTH_BASE}/reset-password/api-request-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: teacher.email, currentPassword, newPassword })
+      });
+      const extData = await extRes.json().catch(() => ({}));
+      if (extRes.ok && extData.success !== false) {
+        return res.json({ message: 'Password changed successfully' });
+      }
+      return res.status(extRes.status >= 400 ? extRes.status : 400).json({
+        error: extData.message || extData.error || 'Error al cambiar la contraseña en el servidor externo'
+      });
+    } catch (extErr) {
+      return res.status(502).json({ error: 'External auth server unreachable' });
     }
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Verify current password
-    const passwordMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    if (role === 'teacher') {
-      user = await Teacher.findOne({ where: { id: req.user.id } });
-      if (user) { user.password = hashedPassword; user.passwordChangedAt = new Date(); await sqlSave(user); }
-    } else if (role === 'admin') {
-      user = await Admin.findOne({ where: { id: req.user.id } });
-      if (user) { user.password = hashedPassword; user.passwordChangedAt = new Date(); await sqlSave(user); }
-    } else if (role === 'student') {
-      user = await Student.findOne({ where: { id: req.user.id } });
-      if (user) { user.password = hashedPassword; await sqlSave(user); }
-    }
-
-    res.json({ message: 'Password changed successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3493,7 +3425,7 @@ app.delete('/api/promotions/:id', verifyToken, async (req, res) => {
     await QuickLink.destroy({ where: { promotionId: req.params.id } });
     await Section.destroy({ where: { promotionId: req.params.id } });
     await ExtendedInfo.destroy({ where: { promotionId: req.params.id } });
-    await Calendar.destroy({ where: { promotionId: req.params.id } });
+    // googleCalendarId is now a column on promotions — no separate table to delete
 
     res.json({ message: 'Promotion deleted' });
   } catch (error) {
@@ -3621,13 +3553,13 @@ app.delete('/api/promotions/:promotionId/sections/:sectionId', verifyToken, asyn
   }
 });
 
-// ==================== CALENDAR ====================
+// ==================== CALENDAR (googleCalendarId stored on promotion) ====================
 
 app.get('/api/promotions/:promotionId/calendar', async (req, res) => {
   try {
-    const calendar = await Calendar.findOne({ where: { promotionId: req.params.promotionId } });
-    if (!calendar) return res.status(404).json({ error: 'Calendar not found' });
-    res.json(calendar);
+    const promotion = await Promotion.findOne({ where: { id: req.params.promotionId } });
+    if (!promotion || !promotion.googleCalendarId) return res.status(404).json({ error: 'Calendar not found' });
+    res.json({ promotionId: promotion.id, googleCalendarId: promotion.googleCalendarId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3642,10 +3574,9 @@ app.post('/api/promotions/:promotionId/calendar', verifyToken, async (req, res) 
     if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
     if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
 
-    let calendar = await Calendar.findOne({ where: { promotionId: req.params.promotionId } });
-    if (calendar) { calendar.googleCalendarId = googleCalendarId; await sqlSave(calendar); }
-    else { calendar = await Calendar.create({ promotionId: req.params.promotionId, googleCalendarId }); }
-    res.json(calendar);
+    promotion.googleCalendarId = googleCalendarId;
+    await sqlSave(promotion);
+    res.json({ promotionId: promotion.id, googleCalendarId: promotion.googleCalendarId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4243,8 +4174,10 @@ app.delete('/api/promotions/:promotionId/collaborators/:teacherId', verifyToken,
 // ==================== ADMIN ====================
 
 const verifyAdmin = (req, res, next) => {
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) next();
-  else res.status(403).json({ error: 'Admin role required' });
+  // Only ROLE_SUPER_ADMIN from the external JWT maps to 'superadmin'.
+  // The local 'admin' role no longer exists.
+  if (req.user && req.user.role === 'superadmin') next();
+  else res.status(403).json({ error: 'Superadmin role required' });
 };
 
 // Create a template from an existing promotion
@@ -4338,7 +4271,8 @@ app.get('/api/admin/all-promotions', verifyToken, verifyAdmin, async (req, res) 
 
 app.get('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const teachers = await Teacher.findAll();
+    // Exclude soft-deleted teachers from the listing
+    const teachers = await Teacher.findAll({ where: { deletedAt: null } });
     res.json(teachers);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4350,57 +4284,60 @@ app.post('/api/admin/teachers', verifyToken, verifyAdmin, async (req, res) => {
     const { email, name, userRole } = req.body;
     if (!email || !name) return res.status(400).json({ error: 'Email and name are required' });
 
-    const existing = await Teacher.findOne({ email });
+    const existing = await Teacher.findOne({ where: { email } });
     if (existing) return res.status(400).json({ error: 'Email already registered' });
 
     const provisionalPassword = Math.random().toString(36).slice(-10) + 'A1!';
 
-    // ── Register user in the external auth API ──────────────────────────────
-    let externalRegistered = false;
-    let externalError = null;
+    // ── Register user in the external auth API first (mandatory) ────────────
+    // If external registration fails the local record is NOT created.
+    let extRegData = {};
     try {
       const extRegRes = await fetch(`${EXTERNAL_AUTH_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password: provisionalPassword, name })
       });
-      const extRegData = await extRegRes.json();
-      if (extRegRes.ok && (extRegData.success !== false)) {
-        externalRegistered = true;
-      } else {
-        externalError = extRegData.message || extRegData.error || `External API returned ${extRegRes.status}`;
+      extRegData = await extRegRes.json().catch(() => ({}));
+      if (!extRegRes.ok || extRegData.success === false) {
+        const errMsg = extRegData.message || extRegData.error || `External API returned ${extRegRes.status}`;
+        return res.status(422).json({
+          error: 'External registration failed — local account NOT created.',
+          detail: errMsg
+        });
       }
     } catch (extErr) {
-      console.warn('[admin/teachers POST] External register unreachable:', extErr.message);
-      externalError = 'External auth server unreachable';
+      console.error('[admin/teachers POST] External register unreachable:', extErr.message);
+      return res.status(502).json({
+        error: 'External auth server unreachable — local account NOT created.',
+        detail: extErr.message
+      });
     }
 
-    // Create local teacher record regardless (local system still needs the user)
-    const hashedPassword = await bcrypt.hash(provisionalPassword, 10);
+    // ── External registration succeeded — persist only platform data ────────
+    // No password is stored locally; authentication is fully external.
     const validUserRoles = ['Formador/a', 'CoFormador/a', 'Coordinador/a'];
     const resolvedUserRole = validUserRoles.includes(userRole) ? userRole : 'Formador/a';
-    const teacher = await Teacher.create({ id: uuidv4(), name, email, password: hashedPassword, provisional: true, userRole: resolvedUserRole });
+    const teacher = await Teacher.create({
+      id: uuidv4(),
+      name,
+      email,
+      userRole: resolvedUserRole
+    });
 
     // Send welcome email with provisional password
     const emailSent = await sendPasswordEmail(email, name, provisionalPassword);
 
     const responsePayload = {
       teacher: { id: teacher.id, name: teacher.name, email: teacher.email },
-      externalRegistered,
       provisionalPassword
     };
-
-    if (!externalRegistered) {
-      responsePayload.warning = `Local account created but external registration failed: ${externalError}. The user may need to register separately in the auth system.`;
-    }
     if (!emailSent) {
       responsePayload.emailWarning = 'Password email could not be sent. Please share the provisional password manually.';
     }
 
     res.status(201).json({
-      message: externalRegistered
-        ? 'User registered in auth system and local account created.'
-        : 'Local account created (external registration failed — see warning).',
+      message: 'User registered in auth system and local account created.',
       ...responsePayload
     });
   } catch (error) {
@@ -4430,9 +4367,13 @@ app.put('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res) =>
 
 app.delete('/api/admin/teachers/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const result = await Teacher.destroy({ where: { id: req.params.id } });
-    if (result === 0) return res.status(404).json({ error: 'Teacher not found' });
-    res.json({ message: 'Teacher deleted' });
+    // Soft-delete: set deletedAt instead of destroying the row so that
+    // historical references in promotions.teacherId remain valid.
+    const teacher = await Teacher.findOne({ where: { id: req.params.id, deletedAt: null } });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    teacher.deletedAt = new Date();
+    await teacher.save();
+    res.json({ message: 'Teacher deactivated (soft-deleted)' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

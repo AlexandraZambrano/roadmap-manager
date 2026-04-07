@@ -40,18 +40,6 @@ export const Resource = sequelize.define('Resource', {
     comments: { type: DataTypes.TEXT,    allowNull: true }
 }, { tableName: 'resources', underscored: false, timestamps: false });
 
-export const Referent = sequelize.define('Referent', {
-    id:     { type: DataTypes.INTEGER, primaryKey: true },
-    name:   { type: DataTypes.STRING,  allowNull: false },
-    avatar: { type: DataTypes.STRING,  allowNull: true },
-    link:   { type: DataTypes.STRING,  allowNull: true }
-}, { tableName: 'referents', underscored: false, timestamps: false });
-
-export const ResourceType = sequelize.define('ResourceType', {
-    id:   { type: DataTypes.INTEGER, primaryKey: true },
-    name: { type: DataTypes.STRING,  allowNull: false }
-}, { tableName: 'resource_types', underscored: false, timestamps: false });
-
 export const CompetenceIndicator = sequelize.define('CompetenceIndicator', {
     id:             { type: DataTypes.INTEGER, primaryKey: true },
     id_competence:  { type: DataTypes.INTEGER, allowNull: false },
@@ -69,9 +57,3 @@ export const CompetenceArea = sequelize.define('CompetenceArea', {
     id_competence: { type: DataTypes.INTEGER, allowNull: false },
     id_area:       { type: DataTypes.INTEGER, allowNull: false }
 }, { tableName: 'competence_areas', underscored: false, timestamps: false });
-
-export const CompetenceResource = sequelize.define('CompetenceResource', {
-    id:            { type: DataTypes.INTEGER, primaryKey: true },
-    id_competence: { type: DataTypes.INTEGER, allowNull: false },
-    id_resource:   { type: DataTypes.INTEGER, allowNull: false }
-}, { tableName: 'competence_resources', underscored: false, timestamps: false });

@@ -48,6 +48,18 @@ const Student = sequelize.define('Student', {
     transversalTracking:     { type: DataTypes.TEXT,    defaultValue: '{}',  get() { return parseJson(this.getDataValue('transversalTracking'), {}); },  set(v) { this.setDataValue('transversalTracking', typeof v === 'string' ? v : JSON.stringify(v)); } },
     extendedInfo:            { type: DataTypes.TEXT,    defaultValue: '{}',  get() { return parseJson(this.getDataValue('extendedInfo'), {}); },          set(v) { this.setDataValue('extendedInfo', typeof v === 'string' ? v : JSON.stringify(v)); } },
     createdAt:               { type: DataTypes.DATE,    defaultValue: DataTypes.NOW }
-}, { tableName: 'students', underscored: false, timestamps: false });
+}, {
+    tableName: 'students',
+    underscored: false,
+    timestamps: false,
+    indexes: [
+        // Frequent: look up all students for a given promotion (promotion detail page, attendance)
+        { name: 'idx_students_promotionId', fields: ['promotionId'] },
+        // Frequent: filter withdrawn vs active students within a promotion
+        { name: 'idx_students_promotionId_isWithdrawn', fields: ['promotionId', 'isWithdrawn'] },
+        // Unique lookup by email (login, deduplication)
+        { name: 'idx_students_email', fields: ['email'] }
+    ]
+});
 
 export default Student;
