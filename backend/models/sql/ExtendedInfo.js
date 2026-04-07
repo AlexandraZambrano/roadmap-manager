@@ -32,6 +32,7 @@ const ExtendedInfo = sequelize.define('ExtendedInfo', {
     projectEvaluations:  { type: DataTypes.TEXT,   defaultValue: '{}',  get() { return parseJson(this.getDataValue('projectEvaluations'), {}); },   set(v) { this.setDataValue('projectEvaluations', typeof v === 'string' ? v : JSON.stringify(v)); } },
     virtualClassroom:    { type: DataTypes.TEXT,   defaultValue: '{}',  get() { return parseJson(this.getDataValue('virtualClassroom'), {}); },     set(v) { this.setDataValue('virtualClassroom', typeof v === 'string' ? v : JSON.stringify(v)); } },
     sharedNotes:         { type: DataTypes.TEXT,   defaultValue: '[]',  get() { return parseJson(this.getDataValue('sharedNotes'), []); },          set(v) { this.setDataValue('sharedNotes', typeof v === 'string' ? v : JSON.stringify(v)); } },
+    promotionResources:  { type: DataTypes.TEXT,   defaultValue: '[]',  get() { return parseJson(this.getDataValue('promotionResources'), []); },    set(v) { this.setDataValue('promotionResources', typeof v === 'string' ? v : JSON.stringify(v)); } },
     createdAt:           { type: DataTypes.DATE,   defaultValue: DataTypes.NOW }
 }, { tableName: 'extended_info', underscored: false, timestamps: false });
 

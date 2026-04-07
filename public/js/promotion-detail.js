@@ -419,6 +419,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const editTeamModalEl = document.getElementById('editTeamModal');
         if (editTeamModalEl) editTeamModal = new bootstrap.Modal(editTeamModalEl);
 
+        // Promo Resources modal
+        const promoResourceModalEl = document.getElementById('promoResourceModal');
+        if (promoResourceModalEl) {
+            window._promoResourceModal = new bootstrap.Modal(promoResourceModalEl);
+            document.getElementById('promo-resource-form').addEventListener('submit', submitPromoResource);
+        }
+
         initEmployabilityModal();
         initProfileModal();
 
@@ -456,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadQuickLinks();
         loadQuickActions();
         loadSections();
+        loadPromoResources();
 
         // 4. Feature modules
         if (typeof NotesManager !== 'undefined' && typeof NotesUI !== 'undefined') {
@@ -4136,6 +4144,286 @@ function displaySections(sections) {
         `;
         list.appendChild(card);
     });
+}
+
+// ==================== PROMO RESOURCES ====================
+// Resources created by teachers for a specific promotion (videos, repos, canva/ppt).
+// Stored in ExtendedInfo.promotionResources as a JSON array.
+
+const PROMO_RESOURCE_TYPE_ICONS = {
+    video:       { icon: 'bi-play-btn-fill',       color: '#dc3545', label: 'Vídeo' },
+    repository:  { icon: 'bi-github',              color: '#333',    label: 'Repositorio' },
+    canva:       { icon: 'bi-palette-fill',         color: '#7c3aed', label: 'Canva' },
+    powerpoint:  { icon: 'bi-file-earmark-slides-fill', color: '#e55a1c', label: 'PowerPoint' },
+    other:       { icon: 'bi-paperclip',            color: '#6c757d', label: 'Otro' }
+};
+
+async function loadPromoResources() {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/all`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const resources = await res.json();
+        renderPromoResources(resources);
+    } catch (err) {
+        console.error('[loadPromoResources] Error:', err);
+    }
+}
+
+function renderPromoResources(resources) {
+    const container = document.getElementById('promo-resources-list');
+    const countEl = document.getElementById('promo-resources-count');
+    if (!container) return;
+    if (countEl) countEl.textContent = resources.length;
+
+    if (!resources.length) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-collection-play fs-2 d-block mb-2 opacity-25"></i>
+                <span class="small">Sin recursos aún. Crea el primero.</span>
+            </div>`;
+        return;
+    }
+
+    // Group by module
+    const grouped = {};
+    resources.forEach(r => {
+        const key = r.module || '__sin_modulo__';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+
+    const now = new Date();
+    let html = '';
+
+    Object.entries(grouped).forEach(([moduleName, items]) => {
+        const groupLabel = moduleName === '__sin_modulo__' ? 'Sin módulo' : escapeHtml(moduleName);
+        html += `
+        <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="fw-bold text-primary"><i class="bi bi-folder2-open me-1"></i>${groupLabel}</span>
+                <span class="badge bg-light text-dark border">${items.length}</span>
+            </div>
+            <div class="accordion" id="promo-res-acc-${encodeURIComponent(moduleName)}">`;
+
+        items.forEach((r, idx) => {
+            const meta = PROMO_RESOURCE_TYPE_ICONS[r.type] || PROMO_RESOURCE_TYPE_ICONS.other;
+            const accId = `promo-res-item-${r.id}`;
+
+            // Status badge
+            let statusBadge;
+            if (r.status === 'published') {
+                statusBadge = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Publicado</span>`;
+            } else if (r.publishAt && new Date(r.publishAt) <= now) {
+                statusBadge = `<span class="badge bg-success"><i class="bi bi-clock-history me-1"></i>Publicado (programado)</span>`;
+            } else if (r.publishAt) {
+                const dateStr = new Date(r.publishAt).toLocaleDateString('es-ES', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                statusBadge = `<span class="badge bg-warning text-dark"><i class="bi bi-calendar-event me-1"></i>Programado: ${escapeHtml(dateStr)}</span>`;
+            } else {
+                statusBadge = `<span class="badge bg-secondary"><i class="bi bi-pencil-square me-1"></i>Borrador</span>`;
+            }
+
+            html += `
+            <div class="accordion-item border rounded mb-2 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed py-2 px-3" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#${accId}" aria-expanded="false">
+                        <div class="d-flex align-items-center gap-2 w-100 flex-wrap">
+                            <i class="bi ${meta.icon} fs-5" style="color:${meta.color}; min-width:1.2rem;"></i>
+                            <span class="fw-semibold flex-grow-1">${escapeHtml(r.title)}</span>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <span class="badge bg-light text-dark border" style="font-size:0.7rem;">${meta.label}</span>
+                                ${statusBadge}
+                            </div>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${accId}" class="accordion-collapse collapse">
+                    <div class="accordion-body py-2 px-3">
+                        ${r.description ? `<p class="text-muted small mb-2">${escapeHtml(r.description)}</p>` : ''}
+                        <div class="mb-2">
+                            <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Abrir recurso
+                            </a>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap mt-2">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="editPromoResource('${r.id}')">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </button>
+                            ${r.status !== 'published' ? `
+                            <button class="btn btn-sm btn-success" onclick="publishPromoResource('${r.id}')">
+                                <i class="bi bi-globe me-1"></i>Publicar
+                            </button>` : `
+                            <button class="btn btn-sm btn-outline-secondary" onclick="unpublishPromoResource('${r.id}')">
+                                <i class="bi bi-eye-slash me-1"></i>Volver a borrador
+                            </button>`}
+                            <button class="btn btn-sm btn-outline-danger" onclick="deletePromoResource('${r.id}')">
+                                <i class="bi bi-trash me-1"></i>Eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        html += `</div></div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+function openPromoResourceModal(resourceId = null) {
+    const form = document.getElementById('promo-resource-form');
+    form.reset();
+    document.getElementById('promo-resource-id').value = '';
+    document.getElementById('promo-resource-modal-title').innerHTML = '<i class="bi bi-collection-play me-2 text-primary"></i>Nuevo Recurso';
+    document.getElementById('promo-resource-publishAt-row').style.display = 'none';
+    document.getElementById('promo-resource-draft').checked = true;
+
+    // Populate module dropdown from promotionModules
+    const moduleSelect = document.getElementById('promo-resource-module');
+    moduleSelect.innerHTML = '<option value="">— Sin módulo —</option>';
+    (promotionModules || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = m.name;
+        moduleSelect.appendChild(opt);
+    });
+
+    if (resourceId) {
+        // Load existing resource for editing
+        const token = localStorage.getItem('token');
+        fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/all`, {
+            headers: { Authorization: `Bearer ${token}` }
+        }).then(r => r.json()).then(list => {
+            const r = list.find(x => x.id === resourceId);
+            if (!r) return;
+            document.getElementById('promo-resource-id').value = r.id;
+            document.getElementById('promo-resource-modal-title').innerHTML = '<i class="bi bi-pencil me-2 text-primary"></i>Editar Recurso';
+            document.getElementById('promo-resource-title').value = r.title || '';
+            document.getElementById('promo-resource-description').value = r.description || '';
+            document.getElementById('promo-resource-type').value = r.type || 'other';
+            document.getElementById('promo-resource-url').value = r.url || '';
+            if (r.module) moduleSelect.value = r.module;
+
+            // Status radios
+            const statusRadio = document.querySelector(`input[name="promo-resource-status"][value="${r.status || 'draft'}"]`);
+            if (statusRadio) statusRadio.checked = true;
+
+            // publishAt
+            if (r.publishAt) {
+                document.getElementById('promo-resource-publishAt-row').style.display = '';
+                // Convert ISO to datetime-local format
+                const dt = new Date(r.publishAt);
+                const local = dt.toISOString().slice(0, 16);
+                document.getElementById('promo-resource-publishAt').value = local;
+            }
+        });
+    }
+
+    window._promoResourceModal?.show();
+}
+
+function togglePublishAtField(value) {
+    const row = document.getElementById('promo-resource-publishAt-row');
+    // Show the schedule field only when status is draft (allows scheduling)
+    row.style.display = value === 'draft' ? '' : 'none';
+    if (value === 'published') {
+        document.getElementById('promo-resource-publishAt').value = '';
+    }
+}
+
+async function submitPromoResource(e) {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    const id = document.getElementById('promo-resource-id').value;
+    const statusRadio = document.querySelector('input[name="promo-resource-status"]:checked');
+
+    const payload = {
+        title: document.getElementById('promo-resource-title').value.trim(),
+        description: document.getElementById('promo-resource-description').value.trim(),
+        module: document.getElementById('promo-resource-module').value,
+        type: document.getElementById('promo-resource-type').value,
+        url: document.getElementById('promo-resource-url').value.trim(),
+        status: statusRadio?.value || 'draft',
+        publishAt: document.getElementById('promo-resource-publishAt').value || null
+    };
+
+    if (!payload.title || !payload.url) return;
+
+    const btn = document.getElementById('promo-resource-submit-btn');
+    btn.disabled = true;
+    try {
+        let res;
+        if (id) {
+            res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+        }
+        if (res.ok) {
+            window._promoResourceModal?.hide();
+            await loadPromoResources();
+        } else {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('[submitPromoResource] Error:', err);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function editPromoResource(resourceId) {
+    openPromoResourceModal(resourceId);
+}
+
+async function publishPromoResource(resourceId) {
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/${resourceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ status: 'published', publishAt: null })
+        });
+        if (res.ok) await loadPromoResources();
+    } catch (err) { console.error(err); }
+}
+
+async function unpublishPromoResource(resourceId) {
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/${resourceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ status: 'draft', publishAt: null })
+        });
+        if (res.ok) await loadPromoResources();
+    } catch (err) { console.error(err); }
+}
+
+async function deletePromoResource(resourceId) {
+    if (!confirm('¿Eliminar este recurso? Esta acción no se puede deshacer.')) return;
+    const token = localStorage.getItem('token');
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources/${resourceId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) await loadPromoResources();
+    } catch (err) { console.error(err); }
 }
 
 // Load calendar ID from backend for Overview preview

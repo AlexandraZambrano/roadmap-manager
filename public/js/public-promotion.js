@@ -301,6 +301,7 @@ async function loadPromotionContent() {
     await loadCalendar();
     await loadPublicStudents(); // needed for progress bar and pildoras self-assign
     await loadExtendedInfo(); // Load Program Info after main promotion data
+    await loadPublicPromoResources(); // Load published promotion resources
     renderProgressBar(); // render after both promotion and students are loaded
 }
 
@@ -951,6 +952,129 @@ async function loadCalendar() {
         }
     } catch (error) {
         console.error('Error loading calendar:', error);
+    }
+}
+
+// ── Promotion Resources (public view — "En Progreso" tab) ─────────────────
+const _PR_TYPE_META = {
+    video:      { icon: 'bi-play-btn-fill',           color: '#dc3545', label: 'Vídeo' },
+    repository: { icon: 'bi-github',                  color: '#212529', label: 'Repositorio' },
+    canva:      { icon: 'bi-palette-fill',             color: '#7c3aed', label: 'Canva' },
+    powerpoint: { icon: 'bi-file-earmark-slides-fill', color: '#e55a1c', label: 'PowerPoint' },
+    other:      { icon: 'bi-paperclip',               color: '#6c757d', label: 'Recurso' }
+};
+
+async function loadPublicPromoResources() {
+    try {
+        const res = await fetch(`${API_URL}/api/promotions/${promotionId}/promotion-resources`);
+        if (!res.ok) return;
+        const resources = await res.json();
+        renderPublicPromoResources(resources);
+    } catch (err) {
+        console.error('[loadPublicPromoResources] Error:', err);
+    }
+}
+
+function renderPublicPromoResources(resources) {
+    const wrapper = document.getElementById('recursos-wrapper');
+    if (!wrapper) return;
+
+    // Remove any previously injected promo-resources subsection to avoid duplicates on reload
+    const existing = wrapper.querySelector('#promo-recursos-section');
+    if (existing) existing.remove();
+
+    if (!resources || resources.length === 0) return;
+
+    // Group by module
+    const grouped = {};
+    resources.forEach(r => {
+        const key = r.module || '__sin_modulo__';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+
+    // Build module-level accordion (each module is an accordion-item that expands to show resources)
+    const outerAccId = 'pp-res-modules-acc';
+    let modulesHtml = '';
+
+    Object.entries(grouped).forEach(([moduleName, items], modIdx) => {
+        const groupLabel = moduleName === '__sin_modulo__' ? 'Sin módulo' : escapeHtml(moduleName);
+        const moduleItemId = `pp-res-mod-${modIdx}`;
+        const innerAccId   = `pp-res-inner-${modIdx}`;
+
+        // Inner accordion items — one per resource
+        let innerHtml = '';
+        items.forEach((r, rIdx) => {
+            const meta = _PR_TYPE_META[r.type] || _PR_TYPE_META.other;
+            const itemCollapseId = `pp-res-item-${modIdx}-${rIdx}`;
+
+            innerHtml += `
+                <div class="accordion-item border rounded mb-2">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 px-3" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#${itemCollapseId}"
+                                aria-expanded="false" aria-controls="${itemCollapseId}">
+                            <div class="d-flex align-items-center gap-2 w-100 flex-wrap">
+                                <i class="bi ${meta.icon}" style="color:${meta.color}; font-size:1.1rem; min-width:1.2rem;"></i>
+                                <span class="fw-semibold flex-grow-1">${escapeHtml(r.title)}</span>
+                                <span class="badge bg-light text-muted border" style="font-size:0.7rem;">${meta.label}</span>
+                            </div>
+                        </button>
+                    </h2>
+                    <div id="${itemCollapseId}" class="accordion-collapse collapse" data-bs-parent="#${innerAccId}">
+                        <div class="accordion-body py-2 px-3">
+                            ${r.description ? `<p class="text-muted small mb-2">${escapeHtml(r.description)}</p>` : ''}
+                            <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer"
+                               class="btn btn-sm btn-primary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Abrir recurso
+                            </a>
+                        </div>
+                    </div>
+                </div>`;
+        });
+
+        modulesHtml += `
+            <div class="accordion-item border-0 mb-2">
+                <h2 class="accordion-header">
+                    <button class="accordion-button py-2 px-3 fw-semibold text-primary bg-light collapsed" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#${moduleItemId}"
+                            aria-expanded="false" aria-controls="${moduleItemId}">
+                        <i class="bi bi-folder2-open me-2"></i>${groupLabel}
+                        <span class="badge bg-primary ms-2" style="font-size:0.7rem;">${items.length}</span>
+                    </button>
+                </h2>
+                <div id="${moduleItemId}" class="accordion-collapse collapse" data-bs-parent="#${outerAccId}">
+                    <div class="accordion-body py-2 px-2">
+                        <div class="accordion" id="${innerAccId}">
+                            ${innerHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+    });
+
+    const section = document.createElement('div');
+    section.id = 'promo-recursos-section';
+    section.className = 'pp-section-card mb-4';
+    section.innerHTML = `
+        <div class="pp-section-header">
+            <i class="bi bi-collection-play pp-section-header-icon"></i>
+            <h5>Recursos de la Promoción</h5>
+        </div>
+        <div class="pp-section-body">
+            <div class="accordion" id="${outerAccId}">
+                ${modulesHtml}
+            </div>
+        </div>`;
+    wrapper.appendChild(section);
+
+    // Ensure a single "Recursos" sidebar entry pointing to recursos-wrapper
+    const nav = document.getElementById('sidebar-nav');
+    if (nav && !nav.querySelector('a[href="#recursos-wrapper"]') && !nav.querySelector('a[href="#recursos"]')) {
+        const li = document.createElement('li');
+        li.className = 'nav-item';
+        li.innerHTML = `<a class="nav-link" href="#recursos-wrapper" onclick="switchPublicTab('progreso')"><i class="bi bi-collection-play me-2"></i>Recursos</a>`;
+        nav.appendChild(li);
     }
 }
 

@@ -196,7 +196,7 @@ app.get('/auth.html', (req, res) => {
 const JSON_COLUMNS = {
     Promotion:       ['modules','employability','ownerModules','collaborators','collaboratorModules','passwordChangeHistory','holidays'],
     Student:         ['progress','projectsAssignments','withdrawal','accessLog','technicalTracking','transversalTracking','extendedInfo'],
-    ExtendedInfo:    ['schedule','team','resources','pildoras','modulesPildoras','competences','projectCompetences','projectEvaluations','virtualClassroom','sharedNotes'],
+    ExtendedInfo:    ['schedule','team','resources','pildoras','modulesPildoras','competences','projectCompetences','projectEvaluations','virtualClassroom','sharedNotes','promotionResources'],
     BootcampTemplate:['modules','resources','employability','competences','schedule','modulesPildoras'],
 };
 async function sqlSave(instance) {
@@ -3677,6 +3677,146 @@ app.post('/api/promotions/:promotionId/extended-info', verifyToken, async (req, 
     res.json(newInfo);
   } catch (error) {
     console.error('Error saving extended info:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== PROMOTION RESOURCES ====================
+// Resources created by teachers for a promotion: videos, repos, canva/ppt presentations.
+// Each resource has: id, title, description, module, type, url, status (draft|published), publishAt.
+// Public endpoint only returns published resources (or ones whose publishAt has passed).
+
+// GET — public access (only published)
+app.get('/api/promotions/:promotionId/promotion-resources', async (req, res) => {
+  try {
+    const extendedInfo = await ExtendedInfo.findOne({ where: { promotionId: req.params.promotionId } });
+    const all = extendedInfo?.promotionResources || [];
+    const now = new Date();
+    // Return only resources that are published or whose scheduled publishAt has passed
+    const visible = all.filter(r => {
+      if (r.status === 'published') return true;
+      if (r.status === 'draft' && r.publishAt) {
+        return new Date(r.publishAt) <= now;
+      }
+      return false;
+    });
+    res.json(visible);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all (including drafts) — teacher only
+app.get('/api/promotions/:promotionId/promotion-resources/all', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ where: { id: req.params.promotionId } });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+    const extendedInfo = await ExtendedInfo.findOne({ where: { promotionId: req.params.promotionId } });
+    res.json(extendedInfo?.promotionResources || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST — create a new resource (draft by default)
+app.post('/api/promotions/:promotionId/promotion-resources', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ where: { id: req.params.promotionId } });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { title, description, module: moduleName, type, url, status, publishAt } = req.body;
+    if (!title || !url) return res.status(400).json({ error: 'title and url are required' });
+
+    const validTypes = ['video', 'repository', 'canva', 'powerpoint', 'other'];
+    const validStatuses = ['draft', 'published'];
+
+    const newResource = {
+      id: uuidv4(),
+      title: title.trim(),
+      description: description?.trim() || '',
+      module: moduleName?.trim() || '',
+      type: validTypes.includes(type) ? type : 'other',
+      url: url.trim(),
+      status: validStatuses.includes(status) ? status : 'draft',
+      publishAt: publishAt || null,
+      createdAt: new Date().toISOString()
+    };
+
+    let extendedInfo = await ExtendedInfo.findOne({ where: { promotionId: req.params.promotionId } });
+    if (!extendedInfo) {
+      extendedInfo = await ExtendedInfo.create({ id: uuidv4(), promotionId: req.params.promotionId, promotionResources: [newResource] });
+    } else {
+      const list = extendedInfo.promotionResources || [];
+      list.push(newResource);
+      extendedInfo.promotionResources = list;
+      await sqlSave(extendedInfo);
+    }
+
+    res.status(201).json(newResource);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT — update a resource (including publish/unpublish/schedule)
+app.put('/api/promotions/:promotionId/promotion-resources/:resourceId', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ where: { id: req.params.promotionId } });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const extendedInfo = await ExtendedInfo.findOne({ where: { promotionId: req.params.promotionId } });
+    if (!extendedInfo) return res.status(404).json({ error: 'Extended info not found' });
+
+    const list = extendedInfo.promotionResources || [];
+    const idx = list.findIndex(r => r.id === req.params.resourceId);
+    if (idx === -1) return res.status(404).json({ error: 'Resource not found' });
+
+    const validTypes = ['video', 'repository', 'canva', 'powerpoint', 'other'];
+    const validStatuses = ['draft', 'published'];
+    const { title, description, module: moduleName, type, url, status, publishAt } = req.body;
+
+    const updated = { ...list[idx] };
+    if (title !== undefined)       updated.title = title.trim();
+    if (description !== undefined) updated.description = description.trim();
+    if (moduleName !== undefined)  updated.module = moduleName.trim();
+    if (type !== undefined)        updated.type = validTypes.includes(type) ? type : updated.type;
+    if (url !== undefined)         updated.url = url.trim();
+    if (status !== undefined)      updated.status = validStatuses.includes(status) ? status : updated.status;
+    if (publishAt !== undefined)   updated.publishAt = publishAt || null;
+    updated.updatedAt = new Date().toISOString();
+
+    list[idx] = updated;
+    extendedInfo.promotionResources = list;
+    await sqlSave(extendedInfo);
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE — remove a resource
+app.delete('/api/promotions/:promotionId/promotion-resources/:resourceId', verifyToken, async (req, res) => {
+  try {
+    const promotion = await Promotion.findOne({ where: { id: req.params.promotionId } });
+    if (!promotion) return res.status(404).json({ error: 'Promotion not found' });
+    if (!canEditPromotion(promotion, req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const extendedInfo = await ExtendedInfo.findOne({ where: { promotionId: req.params.promotionId } });
+    if (!extendedInfo) return res.status(404).json({ error: 'Extended info not found' });
+
+    const list = extendedInfo.promotionResources || [];
+    const filtered = list.filter(r => r.id !== req.params.resourceId);
+    if (filtered.length === list.length) return res.status(404).json({ error: 'Resource not found' });
+
+    extendedInfo.promotionResources = filtered;
+    await sqlSave(extendedInfo);
+
+    res.json({ message: 'Resource deleted' });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
